@@ -7,7 +7,7 @@ class TeacherAssignmentMatrixScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return const Scaffold(
       body: Center(
-        child: Text('Teacher assignment matrix is under construction.'),
+         child: Text('Teacher assignment matrix is under construction.'),
       ),
     );
   }

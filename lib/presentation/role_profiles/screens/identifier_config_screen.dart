@@ -1,67 +1,64 @@
-// lib/presentation/role_profiles/screens/identifier_config_screen.dart
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../common/layout/admin_scaffold.dart';
-import '../providers/identifier_config_provider.dart';
 
-class IdentifierConfigScreen extends ConsumerWidget {
+import '../../../data/models/role_profiles/identifier_config_item.dart';
+import '../../../domain/providers/auth_provider.dart';
+import '../../../domain/providers/role_profile_provider.dart';
+import '../../common/layout/admin_scaffold.dart';
+
+class IdentifierConfigScreen extends ConsumerStatefulWidget {
   const IdentifierConfigScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final configs = ref.watch(identifierConfigProvider);
+  ConsumerState<IdentifierConfigScreen> createState() => _IdentifierConfigScreenState();
+}
+
+class _IdentifierConfigScreenState extends ConsumerState<IdentifierConfigScreen> {
+  @override
+  Widget build(BuildContext context) {
+    final repo = ref.watch(roleProfileRepositoryProvider);
 
     return AdminScaffold(
       title: 'Identifier Format Configuration',
-      body: configs.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
-        data: (items) => Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _InfoBanner(),
-            const SizedBox(height: 20),
-            ...items.map((config) => _ConfigCard(config: config)).toList(),
-          ],
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: FutureBuilder<List<IdentifierConfigItem>>(
+          future: repo.getIdentifierConfigs(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) {
+              return Center(child: Text(snapshot.error.toString()));
+            }
+
+            final configs = snapshot.data ?? const <IdentifierConfigItem>[];
+            if (configs.isEmpty) {
+              return const Center(child: Text('No identifier configurations found'));
+            }
+
+            return ListView.separated(
+              itemCount: configs.length,
+              separatorBuilder: (_, index) => const SizedBox(height: 12),
+              itemBuilder: (context, index) {
+                return _ConfigCard(
+                  config: configs[index],
+                  onSaved: () => setState(() {}),
+                );
+              },
+            );
+          },
         ),
       ),
     );
   }
 }
 
-class _InfoBanner extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFEFF6FF),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFBFDBFE)),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.info_outline_rounded,
-              color: Color(0xFF2563EB), size: 20),
-          const SizedBox(width: 12),
-          const Expanded(
-            child: Text(
-              'Identifier formats are LOCKED once the first identifier is issued. '
-              'Configure formats before approving your first registration.',
-              style: TextStyle(
-                  color: Color(0xFF1D4ED8), fontSize: 13),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _ConfigCard extends ConsumerStatefulWidget {
-  final Map<String, dynamic> config;
-  const _ConfigCard({required this.config});
+  const _ConfigCard({required this.config, required this.onSaved});
+
+  final IdentifierConfigItem config;
+  final VoidCallback onSaved;
 
   @override
   ConsumerState<_ConfigCard> createState() => _ConfigCardState();
@@ -72,230 +69,153 @@ class _ConfigCardState extends ConsumerState<_ConfigCard> {
   late final TextEditingController _prefixCtrl;
   late int _padding;
   late bool _resetYearly;
+  bool _saving = false;
 
   @override
   void initState() {
     super.initState();
-    _templateCtrl = TextEditingController(
-        text: widget.config['format_template'] as String);
-    _prefixCtrl = TextEditingController(
-        text: widget.config['prefix'] as String? ?? '');
-    _padding = widget.config['sequence_padding'] as int? ?? 4;
-    _resetYearly = widget.config['reset_yearly'] as bool? ?? true;
+    _templateCtrl = TextEditingController(text: widget.config.formatTemplate);
+    _prefixCtrl = TextEditingController(text: widget.config.prefix ?? '');
+    _padding = widget.config.sequencePadding;
+    _resetYearly = widget.config.resetYearly;
   }
 
-  String get _preview {
-    final year = DateTime.now().year.toString();
-    final seq = '1'.padLeft(_padding, '0');
-    var tpl = _templateCtrl.text;
-    tpl = tpl.replaceAll('{YEAR}', year);
-    tpl = tpl.replaceAll('{SEQ}', seq);
-    tpl = tpl.replaceAll('{PREFIX}', _prefixCtrl.text);
-    return tpl.isEmpty ? '—' : tpl;
-  }
-
-  bool get _isLocked => widget.config['is_locked'] as bool? ?? false;
-
-  String get _title {
-    switch (widget.config['identifier_type']) {
-      case 'ADMISSION_NUMBER': return 'Student Admission Number';
-      case 'EMPLOYEE_ID':      return 'Teacher Employee ID';
-      case 'PARENT_CODE':      return 'Parent Code';
-      default:                 return widget.config['identifier_type'] as String;
-    }
+  @override
+  void dispose() {
+    _templateCtrl.dispose();
+    _prefixCtrl.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: _isLocked
-              ? const Color(0xFFFCA5A5)
-              : const Color(0xFFE2E8F0),
-          width: _isLocked ? 2 : 1,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text(_title,
-                  style: const TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.w700)),
-              const Spacer(),
-              _isLocked
-                  ? const _LockedBadge()
-                  : const _UnlockedBadge(),
-            ],
-          ),
-          const SizedBox(height: 16),
+    final isLocked = widget.config.isLocked;
 
-          // Format Template
-          _FieldLabel('Format Template'),
-          const SizedBox(height: 6),
-          TextField(
-            controller: _templateCtrl,
-            enabled: !_isLocked,
-            onChanged: (_) => setState(() {}),
-            decoration: InputDecoration(
-              filled: true,
-              fillColor: _isLocked ? const Color(0xFFF8FAFC) : Colors.white,
-              border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8)),
-              hintText: '{YEAR}/{SEQ}',
-              suffixIcon: Tooltip(
-                message: 'Tokens: {YEAR}, {SEQ}, {PREFIX}',
-                child: Icon(Icons.help_outline_rounded,
-                    size: 18, color: Colors.grey[400]),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          // Preview
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
-            ),
-            child: Row(children: [
-              const Text('Preview: ',
-                  style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
-              Text(
-                _preview,
-                style: const TextStyle(
-                  fontFamily: 'monospace',
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: Color(0xFF4F46E5),
-                ),
-              ),
-            ]),
-          ),
-          const SizedBox(height: 16),
-
-          // Padding + Reset Yearly
-          Row(children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _FieldLabel('Sequence Digits: $_padding'),
-                  Slider(
-                    value: _padding.toDouble(),
-                    min: 3, max: 6, divisions: 3,
-                    activeColor: const Color(0xFF6366F1),
-                    onChanged: _isLocked ? null : (v) =>
-                        setState(() => _padding = v.toInt()),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 20),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
-                _FieldLabel('Reset Yearly'),
+                Expanded(
+                  child: Text(
+                    _title(widget.config.identifierType),
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+                if (widget.config.previewNext != null)
+                  Text('Next: ${widget.config.previewNext}'),
+              ],
+            ),
+            if (widget.config.warning != null) ...[
+              const SizedBox(height: 8),
+              Text(widget.config.warning!, style: const TextStyle(color: Colors.orange)),
+            ],
+            const SizedBox(height: 10),
+            TextField(
+              controller: _templateCtrl,
+              enabled: !isLocked,
+              decoration: const InputDecoration(
+                labelText: 'Format Template',
+                border: OutlineInputBorder(),
+                hintText: '{YEAR}/{SEQ}',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _prefixCtrl,
+              enabled: !isLocked,
+              decoration: const InputDecoration(
+                labelText: 'Prefix (Optional)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text('Sequence Digits: $_padding'),
+            Slider(
+              value: _padding.toDouble(),
+              min: 3,
+              max: 6,
+              divisions: 3,
+              onChanged: isLocked ? null : (v) => setState(() => _padding = v.toInt()),
+            ),
+            Row(
+              children: [
+                const Text('Reset Yearly'),
+                const SizedBox(width: 8),
                 Switch(
                   value: _resetYearly,
-                  activeColor: const Color(0xFF6366F1),
-                  onChanged: _isLocked ? null : (v) =>
-                      setState(() => _resetYearly = v),
+                  onChanged: isLocked ? null : (v) => setState(() => _resetYearly = v),
                 ),
               ],
             ),
-          ]),
-
-          if (!_isLocked) ...[
             const SizedBox(height: 8),
             Align(
               alignment: Alignment.centerRight,
               child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF6366F1),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8)),
-                ),
-                onPressed: _save,
-                child: const Text('Save Format'),
+                onPressed: isLocked || _saving ? null : _save,
+                child: _saving
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Save'),
               ),
             ),
           ],
-        ],
+        ),
       ),
     );
   }
 
-  void _save() {
-    ref.read(identifierConfigProvider.notifier).save(
-      identifierType: widget.config['identifier_type'] as String,
-      formatTemplate: _templateCtrl.text,
-      sequencePadding: _padding,
-      resetYearly: _resetYearly,
-      prefix: _prefixCtrl.text.isEmpty ? null : _prefixCtrl.text,
-    );
+  Future<void> _save() async {
+    setState(() {
+      _saving = true;
+    });
+
+    try {
+      final auth = ref.read(authControllerProvider).valueOrNull;
+      await ref.read(roleProfileRepositoryProvider).saveIdentifierConfig(
+            identifierType: widget.config.identifierType,
+            formatTemplate: _templateCtrl.text.trim(),
+            sequencePadding: _padding,
+            resetYearly: _resetYearly,
+            prefix: _prefixCtrl.text.trim().isEmpty ? null : _prefixCtrl.text.trim(),
+            schoolId: auth?.schoolId,
+          );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Identifier config saved')),
+      );
+      widget.onSaved();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString())),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+        });
+      }
+    }
+  }
+
+  String _title(String identifierType) {
+    switch (identifierType) {
+      case 'ADMISSION_NUMBER':
+        return 'Student Admission Number';
+      case 'EMPLOYEE_ID':
+        return 'Teacher Employee ID';
+      case 'PARENT_CODE':
+        return 'Parent Code';
+      default:
+        return identifierType;
+    }
   }
 }
-
-class _LockedBadge extends StatelessWidget {
-  const _LockedBadge();
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFEF2F2),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: const Color(0xFFFCA5A5)),
-      ),
-      child: const Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(Icons.lock_rounded, size: 13, color: Color(0xFFDC2626)),
-        SizedBox(width: 5),
-        Text('Format Locked',
-            style: TextStyle(
-                color: Color(0xFFDC2626),
-                fontSize: 11,
-                fontWeight: FontWeight.w700)),
-      ]),
-    );
-  }
-}
-
-class _UnlockedBadge extends StatelessWidget {
-  const _UnlockedBadge();
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF0FDF4),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: const Color(0xFF86EFAC)),
-      ),
-      child: const Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(Icons.lock_open_rounded, size: 13, color: Color(0xFF16A34A)),
-        SizedBox(width: 5),
-        Text('Configurable',
-            style: TextStyle(
-                color: Color(0xFF16A34A),
-                fontSize: 11,
-                fontWeight: FontWeight.w700)),
-      ]),
-    );
-  }
-}
-
-Widget _FieldLabel(String text) => Text(
-  text,
-  style: const TextStyle(
-      fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
-);

@@ -55,6 +55,9 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
                     loading: authState.isLoading,
                     errorText: _error,
                     onSubmit: (credential, password) async {
+                      setState(() {
+                        _error = null;
+                      });
                       final isEmail = credential.contains('@');
                       await ref
                           .read(authControllerProvider.notifier)

@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:dio/dio.dart';
 
 import '../../core/network/dio_client.dart';
 import '../../core/storage/secure_storage.dart';
@@ -29,10 +30,30 @@ class AuthController extends StateNotifier<AsyncValue<AdminUser?>> {
     required String password,
   }) async {
     state = const AsyncLoading();
-    state = await AsyncValue.guard(() async {
-      await _repo.login(email: email, phone: phone, password: password);
-      return _repo.me();
-    });
+    try {
+      final token = await _repo.login(
+        email: email,
+        phone: phone,
+        password: password,
+      );
+      // Use the freshly issued access token directly to avoid any storage read race.
+      final user = await _repo.me(accessToken: token.accessToken);
+      state = AsyncData(user);
+    } on DioException catch (e, st) {
+      final payload = e.response?.data;
+      final status = e.response?.statusCode;
+      String message = status == 401
+          ? 'Invalid credentials or account is not active yet.'
+          : 'Login failed';
+      if (payload is Map && payload['detail'] != null) {
+        message = payload['detail'].toString();
+      } else if (payload is String && payload.trim().isNotEmpty) {
+        message = payload;
+      }
+      state = AsyncError(Exception(message), st);
+    } catch (e, st) {
+      state = AsyncError(e, st);
+    }
   }
 
   Future<void> loadMe() async {

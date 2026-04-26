@@ -4,6 +4,7 @@ class AdminUser {
     required this.role,
     required this.email,
     required this.phone,
+    required this.schoolId,
     required this.status,
     required this.isActive,
     required this.permissions,
@@ -13,6 +14,7 @@ class AdminUser {
   final String role;
   final String? email;
   final String? phone;
+  final String? schoolId;
   final String status;
   final bool isActive;
   final List<String> permissions;
@@ -26,6 +28,7 @@ class AdminUser {
       role: json['role'] as String,
       email: json['email'] as String?,
       phone: json['phone'] as String?,
+      schoolId: json['school_id'] as String?,
       status: (json['status'] as String?) ?? 'UNKNOWN',
       isActive: (json['is_active'] as bool?) ?? false,
       permissions: ((json['permissions'] as List?) ?? const <dynamic>[])

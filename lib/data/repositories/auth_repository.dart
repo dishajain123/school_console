@@ -32,8 +32,13 @@ class AuthRepository {
     return token;
   }
 
-  Future<AdminUser> me() async {
-    final resp = await _client.dio.get<Map<String, dynamic>>('/auth/me');
+  Future<AdminUser> me({String? accessToken}) async {
+    final resp = await _client.dio.get<Map<String, dynamic>>(
+      '/auth/me',
+      options: accessToken == null || accessToken.isEmpty
+          ? null
+          : Options(headers: {'Authorization': 'Bearer $accessToken'}),
+    );
     return AdminUser.fromJson(resp.data ?? {});
   }
 

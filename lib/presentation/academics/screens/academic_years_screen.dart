@@ -5,8 +5,8 @@ import '../../../data/models/academics/academic_year_item.dart';
 import '../../../data/models/academics/section_item.dart';
 import '../../../data/models/academics/standard_item.dart';
 import '../../../data/models/academics/subject_item.dart';
-import '../../../domain/providers/academic_provider.dart';
-import '../../../domain/providers/auth_provider.dart';
+import '../../../domains/providers/academic_provider.dart';
+import '../../../domains/providers/auth_provider.dart';
 import '../../common/layout/admin_scaffold.dart';
 
 class AcademicYearsScreen extends ConsumerStatefulWidget {

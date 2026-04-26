@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/route_constants.dart';
-import '../../../domain/providers/auth_provider.dart';
+import '../../../domains/providers/auth_provider.dart';
 
 class TopBar extends ConsumerWidget implements PreferredSizeWidget {
   const TopBar({super.key, required this.title});

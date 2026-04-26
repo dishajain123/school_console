@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../domain/providers/audit_provider.dart';
+import '../../../domains/providers/audit_provider.dart';
 import '../../common/layout/admin_scaffold.dart';
 
 class AuditLogScreen extends ConsumerWidget {

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../domain/providers/approval_provider.dart';
+import '../../../domains/providers/approval_provider.dart';
 import '../../common/layout/admin_scaffold.dart';
 import '../widgets/approval_table.dart';
 

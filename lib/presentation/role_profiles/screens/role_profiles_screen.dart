@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/models/role_profiles/role_profile_item.dart';
-import '../../../domain/providers/role_profile_provider.dart';
+import '../../../domains/providers/role_profile_provider.dart';
 import '../../common/layout/admin_scaffold.dart';
 import '../../common/widgets/data_table_widget.dart';
 

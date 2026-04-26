@@ -1,9 +1,11 @@
+// lib/presentation/auth/screens/admin_login_screen.dart  [Admin Console]
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/route_constants.dart';
-import '../../../domain/providers/auth_provider.dart';
+import '../../../data/models/auth/admin_user.dart';
+import '../../../domains/providers/auth_provider.dart';
 import '../widgets/login_form.dart';
 
 class AdminLoginScreen extends ConsumerStatefulWidget {
@@ -16,15 +18,35 @@ class AdminLoginScreen extends ConsumerStatefulWidget {
 class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
   String? _error;
 
+  // Determine where to land after login based on the user's role/permissions.
+  // Phase 5 requirement: each role type lands on their primary module.
+  String _resolveInitialRoute(AdminUser user) {
+    final role = user.role.toUpperCase();
+
+    // SUPERADMIN: primary responsibility is system configuration
+    if (role == 'SUPERADMIN') {
+      return RouteNames.settings;
+    }
+
+    // Accounts staff: primary responsibility is fee management
+    // They have fee:read but typically NOT approval:review
+    if (!user.canReview && user.permissions.contains('fee:read')) {
+      return RouteNames.fees;
+    }
+
+    // All others (PRINCIPAL, STAFF with review perm): primary is approvals queue
+    return RouteNames.approvals;
+  }
+
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authControllerProvider);
 
-    ref.listen<AsyncValue>(authControllerProvider, (previous, next) {
+    ref.listen<AsyncValue<AdminUser?>>(authControllerProvider, (previous, next) {
       next.whenOrNull(
         data: (user) {
           if (user != null && context.mounted) {
-            context.go(RouteNames.approvals);
+            context.go(_resolveInitialRoute(user));
           }
         },
         error: (error, _) {

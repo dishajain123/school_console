@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../domain/providers/approval_provider.dart';
-import '../../../domain/providers/auth_provider.dart';
+import '../../../domains/providers/approval_provider.dart';
+import '../../../domains/providers/auth_provider.dart';
 import '../../common/layout/admin_scaffold.dart';
 import '../widgets/decision_panel.dart';
 import '../widgets/user_detail_card.dart';

@@ -1,3 +1,4 @@
+// lib/data/repositories/approval_repository.dart  [Admin Console]
 import '../../core/network/dio_client.dart';
 import '../models/registration/approval_action.dart';
 import '../models/registration/registration_request.dart';
@@ -7,9 +8,26 @@ class ApprovalRepository {
 
   final DioClient _client;
 
-  Future<List<RegistrationRequest>> queue({
-    String status = 'PENDING_APPROVAL',
-  }) async {
+  // FIXED: removed hardcoded status='PENDING_APPROVAL'.
+  // Backend default now returns PENDING_APPROVAL + ON_HOLD + REJECTED together,
+  // so all actionable users are visible in one queue view.
+  Future<List<RegistrationRequest>> queue() async {
+    final resp = await _client.dio.get<Map<String, dynamic>>(
+      '/approvals/queue',
+      queryParameters: {'page': 1, 'page_size': 100},
+    );
+    final items = ((resp.data?['items'] as List?) ?? const <dynamic>[])
+        .whereType<Map>()
+        .map(
+          (e) => RegistrationRequest.fromQueueJson(
+            e.map((k, v) => MapEntry(k.toString(), v)),
+          ),
+        )
+        .toList();
+    return items;
+  }
+
+  Future<List<RegistrationRequest>> queueByStatus(String status) async {
     final resp = await _client.dio.get<Map<String, dynamic>>(
       '/approvals/queue',
       queryParameters: {'status': status, 'page': 1, 'page_size': 100},

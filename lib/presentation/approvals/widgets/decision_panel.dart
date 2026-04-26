@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/models/registration/approval_action.dart';
-import '../../../domain/providers/approval_provider.dart';
+import '../../../domains/providers/approval_provider.dart';
 
 class DecisionPanel extends ConsumerStatefulWidget {
   const DecisionPanel({

@@ -11,9 +11,9 @@
 //   GET /students + /masters/standards   — student strength by class
 //   GET /results/exams                   — performance overview
 import 'dart:convert';
+import 'dart:html' as html;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:universal_html/html.dart' as html;
 
 import '../../../core/network/dio_client.dart';
 import '../../../domains/providers/auth_provider.dart';
@@ -353,7 +353,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
     final bytes = utf8.encode(sb.toString());
     final blob = html.Blob([bytes], 'text/csv');
     final url = html.Url.createObjectUrlFromBlob(blob);
-    final anchor = html.AnchorElement(href: url)
+    html.AnchorElement(href: url)
       ..setAttribute('download', '${title}_${DateTime.now().toIso8601String().substring(0, 10)}.csv')
       ..click();
     html.Url.revokeObjectUrl(url);

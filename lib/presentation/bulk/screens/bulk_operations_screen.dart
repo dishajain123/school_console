@@ -14,10 +14,9 @@
 //   Supports up to 20 fee rows per request, per-row results shown.
 // Permissions: Principal, Superadmin, or staff with user:manage / fee:create.
 import 'dart:convert';
+import 'dart:html' as html;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:dio/dio.dart';
-import 'package:universal_html/html.dart' as html;
 
 import '../../../core/network/dio_client.dart';
 import '../../../domains/providers/auth_provider.dart';
@@ -534,7 +533,7 @@ const _feeCategories = [
 ];
 
 class _FeeRow {
-  _FeeRow({this.standardId, this.category, this.amount, this.dueDate});
+  _FeeRow();
   String? standardId;
   String? category;
   double? amount;

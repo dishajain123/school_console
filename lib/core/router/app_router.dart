@@ -19,7 +19,7 @@ import '../../presentation/role_profiles/screens/role_profiles_screen.dart';
 import '../../presentation/users/screens/users_management_screen.dart';
 import '../../presentation/fees/screens/fee_management_screen.dart';
 import '../../presentation/attendance/screens/attendance_monitor_screen.dart';
-import '../../presentation/results/screens/exams_results_screen.dart';
+import '../../domains/providers/results/screens/exams_results_screen.dart';
 import '../../presentation/reports/screens/reports_screen.dart';
 import '../../presentation/communication/screens/communication_screen.dart';
 import '../../presentation/documents/screens/document_management_screen.dart';

@@ -9,6 +9,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../data/models/audit/audit_log.dart';
 import '../../../domains/providers/audit_provider.dart';
 import '../../common/layout/admin_scaffold.dart';
 

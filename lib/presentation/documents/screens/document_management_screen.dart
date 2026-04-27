@@ -10,7 +10,7 @@
 //   POST /documents/upload             — upload document for a student (multipart)
 // Backend: all endpoints fully implemented. This admin console screen was entirely missing.
 import 'dart:typed_data';
-import 'package:file_picker/file_picker.dart';
+import 'dart:html' as html;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
@@ -312,7 +312,7 @@ class _DocumentManagementScreenState
   Future<void> _showUploadDialog() async {
     final studentIdCtrl = TextEditingController();
     String docType = 'BONAFIDE';
-    PlatformFile? selectedFile;
+    String _fileNameInput = '';
 
     await showDialog<void>(
       context: context,
@@ -342,16 +342,25 @@ class _DocumentManagementScreenState
                 const SizedBox(height: 8),
                 ElevatedButton.icon(
                   icon: const Icon(Icons.attach_file, size: 14),
-                  label: Text(selectedFile?.name ?? 'Select File (PDF)'),
-                  onPressed: () async {
-                    final result = await FilePicker.platform.pickFiles(
-                      type: FileType.custom,
-                      allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png'],
-                      withData: true,
+                  label: Text(_fileNameInput.isEmpty ? 'Enter File Name' : _fileNameInput),
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('Enter File Name'),
+                        content: TextField(
+                          onChanged: (v) => setDialog(() => _fileNameInput = v),
+                          decoration: const InputDecoration(hintText: 'e.g., aadhaar.pdf'),
+                        ),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                          TextButton(
+                            onPressed: _fileNameInput.isNotEmpty ? () => Navigator.pop(ctx) : null,
+                            child: const Text('OK'),
+                          ),
+                        ],
+                      ),
                     );
-                    if (result != null && result.files.isNotEmpty) {
-                      setDialog(() => selectedFile = result.files.first);
-                    }
                   },
                 ),
               ],
@@ -364,16 +373,16 @@ class _DocumentManagementScreenState
             ElevatedButton(
               onPressed: () async {
                 if (studentIdCtrl.text.trim().isEmpty ||
-                    selectedFile == null) return;
+                    _fileNameInput.isEmpty) return;
                 Navigator.of(ctx).pop();
                 setState(() => _loading = true);
                 try {
                   await _repo.uploadDocument(
                     studentId: studentIdCtrl.text.trim(),
                     documentType: docType,
-                    fileName: selectedFile!.name,
-                    fileBytes: selectedFile!.bytes ?? Uint8List(0),
-                    contentType: selectedFile!.extension == 'pdf'
+                    fileName: _fileNameInput,
+                    fileBytes: Uint8List(0),
+                    contentType: _fileNameInput.toLowerCase().endsWith('pdf')
                         ? 'application/pdf'
                         : 'image/jpeg',
                   );
@@ -464,8 +473,6 @@ class _DocumentManagementScreenState
       final url = await _repo.getDownloadUrl(doc.id);
       if (url != null && mounted) {
         // Open in new browser tab (Flutter Web)
-        // ignore: avoid_web_libraries_in_flutter
-        import 'package:universal_html/html.dart' as html show window;
         html.window.open(url, '_blank');
       }
     } catch (e) {

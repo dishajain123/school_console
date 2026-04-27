@@ -7,9 +7,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/network/dio_client.dart';
-import '../../../domains/providers/auth_provider.dart';
-import '../../common/layout/admin_scaffold.dart';
+import '../../../../core/network/dio_client.dart';
+import '../../auth_provider.dart';
+import '../../../../presentation/common/layout/admin_scaffold.dart';
 
 // ── Models ────────────────────────────────────────────────────────────────────
 

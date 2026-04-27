@@ -828,7 +828,7 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                     height: 14,
                     child: CircularProgressIndicator(
                         strokeWidth: 2, color: Colors.white))
-                : const Icon(Icons.generate_outlined),
+                : const Icon(Icons.table_chart_outlined),
             label: const Text('Generate Ledger for Selected Class'),
             onPressed:
                 (_loading || _selectedStandardId == null) ? null : _generateLedger,

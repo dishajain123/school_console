@@ -1,7 +1,10 @@
 // lib/core/constants/api_constants.dart
-// Mobile App API constants — complete with Phase 6/7 additions.
+// Admin Console API constants — complete with Phase 6/7 additions.
 
 class ApiConstants {
+  // ── Base ──────────────────────────────────────────────────────────────────
+  static const String baseUrl = 'http://localhost:8000/api/v1';
+
   // ── Auth ──────────────────────────────────────────────────────────────────
   static const String login = '/auth/login';
   static const String me = '/users/me';

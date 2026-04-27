@@ -21,78 +21,43 @@ class _NavItem {
   final String route;
 }
 
-// Full ordered list of all navigation items
+// Full ordered list — indices referenced by _itemsForUser() below.
 const _allItems = [
-  _NavItem(
-    icon: Icons.verified_user_outlined,
-    selectedIcon: Icons.verified_user,
-    label: 'Approvals',
-    route: RouteNames.approvals,
-  ),
-  _NavItem(
-    icon: Icons.history_toggle_off,
-    selectedIcon: Icons.history,
-    label: 'Audit Log',
-    route: RouteNames.audit,
-  ),
-  _NavItem(
-    icon: Icons.account_tree_outlined,
-    selectedIcon: Icons.account_tree,
-    label: 'Acad. Years',
-    route: RouteNames.academics,
-  ),
-  _NavItem(
-    icon: Icons.class_outlined,
-    selectedIcon: Icons.class_,
-    label: 'Classes',
-    route: RouteNames.academicStructure,
-  ),
-  _NavItem(
-    icon: Icons.how_to_reg_outlined,
-    selectedIcon: Icons.how_to_reg,
-    label: 'Enrollment',
-    route: RouteNames.enrollment,
-  ),
-  _NavItem(
-    icon: Icons.badge_outlined,
-    selectedIcon: Icons.badge,
-    label: 'Profiles',
-    route: RouteNames.roleProfiles,
-  ),
-  _NavItem(
-    icon: Icons.numbers_outlined,
-    selectedIcon: Icons.numbers,
-    label: 'ID Config',
-    route: RouteNames.identifierConfigs,
-  ),
-  _NavItem(
-    icon: Icons.people_outline,
-    selectedIcon: Icons.people,
-    label: 'Users',
-    route: RouteNames.users,
-  ),
-  _NavItem(
-    icon: Icons.payments_outlined,
-    selectedIcon: Icons.payments,
-    label: 'Fees',
-    route: RouteNames.fees,
-  ),
-  _NavItem(
-    icon: Icons.bar_chart_outlined,
-    selectedIcon: Icons.bar_chart,
-    label: 'Reports',
-    route: RouteNames.reports,
-  ),
-  _NavItem(
-    icon: Icons.settings_outlined,
-    selectedIcon: Icons.settings,
-    label: 'Settings',
-    route: RouteNames.settings,
-  ),
+  // 0 — Approvals
+  _NavItem(icon: Icons.verified_user_outlined, selectedIcon: Icons.verified_user, label: 'Approvals', route: RouteNames.approvals),
+  // 1 — Audit Log
+  _NavItem(icon: Icons.history_toggle_off, selectedIcon: Icons.history, label: 'Audit Log', route: RouteNames.audit),
+  // 2 — Academic Years
+  _NavItem(icon: Icons.account_tree_outlined, selectedIcon: Icons.account_tree, label: 'Acad. Years', route: RouteNames.academics),
+  // 3 — Classes/Sections
+  _NavItem(icon: Icons.class_outlined, selectedIcon: Icons.class_, label: 'Classes', route: RouteNames.academicStructure),
+  // 4 — Enrollment
+  _NavItem(icon: Icons.how_to_reg_outlined, selectedIcon: Icons.how_to_reg, label: 'Enrollment', route: RouteNames.enrollment),
+  // 5 — Promotion (Phase 7)
+  _NavItem(icon: Icons.trending_up_outlined, selectedIcon: Icons.trending_up, label: 'Promotion', route: RouteNames.promotion),
+  // 6 — Role Profiles
+  _NavItem(icon: Icons.badge_outlined, selectedIcon: Icons.badge, label: 'Profiles', route: RouteNames.roleProfiles),
+  // 7 — ID Config
+  _NavItem(icon: Icons.numbers_outlined, selectedIcon: Icons.numbers, label: 'ID Config', route: RouteNames.identifierConfigs),
+  // 8 — Users
+  _NavItem(icon: Icons.people_outline, selectedIcon: Icons.people, label: 'Users', route: RouteNames.users),
+  // 9 — Fees (Phase 8)
+  _NavItem(icon: Icons.payments_outlined, selectedIcon: Icons.payments, label: 'Fees', route: RouteNames.fees),
+  // 10 — Attendance Monitor (Phase 9)
+  _NavItem(icon: Icons.today_outlined, selectedIcon: Icons.today, label: 'Attendance', route: RouteNames.attendanceMonitor),
+  // 11 — Exams & Results (Phase 10)
+  _NavItem(icon: Icons.analytics_outlined, selectedIcon: Icons.analytics, label: 'Results', route: RouteNames.examsResults),
+  // 12 — Reports & Analytics (Phase 11)
+  _NavItem(icon: Icons.bar_chart_outlined, selectedIcon: Icons.bar_chart, label: 'Reports', route: RouteNames.reports),
+  // 13 — Communication (Phase 12)
+  _NavItem(icon: Icons.campaign_outlined, selectedIcon: Icons.campaign, label: 'Communication', route: RouteNames.communication),
+  // 14 — Documents (Phase 13)
+  _NavItem(icon: Icons.folder_outlined, selectedIcon: Icons.folder, label: 'Documents', route: RouteNames.documents),
+  // 15 — Settings
+  _NavItem(icon: Icons.settings_outlined, selectedIcon: Icons.settings, label: 'Settings', route: RouteNames.settings),
 ];
 
 /// Returns the navigation items visible to [user] based on role and permissions.
-/// Phase 5 requirement: each admin role only accesses permitted modules.
 List<_NavItem> _itemsForUser(AdminUser user) {
   final role = user.role.toUpperCase();
   final perms = user.permissions;
@@ -100,53 +65,84 @@ List<_NavItem> _itemsForUser(AdminUser user) {
   // SUPERADMIN sees everything
   if (role == 'SUPERADMIN') return _allItems;
 
+  // TRUSTEE: read-only — Reports, Fees view, Attendance view, Results view
+  if (role == 'TRUSTEE') {
+    return [
+      _allItems[12], // Reports
+      _allItems[9],  // Fees (read-only)
+      _allItems[10], // Attendance
+      _allItems[11], // Results
+    ];
+  }
+
   final visible = <_NavItem>[];
 
-  // Approval-related (PRINCIPAL / STAFF with review permission)
+  // Approvals & Audit — PRINCIPAL or staff with approval:review
   if (role == 'PRINCIPAL' || user.canReview) {
-    visible.addAll([
-      _allItems[0], // Approvals
-      _allItems[1], // Audit Log
-    ]);
+    visible.add(_allItems[0]);
+    visible.add(_allItems[1]);
   }
 
-  // Academic structure (PRINCIPAL and staff with settings:manage)
+  // Academic structure — PRINCIPAL or settings:manage
   if (role == 'PRINCIPAL' || perms.contains('settings:manage')) {
-    visible.addAll([
-      _allItems[2], // Acad. Years
-      _allItems[3], // Classes/Sections
-    ]);
+    visible.add(_allItems[2]);
+    visible.add(_allItems[3]);
   }
 
-  // Enrollment (PRINCIPAL and staff with user:manage)
+  // Enrollment — PRINCIPAL or user:manage
   if (role == 'PRINCIPAL' || perms.contains('user:manage')) {
-    visible.add(_allItems[4]); // Enrollment
+    visible.add(_allItems[4]);
   }
 
-  // Role Profiles & ID config (user:manage permission)
+  // Promotion (Phase 7) — PRINCIPAL or student:promote
+  if (role == 'PRINCIPAL' || perms.contains('student:promote')) {
+    visible.add(_allItems[5]);
+  }
+
+  // Role Profiles & ID Config — user:manage
   if (role == 'PRINCIPAL' || perms.contains('user:manage')) {
-    visible.add(_allItems[5]); // Role Profiles
-    visible.add(_allItems[6]); // ID Config
+    visible.add(_allItems[6]);
+    visible.add(_allItems[7]);
   }
 
-  // Users management (user:manage permission)
+  // Users — user:manage
   if (role == 'PRINCIPAL' || perms.contains('user:manage')) {
-    visible.add(_allItems[7]); // Users
+    visible.add(_allItems[8]);
   }
 
-  // Fees (fee:read or fee:create permission)
+  // Fees — fee:read or fee:create (accounts staff)
   if (perms.contains('fee:read') || perms.contains('fee:create')) {
-    visible.add(_allItems[8]); // Fees
+    visible.add(_allItems[9]);
   }
 
-  // Reports (PRINCIPAL can see reports)
+  // Attendance Monitor (Phase 9) — PRINCIPAL or attendance:read
+  if (role == 'PRINCIPAL' || perms.contains('attendance:read')) {
+    visible.add(_allItems[10]);
+  }
+
+  // Exams & Results (Phase 10) — PRINCIPAL or result:publish/result:create
+  if (role == 'PRINCIPAL' || perms.contains('result:publish') || perms.contains('result:create')) {
+    visible.add(_allItems[11]);
+  }
+
+  // Reports (Phase 11) — PRINCIPAL
   if (role == 'PRINCIPAL') {
-    visible.add(_allItems[9]); // Reports
+    visible.add(_allItems[12]);
   }
 
-  // Settings (PRINCIPAL manages school settings)
+  // Communication (Phase 12) — PRINCIPAL or announcement:create
+  if (role == 'PRINCIPAL' || perms.contains('announcement:create')) {
+    visible.add(_allItems[13]);
+  }
+
+  // Documents (Phase 13) — PRINCIPAL or document:manage
+  if (role == 'PRINCIPAL' || perms.contains('document:manage') || perms.contains('document:generate')) {
+    visible.add(_allItems[14]);
+  }
+
+  // Settings — PRINCIPAL or settings:manage
   if (role == 'PRINCIPAL' || perms.contains('settings:manage')) {
-    visible.add(_allItems[10]); // Settings
+    visible.add(_allItems[15]);
   }
 
   // Remove duplicates while preserving insertion order
@@ -166,29 +162,26 @@ class Sidebar extends ConsumerWidget {
 
     final items = _itemsForUser(user);
 
-    // Determine which item is selected
+    // Longest-prefix match for selection
     int selectedIndex = 0;
+    int longestMatch = 0;
     for (int i = 0; i < items.length; i++) {
-      if (location.startsWith(items[i].route)) {
+      if (location.startsWith(items[i].route) && items[i].route.length > longestMatch) {
         selectedIndex = i;
-        break;
+        longestMatch = items[i].route.length;
       }
     }
 
     return NavigationRail(
       selectedIndex: selectedIndex.clamp(0, items.length - 1),
-      onDestinationSelected: (index) {
-        context.go(items[index].route);
-      },
+      onDestinationSelected: (index) => context.go(items[index].route),
       labelType: NavigationRailLabelType.all,
       destinations: items
-          .map(
-            (item) => NavigationRailDestination(
-              icon: Icon(item.icon),
-              selectedIcon: Icon(item.selectedIcon),
-              label: Text(item.label),
-            ),
-          )
+          .map((item) => NavigationRailDestination(
+                icon: Icon(item.icon),
+                selectedIcon: Icon(item.selectedIcon),
+                label: Text(item.label),
+              ))
           .toList(),
     );
   }

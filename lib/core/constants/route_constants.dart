@@ -5,6 +5,8 @@ class RouteNames {
   // Phase 1 — Approvals & Audit
   static const String approvals = '/approvals';
   static const String approvalDetail = '/approvals/:userId';
+
+  // Phase 14 — Audit & Traceability (full system-wide trail)
   static const String audit = '/audit';
 
   // Phase 3 — Academic Structure
@@ -14,13 +16,36 @@ class RouteNames {
   // Phase 4 — Enrollment & Parent Linking
   static const String enrollment = '/enrollment';
 
+  // Phase 7 — Promotion Workflow
+  static const String promotion = '/enrollment/promotion';
+
   // Phase 2 — Role Profiles & Identifiers
   static const String roleProfiles = '/role-profiles';
   static const String identifierConfigs = '/role-profiles/identifier-configs';
 
   // Phase 5 — Admin Modules
   static const String users = '/users';
+
+  // Phase 8 — Fees Management
   static const String fees = '/fees';
+
+  // Phase 9 — Attendance Monitoring
+  static const String attendanceMonitor = '/attendance';
+
+  // Phase 10 — Exams & Results
+  static const String examsResults = '/results';
+
+  // Phase 11 — Reporting & Analytics
   static const String reports = '/reports';
+
+  // Phase 12 — Notifications & Communication
+  static const String communication = '/communication';
+
+  // Phase 13 — Document Management
+  static const String documents = '/documents';
+
+  // Phase 15 — Bulk Operations
+  static const String bulkOperations = '/bulk-operations';
+
   static const String settings = '/settings';
 }

@@ -19,6 +19,9 @@ class RouteNames {
   // Phase 7 — Promotion Workflow
   static const String promotion = '/enrollment/promotion';
 
+  // Phase 4 — Teacher Assignment Management (assign teacher → subject → class → section)
+  static const String teacherAssignments = '/teacher-assignments';
+
   // Phase 2 — Role Profiles & Identifiers
   static const String roleProfiles = '/role-profiles';
   static const String identifierConfigs = '/role-profiles/identifier-configs';

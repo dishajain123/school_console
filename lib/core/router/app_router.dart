@@ -13,6 +13,7 @@ import '../../presentation/academics/screens/academic_years_screen.dart';
 import '../../presentation/academics/screens/academic_structure_screen.dart';
 import '../../presentation/enrollment/screens/enrollment_screen.dart';
 import '../../presentation/enrollment/screens/promotion_workflow_screen.dart';
+import '../../presentation/teacher_assignments/screens/teacher_assignment_screen.dart';
 import '../../presentation/role_profiles/screens/identifier_config_screen.dart';
 import '../../presentation/role_profiles/screens/role_profiles_screen.dart';
 import '../../presentation/users/screens/users_management_screen.dart';
@@ -84,6 +85,12 @@ GoRouter buildRouter() {
       GoRoute(
         path: RouteNames.promotion,
         builder: (context, state) => const PromotionWorkflowScreen(),
+      ),
+
+      // Phase 4 — Teacher Assignment Management
+      GoRoute(
+        path: RouteNames.teacherAssignments,
+        builder: (context, state) => const TeacherAssignmentScreen(),
       ),
 
       // Phase 2 — Role Profiles & Identifiers

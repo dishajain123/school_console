@@ -1,7 +1,8 @@
 // lib/presentation/academic_history/screens/student_academic_history_screen.dart  [Mobile App]
-// Phase 7 — Student Academic History.
+// Phase 7 / 14 — Student Academic History.
 // Displays a student's full year-by-year academic record:
-//   class, section, roll number, status, joined date, left date.
+//   class, section, roll number, status, joined date, left date, transfers.
+//
 // Access rules enforced by backend:
 //   STUDENT: own history only.
 //   PARENT:  their linked child.
@@ -14,17 +15,16 @@
 //                       status, joined_on, left_on, exit_reason,
 //                       academic_year_name, admission_type } ] }
 //
-// This screen is navigated to from the student profile screen.
-// Call: context.push('/academic-history/$studentId');
+// Navigation: context.push('/academic-history/$studentId')
+// The studentId param is passed via go_router path parameter.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/constants/api_constants.dart';
 import '../../../core/network/dio_client.dart';
 import '../../../domains/providers/auth_provider.dart';
 
-// ── Model ─────────────────────────────────────────────────────────────────────
+// ── Models ────────────────────────────────────────────────────────────────────
 
 class _HistoryEntry {
   const _HistoryEntry({
@@ -57,90 +57,21 @@ class _HistoryEntry {
         standardName: j['standard_name'] as String?,
         sectionName: j['section_name'] as String?,
         rollNumber: j['roll_number'] as String?,
-        status: j['status']?.toString() ?? '',
+        status: j['status']?.toString() ?? 'UNKNOWN',
         admissionType: j['admission_type'] as String?,
         joinedOn: j['joined_on'] as String?,
         leftOn: j['left_on'] as String?,
         exitReason: j['exit_reason'] as String?,
       );
-
-  Color get statusColor {
-    switch (status.toUpperCase()) {
-      case 'ACTIVE':
-        return Colors.green;
-      case 'PROMOTED':
-        return Colors.blue;
-      case 'GRADUATED':
-      case 'COMPLETED':
-        return Colors.teal;
-      case 'REPEATED':
-        return Colors.orange;
-      case 'LEFT':
-      case 'TRANSFERRED':
-        return Colors.red;
-      case 'HOLD':
-        return Colors.deepOrange;
-      default:
-        return Colors.grey;
-    }
-  }
-
-  IconData get statusIcon {
-    switch (status.toUpperCase()) {
-      case 'ACTIVE':
-        return Icons.check_circle_outline;
-      case 'PROMOTED':
-        return Icons.trending_up;
-      case 'GRADUATED':
-      case 'COMPLETED':
-        return Icons.school_outlined;
-      case 'REPEATED':
-        return Icons.replay_outlined;
-      case 'LEFT':
-        return Icons.exit_to_app_outlined;
-      case 'TRANSFERRED':
-        return Icons.swap_horiz_outlined;
-      case 'HOLD':
-        return Icons.pause_circle_outline;
-      default:
-        return Icons.circle_outlined;
-    }
-  }
-
-  String get admissionTypeLabel {
-    switch ((admissionType ?? '').toUpperCase()) {
-      case 'NEW_ADMISSION':
-        return 'New Admission';
-      case 'MID_YEAR':
-        return 'Mid-Year Join';
-      case 'TRANSFER_IN':
-        return 'Transfer In';
-      case 'READMISSION':
-        return 'Readmission';
-      default:
-        return admissionType ?? '-';
-    }
-  }
-}
-
-// ── Repository ────────────────────────────────────────────────────────────────
-
-class _HistoryRepository {
-  _HistoryRepository(this._dio);
-  final DioClient _dio;
-
-  Future<Map<String, dynamic>> fetchHistory(String studentId) async {
-    final resp = await _dio.dio.get<Map<String, dynamic>>(
-      ApiConstants.enrollmentHistory(studentId),
-    );
-    return resp.data ?? {};
-  }
 }
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 
 class StudentAcademicHistoryScreen extends ConsumerStatefulWidget {
-  const StudentAcademicHistoryScreen({required this.studentId, super.key});
+  const StudentAcademicHistoryScreen({
+    super.key,
+    required this.studentId,
+  });
 
   final String studentId;
 
@@ -151,18 +82,15 @@ class StudentAcademicHistoryScreen extends ConsumerStatefulWidget {
 
 class _StudentAcademicHistoryScreenState
     extends ConsumerState<StudentAcademicHistoryScreen> {
-  late final _HistoryRepository _repo;
-
-  bool _loading = true;
-  String? _error;
+  List<_HistoryEntry> _history = [];
   String? _studentName;
   String? _admissionNumber;
-  List<_HistoryEntry> _history = [];
+  bool _loading = true;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
-    _repo = _HistoryRepository(ref.read(dioClientProvider));
     _load();
   }
 
@@ -172,36 +100,73 @@ class _StudentAcademicHistoryScreenState
       _error = null;
     });
     try {
-      final data = await _repo.fetchHistory(widget.studentId);
-      final raw = ((data['history'] as List?) ?? []);
-      setState(() {
-        _studentName = data['student_name'] as String?;
-        _admissionNumber = data['admission_number'] as String?;
-        _history = raw
-            .map((e) =>
-                _HistoryEntry.fromJson(Map<String, dynamic>.from(e as Map)))
-            .toList();
-      });
+      final dio = ref.read(dioClientProvider);
+      final resp = await dio.dio.get<Map<String, dynamic>>(
+        '/enrollments/history/${widget.studentId}',
+      );
+      final data = resp.data!;
+      final historyList = (data['history'] as List?) ?? [];
+      if (mounted) {
+        setState(() {
+          _studentName = data['student_name'] as String?;
+          _admissionNumber = data['admission_number'] as String?;
+          _history = historyList
+              .map((e) => _HistoryEntry.fromJson(
+                  Map<String, dynamic>.from(e as Map)))
+              .toList();
+        });
+      }
     } catch (e) {
-      setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = e.toString());
     } finally {
-      setState(() => _loading = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 
-  String _fmt(String? iso) {
-    if (iso == null || iso.isEmpty) return '-';
-    try {
-      final d = DateTime.parse(iso);
-      return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
-    } catch (_) {
-      return iso;
+  Color _statusColor(String status) {
+    switch (status.toUpperCase()) {
+      case 'ACTIVE':
+        return Colors.green;
+      case 'HOLD':
+        return Colors.orange;
+      case 'COMPLETED':
+        return Colors.blue;
+      case 'PROMOTED':
+        return Colors.indigo;
+      case 'REPEATED':
+        return Colors.amber.shade700;
+      case 'GRADUATED':
+        return Colors.teal;
+      case 'LEFT':
+        return Colors.red;
+      case 'TRANSFERRED':
+        return Colors.deepOrange;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  String _formatAdmissionType(String? t) {
+    switch ((t ?? '').toUpperCase()) {
+      case 'NEW_ADMISSION':
+        return 'New Admission';
+      case 'MID_YEAR':
+        return 'Mid-Year Join';
+      case 'TRANSFER_IN':
+        return 'Transfer In';
+      case 'READMISSION':
+        return 'Re-admission';
+      default:
+        return t ?? '—';
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
+      backgroundColor: Colors.grey.shade50,
       appBar: AppBar(
         title: Text(
           _studentName != null
@@ -218,7 +183,24 @@ class _StudentAcademicHistoryScreenState
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
-              ? _ErrorView(error: _error!, onRetry: _load)
+              ? Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.error_outline,
+                          color: Colors.red.shade400, size: 48),
+                      const SizedBox(height: 12),
+                      Text(_error!,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: Colors.red)),
+                      const SizedBox(height: 12),
+                      OutlinedButton(
+                        onPressed: _load,
+                        child: const Text('Retry'),
+                      ),
+                    ],
+                  ),
+                )
               : _history.isEmpty
                   ? const Center(
                       child: Column(
@@ -229,17 +211,19 @@ class _StudentAcademicHistoryScreenState
                           SizedBox(height: 16),
                           Text(
                             'No academic history found.',
-                            style: TextStyle(color: Colors.grey, fontSize: 16),
+                            style:
+                                TextStyle(color: Colors.grey, fontSize: 16),
                           ),
                         ],
                       ),
                     )
                   : CustomScrollView(
                       slivers: [
-                        // Header card
+                        // ── Header card ────────────────────────────────────
                         SliverToBoxAdapter(
                           child: Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                            padding:
+                                const EdgeInsets.fromLTRB(16, 16, 16, 0),
                             child: Card(
                               elevation: 2,
                               shape: RoundedRectangleBorder(
@@ -250,9 +234,8 @@ class _StudentAcademicHistoryScreenState
                                   children: [
                                     CircleAvatar(
                                       radius: 28,
-                                      backgroundColor: Theme.of(context)
-                                          .colorScheme
-                                          .primaryContainer,
+                                      backgroundColor: theme
+                                          .colorScheme.primaryContainer,
                                       child: Text(
                                         (_studentName ?? '?')
                                             .substring(0, 1)
@@ -260,38 +243,39 @@ class _StudentAcademicHistoryScreenState
                                         style: TextStyle(
                                           fontSize: 22,
                                           fontWeight: FontWeight.bold,
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .onPrimaryContainer,
+                                          color: theme
+                                              .colorScheme.onPrimaryContainer,
                                         ),
                                       ),
                                     ),
                                     const SizedBox(width: 16),
-                                    Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          _studentName ?? '-',
-                                          style: const TextStyle(
-                                            fontSize: 17,
-                                            fontWeight: FontWeight.w700,
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            _studentName ?? '—',
+                                            style: theme.textTheme.titleMedium
+                                                ?.copyWith(
+                                                    fontWeight:
+                                                        FontWeight.bold),
                                           ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          'Admission No.: ${_admissionNumber ?? '-'}',
-                                          style: TextStyle(
-                                              color: Colors.grey.shade600,
-                                              fontSize: 13),
-                                        ),
-                                        Text(
-                                          '${_history.length} academic year(s) on record',
-                                          style: TextStyle(
-                                              color: Colors.grey.shade600,
-                                              fontSize: 13),
-                                        ),
-                                      ],
+                                          if (_admissionNumber != null)
+                                            Text(
+                                              'Adm. No: $_admissionNumber',
+                                              style: theme.textTheme.bodySmall
+                                                  ?.copyWith(
+                                                      color: Colors.grey),
+                                            ),
+                                          Text(
+                                            '${_history.length} academic year(s) on record',
+                                            style: theme.textTheme.bodySmall
+                                                ?.copyWith(
+                                                    color: Colors.grey),
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -300,36 +284,27 @@ class _StudentAcademicHistoryScreenState
                           ),
                         ),
 
-                        // Timeline header
-                        const SliverToBoxAdapter(
-                          child: Padding(
-                            padding: EdgeInsets.fromLTRB(16, 20, 16, 8),
-                            child: Text(
-                              'Year-by-Year Record',
-                              style: TextStyle(
-                                  fontWeight: FontWeight.w700, fontSize: 15),
+                        // ── Timeline ───────────────────────────────────────
+                        SliverPadding(
+                          padding: const EdgeInsets.all(16),
+                          sliver: SliverList(
+                            delegate: SliverChildBuilderDelegate(
+                              (context, index) {
+                                final entry = _history[index];
+                                final isLast =
+                                    index == _history.length - 1;
+                                return _TimelineItem(
+                                  entry: entry,
+                                  isLast: isLast,
+                                  statusColor:
+                                      _statusColor(entry.status),
+                                  formatAdmissionType:
+                                      _formatAdmissionType,
+                                );
+                              },
+                              childCount: _history.length,
                             ),
                           ),
-                        ),
-
-                        // Timeline entries
-                        SliverList(
-                          delegate: SliverChildBuilderDelegate(
-                            (context, index) {
-                              final entry = _history[index];
-                              final isLast = index == _history.length - 1;
-                              return _TimelineCard(
-                                entry: entry,
-                                isLast: isLast,
-                                fmt: _fmt,
-                              );
-                            },
-                            childCount: _history.length,
-                          ),
-                        ),
-
-                        const SliverToBoxAdapter(
-                          child: SizedBox(height: 32),
                         ),
                       ],
                     ),
@@ -337,18 +312,20 @@ class _StudentAcademicHistoryScreenState
   }
 }
 
-// ── Timeline Card ─────────────────────────────────────────────────────────────
+// ── Timeline Item widget ───────────────────────────────────────────────────────
 
-class _TimelineCard extends StatelessWidget {
-  const _TimelineCard({
+class _TimelineItem extends StatelessWidget {
+  const _TimelineItem({
     required this.entry,
     required this.isLast,
-    required this.fmt,
+    required this.statusColor,
+    required this.formatAdmissionType,
   });
 
   final _HistoryEntry entry;
   final bool isLast;
-  final String Function(String?) fmt;
+  final Color statusColor;
+  final String Function(String?) formatAdmissionType;
 
   @override
   Widget build(BuildContext context) {
@@ -356,119 +333,145 @@ class _TimelineCard extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Timeline line + dot
+          // ── Timeline line + dot ────────────────────────────────────────
           SizedBox(
-            width: 48,
+            width: 40,
             child: Column(
               children: [
-                const SizedBox(height: 16),
-                CircleAvatar(
-                  radius: 14,
-                  backgroundColor:
-                      entry.statusColor.withOpacity(0.15),
-                  child: Icon(entry.statusIcon,
-                      size: 16, color: entry.statusColor),
+                Container(
+                  width: 16,
+                  height: 16,
+                  decoration: BoxDecoration(
+                    color: statusColor,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 2),
+                    boxShadow: [
+                      BoxShadow(
+                        color: statusColor.withValues(alpha: 0.4),
+                        blurRadius: 4,
+                        spreadRadius: 1,
+                      ),
+                    ],
+                  ),
                 ),
                 if (!isLast)
                   Expanded(
                     child: Container(
                       width: 2,
                       color: Colors.grey.shade300,
-                      margin:
-                          const EdgeInsets.only(top: 4, bottom: 0),
                     ),
                   ),
               ],
             ),
           ),
+          const SizedBox(width: 8),
 
-          // Card content
+          // ── Content card ───────────────────────────────────────────────
           Expanded(
             child: Padding(
-              padding: EdgeInsets.only(
-                  right: 16, bottom: isLast ? 16 : 8, top: 8),
+              padding: EdgeInsets.only(bottom: isLast ? 0 : 16),
               child: Card(
                 elevation: 1,
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10)),
                 child: Padding(
-                  padding: const EdgeInsets.all(14),
+                  padding: const EdgeInsets.all(12),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Year & Status
+                      // Year + Class
                       Row(
                         children: [
                           Expanded(
                             child: Text(
-                              entry.academicYearName ?? '-',
+                              entry.academicYearName ?? '—',
                               style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 14,
-                              ),
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14),
                             ),
                           ),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 3),
+                                horizontal: 8, vertical: 2),
                             decoration: BoxDecoration(
-                              color: entry.statusColor
-                                  .withOpacity(0.12),
-                              borderRadius: BorderRadius.circular(4),
-                              border: Border.all(
-                                  color: entry.statusColor
-                                      .withOpacity(0.4)),
+                              color: statusColor.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(12),
                             ),
                             child: Text(
                               entry.status,
                               style: TextStyle(
+                                color: statusColor,
+                                fontWeight: FontWeight.bold,
                                 fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: entry.statusColor,
                               ),
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${entry.standardName ?? '—'} ${entry.sectionName != null ? '· Section ${entry.sectionName}' : ''}',
+                        style: const TextStyle(
+                            fontSize: 13, color: Colors.black87),
+                      ),
 
-                      // Class & Section
-                      _InfoRow(
-                        icon: Icons.class_outlined,
-                        label: 'Class',
-                        value:
-                            '${entry.standardName ?? '-'} — Section ${entry.sectionName ?? '-'}',
+                      // Details row
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 12,
+                        runSpacing: 4,
+                        children: [
+                          if (entry.rollNumber != null)
+                            _DetailChip(
+                              icon: Icons.tag,
+                              label: 'Roll ${entry.rollNumber}',
+                            ),
+                          if (entry.admissionType != null)
+                            _DetailChip(
+                              icon: Icons.input,
+                              label: formatAdmissionType(entry.admissionType),
+                            ),
+                          if (entry.joinedOn != null)
+                            _DetailChip(
+                              icon: Icons.login,
+                              label: entry.joinedOn!,
+                            ),
+                          if (entry.leftOn != null)
+                            _DetailChip(
+                              icon: Icons.logout,
+                              label: entry.leftOn!,
+                              color: Colors.red,
+                            ),
+                        ],
                       ),
-                      if (entry.rollNumber != null)
-                        _InfoRow(
-                          icon: Icons.numbers_outlined,
-                          label: 'Roll No.',
-                          value: entry.rollNumber!,
+
+                      // Exit reason
+                      if (entry.exitReason != null) ...[
+                        const SizedBox(height: 6),
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.red.shade50,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Row(
+                            crossAxisAlignment:
+                                CrossAxisAlignment.start,
+                            children: [
+                              const Icon(Icons.info_outline,
+                                  size: 14, color: Colors.red),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  entry.exitReason!,
+                                  style: const TextStyle(
+                                      fontSize: 12, color: Colors.red),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      _InfoRow(
-                        icon: Icons.login_outlined,
-                        label: 'Joined',
-                        value: fmt(entry.joinedOn),
-                      ),
-                      if (entry.admissionType != null)
-                        _InfoRow(
-                          icon: Icons.info_outline,
-                          label: 'Admission Type',
-                          value: entry.admissionTypeLabel,
-                        ),
-                      if (entry.leftOn != null)
-                        _InfoRow(
-                          icon: Icons.logout_outlined,
-                          label: 'Left On',
-                          value: fmt(entry.leftOn),
-                        ),
-                      if (entry.exitReason != null &&
-                          entry.exitReason!.isNotEmpty)
-                        _InfoRow(
-                          icon: Icons.notes_outlined,
-                          label: 'Reason',
-                          value: entry.exitReason!,
-                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -481,70 +484,27 @@ class _TimelineCard extends StatelessWidget {
   }
 }
 
-class _InfoRow extends StatelessWidget {
-  const _InfoRow({
+class _DetailChip extends StatelessWidget {
+  const _DetailChip({
     required this.icon,
     required this.label,
-    required this.value,
+    this.color,
   });
 
   final IconData icon;
   final String label;
-  final String value;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 14, color: Colors.grey.shade500),
-          const SizedBox(width: 6),
-          Text(
-            '$label: ',
-            style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey.shade600,
-                fontWeight: FontWeight.w600),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(fontSize: 12),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ErrorView extends StatelessWidget {
-  const _ErrorView({required this.error, required this.onRetry});
-
-  final String error;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.error_outline, size: 48, color: Colors.red),
-          const SizedBox(height: 12),
-          Text(error,
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.red)),
-          const SizedBox(height: 16),
-          OutlinedButton.icon(
-            icon: const Icon(Icons.refresh),
-            label: const Text('Retry'),
-            onPressed: onRetry,
-          ),
-        ],
-      ),
+    final c = color ?? Colors.black54;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 12, color: c),
+        const SizedBox(width: 3),
+        Text(label, style: TextStyle(fontSize: 11, color: c)),
+      ],
     );
   }
 }

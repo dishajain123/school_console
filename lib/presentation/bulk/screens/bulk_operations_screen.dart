@@ -942,6 +942,7 @@ class _FeeRowCard extends StatelessWidget {
                   width: 200,
                   child: DropdownButtonFormField<String>(
                     value: row.standardId,
+                    isExpanded: true,
                     decoration: const InputDecoration(
                       labelText: 'Class *',
                       isDense: true,
@@ -952,7 +953,11 @@ class _FeeRowCard extends StatelessWidget {
                     items: standards
                         .map((s) => DropdownMenuItem<String>(
                               value: s['id']?.toString(),
-                              child: Text(s['name']?.toString() ?? ''),
+                              child: Text(
+                                s['name']?.toString() ?? '',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ))
                         .toList(),
                     onChanged: (v) {
@@ -966,6 +971,7 @@ class _FeeRowCard extends StatelessWidget {
                   width: 180,
                   child: DropdownButtonFormField<String>(
                     value: row.category,
+                    isExpanded: true,
                     decoration: const InputDecoration(
                       labelText: 'Category *',
                       isDense: true,
@@ -974,8 +980,14 @@ class _FeeRowCard extends StatelessWidget {
                           horizontal: 10, vertical: 8),
                     ),
                     items: _feeCategories
-                        .map((c) =>
-                            DropdownMenuItem<String>(value: c, child: Text(c)))
+                        .map((c) => DropdownMenuItem<String>(
+                              value: c,
+                              child: Text(
+                                c,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ))
                         .toList(),
                     onChanged: (v) {
                       row.category = v;

@@ -14,9 +14,7 @@ import '../../presentation/academics/screens/academic_structure_screen.dart';
 import '../../presentation/enrollment/screens/enrollment_screen.dart';
 import '../../presentation/enrollment/screens/promotion_workflow_screen.dart';
 import '../../presentation/teacher_assignments/screens/teacher_assignment_screen.dart';
-import '../../presentation/role_profiles/screens/identifier_config_screen.dart';
 import '../../presentation/role_profiles/screens/role_profiles_screen.dart';
-import '../../presentation/users/screens/users_management_screen.dart';
 import '../../presentation/fees/screens/fee_management_screen.dart';
 import '../../presentation/attendance/screens/attendance_monitor_screen.dart';
 import '../../domains/providers/results/screens/exams_results_screen.dart';
@@ -26,13 +24,23 @@ import '../../presentation/documents/screens/document_management_screen.dart';
 import '../../presentation/bulk/screens/bulk_operations_screen.dart';
 import '../../presentation/settings/screens/settings_screen.dart';
 
-GoRouter buildRouter() {
-  final container = ProviderContainer();
+final goRouterProvider = Provider<GoRouter>((ref) {
+  // Rebuild router when auth state changes so redirects stay in sync.
+  ref.watch(authControllerProvider);
+  final router = buildRouter(ref);
+  ref.onDispose(router.dispose);
+  return router;
+});
+
+GoRouter buildRouter(Ref ref) {
 
   return GoRouter(
     initialLocation: RouteNames.login,
     redirect: (context, state) {
-      final authState = container.read(authControllerProvider);
+      final authState = ref.read(authControllerProvider);
+      if (authState.isLoading) {
+        return null;
+      }
       final isLoggedIn = authState.valueOrNull != null;
       final isLoginPage = state.matchedLocation == RouteNames.login;
 
@@ -98,17 +106,6 @@ GoRouter buildRouter() {
         path: RouteNames.roleProfiles,
         builder: (context, state) => const RoleProfilesScreen(),
       ),
-      GoRoute(
-        path: RouteNames.identifierConfigs,
-        builder: (context, state) => const IdentifierConfigScreen(),
-      ),
-
-      // Phase 5 — Users
-      GoRoute(
-        path: RouteNames.users,
-        builder: (context, state) => const UsersManagementScreen(),
-      ),
-
       // Phase 8 — Fees
       GoRoute(
         path: RouteNames.fees,

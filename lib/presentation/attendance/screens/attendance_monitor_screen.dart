@@ -170,7 +170,7 @@ class _AttendanceRepository {
     int? year,
   }) async {
     final resp = await _dio.dio.get<Map<String, dynamic>>(
-      '/attendance/analytics',
+      '/attendance/analytics/dashboard',
       queryParameters: {
         'standard_id': standardId,
         'section': section,
@@ -190,7 +190,7 @@ class _AttendanceRepository {
     double threshold = 75.0,
   }) async {
     final resp = await _dio.dio.get<Map<String, dynamic>>(
-      '/attendance/below-threshold',
+      '/attendance/analytics/below-threshold',
       queryParameters: {
         'standard_id': standardId,
         'section': section,

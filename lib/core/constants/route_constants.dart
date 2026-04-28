@@ -24,10 +24,6 @@ class RouteNames {
 
   // Phase 2 — Role Profiles & Identifiers
   static const String roleProfiles = '/role-profiles';
-  static const String identifierConfigs = '/role-profiles/identifier-configs';
-
-  // Phase 5 — Admin Modules
-  static const String users = '/users';
 
   // Phase 8 — Fees Management
   static const String fees = '/fees';

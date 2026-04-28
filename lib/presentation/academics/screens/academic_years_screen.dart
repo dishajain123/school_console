@@ -157,7 +157,7 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen> {
               children: [
                 const Expanded(
                   child: Text(
-                    '2) Classes (Standards)',
+                    '2) Class Setup (Standards)',
                     style: TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ),

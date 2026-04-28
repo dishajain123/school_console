@@ -26,12 +26,17 @@ class AdminDataTable extends StatelessWidget {
     return Column(
       children: [
         Expanded(
-          child: Card(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                columns: columns.map((c) => DataColumn(label: Text(c))).toList(),
-                rows: rows,
+          child: LayoutBuilder(
+            builder: (context, constraints) => Card(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minWidth: constraints.maxWidth),
+                  child: DataTable(
+                    columns: columns.map((c) => DataColumn(label: Text(c))).toList(),
+                    rows: rows,
+                  ),
+                ),
               ),
             ),
           ),

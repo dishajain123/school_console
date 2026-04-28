@@ -10,6 +10,8 @@ class RoleProfileRepository {
   Future<RoleProfileListData> listProfiles({
     required String role,
     String? search,
+    String? standardId,
+    String? section,
     int page = 1,
     int pageSize = 20,
   }) async {
@@ -20,9 +22,34 @@ class RoleProfileRepository {
         'page': page,
         'page_size': pageSize,
         if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
+        if (standardId != null && standardId.isNotEmpty) 'standard_id': standardId,
+        if (section != null && section.trim().isNotEmpty) 'section': section.trim(),
       },
     );
     return RoleProfileListData.fromJson(resp.data ?? const {});
+  }
+
+  Future<List<Map<String, dynamic>>> listStandards() async {
+    final resp = await _client.dio.get<Map<String, dynamic>>(
+      '/masters/standards',
+    );
+    return ((resp.data?['items'] as List?) ?? [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+  }
+
+  Future<List<String>> listSections({required String standardId}) async {
+    final resp = await _client.dio.get<Map<String, dynamic>>(
+      '/masters/sections',
+      queryParameters: {'standard_id': standardId},
+    );
+    final items = (resp.data?['items'] as List?) ?? [];
+    return items
+        .map((e) => (e as Map)['name']?.toString() ?? '')
+        .where((s) => s.trim().isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
   }
 
   Future<List<IdentifierConfigItem>> getIdentifierConfigs() async {

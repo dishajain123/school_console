@@ -97,6 +97,16 @@ class _FeeRepository {
   _FeeRepository(this._dio);
   final DioClient _dio;
 
+  bool _isUuid(String? value) {
+    if (value == null) return false;
+    final v = value.trim();
+    if (v.isEmpty) return false;
+    final re = RegExp(
+      r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$',
+    );
+    return re.hasMatch(v);
+  }
+
   // Structures
   Future<List<Map<String, dynamic>>> listYears(String schoolId) async {
     final resp = await _dio.dio.get<Map<String, dynamic>>(
@@ -148,7 +158,7 @@ class _FeeRepository {
     String? customFeeHead,
   }) async {
     await _dio.dio.post<dynamic>(
-      '/fees/structures',
+      '/fees/structures/batch',
       data: {
         'structures': [
           {
@@ -222,11 +232,13 @@ class _FeeRepository {
     String? academicYearId,
     String? standardId,
   }) async {
+    final safeAcademicYearId = _isUuid(academicYearId) ? academicYearId : null;
+    final safeStandardId = _isUuid(standardId) ? standardId : null;
     final resp = await _dio.dio.get<Map<String, dynamic>>(
       '/fees/analytics',
       queryParameters: {
-        if (academicYearId != null) 'academic_year_id': academicYearId,
-        if (standardId != null) 'standard_id': standardId,
+        if (safeAcademicYearId != null) 'academic_year_id': safeAcademicYearId,
+        if (safeStandardId != null) 'standard_id': safeStandardId,
       },
     );
     return resp.data ?? {};
@@ -236,11 +248,13 @@ class _FeeRepository {
     String? academicYearId,
     String? standardId,
   }) async {
+    final safeAcademicYearId = _isUuid(academicYearId) ? academicYearId : null;
+    final safeStandardId = _isUuid(standardId) ? standardId : null;
     final resp = await _dio.dio.get<Map<String, dynamic>>(
       '/fees/defaulters',
       queryParameters: {
-        if (academicYearId != null) 'academic_year_id': academicYearId,
-        if (standardId != null) 'standard_id': standardId,
+        if (safeAcademicYearId != null) 'academic_year_id': safeAcademicYearId,
+        if (safeStandardId != null) 'standard_id': safeStandardId,
       },
     );
     return ((resp.data?['defaulters'] as List?) ?? [])

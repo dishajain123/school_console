@@ -19,6 +19,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:dio/dio.dart';
 
 import '../../../core/network/dio_client.dart';
 import '../../../domains/providers/auth_provider.dart';
@@ -56,24 +57,30 @@ class _Assignment {
   final String createdAt;
 
   factory _Assignment.fromJson(Map<String, dynamic> j) => _Assignment(
-        id: j['id']?.toString() ?? '',
-        teacherId: j['teacher']?['id']?.toString() ?? '',
-        teacherName: j['teacher']?['user']?['full_name'] as String? ??
-            j['teacher_name'] as String?,
-        employeeCode: j['teacher']?['employee_code']?.toString() ?? '',
-        standardId: j['standard']?['id']?.toString() ?? '',
-        standardName: j['standard']?['name']?.toString() ?? '',
-        section: j['section']?.toString() ?? '',
-        subjectId: j['subject']?['id']?.toString() ?? '',
-        subjectName: j['subject']?['name']?.toString() ?? '',
-        academicYearId: j['academic_year']?['id']?.toString() ?? '',
-        academicYearName: j['academic_year']?['name']?.toString() ?? '',
-        createdAt: j['created_at']?.toString() ?? '',
-      );
+    id: j['id']?.toString() ?? '',
+    teacherId: j['teacher']?['id']?.toString() ?? '',
+    teacherName:
+        j['teacher']?['full_name'] as String? ??
+        j['teacher']?['user']?['full_name'] as String? ??
+        j['teacher_name'] as String?,
+    employeeCode: j['teacher']?['employee_code']?.toString() ?? '',
+    standardId: j['standard']?['id']?.toString() ?? '',
+    standardName: j['standard']?['name']?.toString() ?? '',
+    section: j['section']?.toString() ?? '',
+    subjectId: j['subject']?['id']?.toString() ?? '',
+    subjectName: j['subject']?['name']?.toString() ?? '',
+    academicYearId: j['academic_year']?['id']?.toString() ?? '',
+    academicYearName: j['academic_year']?['name']?.toString() ?? '',
+    createdAt: j['created_at']?.toString() ?? '',
+  );
 }
 
 class _Teacher {
-  const _Teacher({required this.id, required this.name, required this.employeeCode});
+  const _Teacher({
+    required this.id,
+    required this.name,
+    required this.employeeCode,
+  });
   final String id;
   final String name;
   final String employeeCode;
@@ -91,34 +98,64 @@ class _TeacherAssignmentRepository {
   _TeacherAssignmentRepository(this._dio);
   final DioClient _dio;
 
+  Future<T> _withNetworkGuard<T>(Future<T> Function() action) async {
+    try {
+      return await action();
+    } on DioException catch (e) {
+      final isNetwork = e.type == DioExceptionType.connectionError ||
+          e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.receiveTimeout ||
+          e.response == null;
+      if (!isNetwork) rethrow;
+
+      try {
+        await _dio.dio.get<Map<String, dynamic>>('/health');
+      } catch (_) {
+        throw Exception(
+          'Cannot reach backend server. Please ensure backend is running at ${_dio.dio.options.baseUrl}.',
+        );
+      }
+      throw Exception(
+        'Network interrupted while loading teacher assignments. Please retry.',
+      );
+    }
+  }
+
   Future<List<_Assignment>> listByTeacher(
-      String teacherId, String? yearId) async {
-    final resp = await _dio.dio.get<Map<String, dynamic>>(
-      '/teacher-assignments',
-      queryParameters: {
-        'teacher_id': teacherId,
-        if (yearId != null) 'academic_year_id': yearId,
-      },
+    String teacherId,
+    String? yearId,
+  ) async {
+    final resp = await _withNetworkGuard(
+      () => _dio.dio.get<Map<String, dynamic>>(
+        '/teacher-assignments',
+        queryParameters: {
+          'teacher_id': teacherId,
+          if (yearId != null) 'academic_year_id': yearId,
+        },
+      ),
     );
     return ((resp.data?['items'] as List?) ?? [])
-        .map((e) =>
-            _Assignment.fromJson(Map<String, dynamic>.from(e as Map)))
+        .map((e) => _Assignment.fromJson(Map<String, dynamic>.from(e as Map)))
         .toList();
   }
 
   Future<List<_Assignment>> listByClass(
-      String standardId, String section, String? yearId) async {
-    final resp = await _dio.dio.get<Map<String, dynamic>>(
-      '/teacher-assignments',
-      queryParameters: {
-        'standard_id': standardId,
-        'section': section,
-        if (yearId != null) 'academic_year_id': yearId,
-      },
+    String standardId,
+    String section,
+    String? yearId,
+  ) async {
+    final resp = await _withNetworkGuard(
+      () => _dio.dio.get<Map<String, dynamic>>(
+        '/teacher-assignments',
+        queryParameters: {
+          'standard_id': standardId,
+          'section': section,
+          if (yearId != null) 'academic_year_id': yearId,
+        },
+      ),
     );
     return ((resp.data?['items'] as List?) ?? [])
-        .map((e) =>
-            _Assignment.fromJson(Map<String, dynamic>.from(e as Map)))
+        .map((e) => _Assignment.fromJson(Map<String, dynamic>.from(e as Map)))
         .toList();
   }
 
@@ -163,20 +200,42 @@ class _TeacherAssignmentRepository {
     await _dio.dio.delete<dynamic>('/teacher-assignments/$assignmentId');
   }
 
-  Future<List<Map<String, dynamic>>> listYears(String schoolId) async {
-    final r = await _dio.dio.get<Map<String, dynamic>>(
-      '/academic-years',
-      queryParameters: {'school_id': schoolId},
-    );
+  Future<List<Map<String, dynamic>>> listYears() async {
+    final r = await _dio.dio.get<Map<String, dynamic>>('/academic-years');
     return ((r.data?['items'] as List?) ?? [])
         .map((e) => Map<String, dynamic>.from(e as Map))
         .toList();
   }
 
-  Future<List<_Teacher>> listTeachers(String schoolId) async {
-    final r = await _dio.dio.get<Map<String, dynamic>>(
-      '/role-profiles',
-      queryParameters: {'school_id': schoolId, 'role': 'TEACHER', 'page_size': 200},
+  Future<Map<String, dynamic>> createYear({
+    required String name,
+    required DateTime startDate,
+    required DateTime endDate,
+  }) async {
+    final r = await _dio.dio.post<Map<String, dynamic>>(
+      '/academic-years',
+      data: {
+        'name': name.trim(),
+        'start_date': _fmtDate(startDate),
+        'end_date': _fmtDate(endDate),
+      },
+    );
+    return Map<String, dynamic>.from(r.data ?? {});
+  }
+
+  static String _fmtDate(DateTime d) {
+    final y = d.year.toString().padLeft(4, '0');
+    final m = d.month.toString().padLeft(2, '0');
+    final day = d.day.toString().padLeft(2, '0');
+    return '$y-$m-$day';
+  }
+
+  Future<List<_Teacher>> listTeachers() async {
+    final r = await _withNetworkGuard(
+      () => _dio.dio.get<Map<String, dynamic>>(
+        '/role-profiles',
+        queryParameters: {'role': 'TEACHER', 'page_size': 100},
+      ),
     );
     final items = (r.data?['items'] as List?) ?? [];
     return items.map((e) {
@@ -186,17 +245,13 @@ class _TeacherAssignmentRepository {
         name: m['full_name']?.toString() ?? '',
         employeeCode: m['employee_id']?.toString() ?? '',
       );
-    }).toList();
+    }).where((t) => t.id.trim().isNotEmpty).toList();
   }
 
-  Future<List<_DropdownItem>> listStandards(
-      String schoolId, String yearId) async {
+  Future<List<_DropdownItem>> listStandards(String yearId) async {
     final r = await _dio.dio.get<Map<String, dynamic>>(
       '/masters/standards',
-      queryParameters: {
-        'school_id': schoolId,
-        'academic_year_id': yearId,
-      },
+      queryParameters: {'academic_year_id': yearId},
     );
     return ((r.data?['items'] as List?) ?? []).map((e) {
       final m = Map<String, dynamic>.from(e as Map);
@@ -208,14 +263,12 @@ class _TeacherAssignmentRepository {
   }
 
   Future<List<_DropdownItem>> listSections(
-      String schoolId, String standardId, String yearId) async {
+    String standardId,
+    String yearId,
+  ) async {
     final r = await _dio.dio.get<Map<String, dynamic>>(
       '/masters/sections',
-      queryParameters: {
-        'school_id': schoolId,
-        'standard_id': standardId,
-        'academic_year_id': yearId,
-      },
+      queryParameters: {'standard_id': standardId, 'academic_year_id': yearId},
     );
     return ((r.data?['items'] as List?) ?? []).map((e) {
       final m = Map<String, dynamic>.from(e as Map);
@@ -226,10 +279,13 @@ class _TeacherAssignmentRepository {
     }).toList();
   }
 
-  Future<List<_DropdownItem>> listSubjects(String schoolId) async {
+  Future<List<_DropdownItem>> listSubjects({String? standardId}) async {
     final r = await _dio.dio.get<Map<String, dynamic>>(
       '/masters/subjects',
-      queryParameters: {'school_id': schoolId, 'page_size': 200},
+      queryParameters: {
+        'page_size': 200,
+        if (standardId != null) 'standard_id': standardId,
+      },
     );
     return ((r.data?['items'] as List?) ?? []).map((e) {
       final m = Map<String, dynamic>.from(e as Map);
@@ -266,6 +322,7 @@ class _TeacherAssignmentScreenState
   String? _selectedTeacherId;
   String? _filterStandardId;
   String? _filterSection;
+  List<_DropdownItem> _filterSections = [];
 
   List<_Assignment> _assignments = [];
   bool _loading = false;
@@ -286,9 +343,6 @@ class _TeacherAssignmentScreenState
     super.dispose();
   }
 
-  String? get _schoolId =>
-      ref.read(authControllerProvider).valueOrNull?.schoolId;
-
   bool get _canManage {
     final user = ref.read(authControllerProvider).valueOrNull;
     if (user == null) return false;
@@ -299,11 +353,10 @@ class _TeacherAssignmentScreenState
   }
 
   Future<void> _loadMeta() async {
-    if (_schoolId == null) return;
     setState(() => _loading = true);
     try {
-      final years = await _repo.listYears(_schoolId!);
-      final teachers = await _repo.listTeachers(_schoolId!);
+      final years = await _repo.listYears();
+      final teachers = await _repo.listTeachers();
       final active = years.firstWhere(
         (y) => y['is_active'] == true,
         orElse: () => years.isNotEmpty ? years.first : {},
@@ -311,12 +364,10 @@ class _TeacherAssignmentScreenState
       setState(() {
         _years = years;
         _teachers = teachers;
-        _selectedYearId = active.isNotEmpty
-            ? active['id']?.toString()
-            : null;
+        _selectedYearId = active.isNotEmpty ? active['id']?.toString() : null;
       });
       if (_selectedYearId != null) {
-        final stds = await _repo.listStandards(_schoolId!, _selectedYearId!);
+        final stds = await _repo.listStandards(_selectedYearId!);
         setState(() => _standards = stds);
       }
     } catch (e) {
@@ -324,6 +375,123 @@ class _TeacherAssignmentScreenState
     } finally {
       setState(() => _loading = false);
     }
+  }
+
+  Future<void> _showAddYearDialog() async {
+    final nameCtrl = TextEditingController();
+    DateTime? startDate;
+    DateTime? endDate;
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('Add Academic Year'),
+          content: SizedBox(
+            width: 380,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Year Name (e.g. 2026-2027)',
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () async {
+                          final picked = await showDatePicker(
+                            context: ctx,
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime(2100),
+                            initialDate: DateTime.now(),
+                          );
+                          if (picked != null) {
+                            setLocal(() => startDate = picked);
+                          }
+                        },
+                        child: Text(
+                          startDate == null
+                              ? 'Start Date'
+                              : '${startDate!.year}-${startDate!.month.toString().padLeft(2, '0')}-${startDate!.day.toString().padLeft(2, '0')}',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () async {
+                          final picked = await showDatePicker(
+                            context: ctx,
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime(2100),
+                            initialDate: DateTime.now(),
+                          );
+                          if (picked != null) {
+                            setLocal(() => endDate = picked);
+                          }
+                        },
+                        child: Text(
+                          endDate == null
+                              ? 'End Date'
+                              : '${endDate!.year}-${endDate!.month.toString().padLeft(2, '0')}-${endDate!.day.toString().padLeft(2, '0')}',
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                if (nameCtrl.text.trim().isEmpty ||
+                    startDate == null ||
+                    endDate == null) {
+                  return;
+                }
+                Navigator.of(ctx).pop();
+                try {
+                  final created = await _repo.createYear(
+                    name: nameCtrl.text.trim(),
+                    startDate: startDate!,
+                    endDate: endDate!,
+                  );
+                  final years = await _repo.listYears();
+                  final newYearId = created['id']?.toString();
+                  setState(() {
+                    _years = years;
+                    _selectedYearId = newYearId ?? _selectedYearId;
+                    _assignments = [];
+                  });
+                  if (_selectedYearId != null) {
+                    final stds = await _repo.listStandards(_selectedYearId!);
+                    setState(() => _standards = stds);
+                  }
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Academic year added.')),
+                    );
+                  }
+                } catch (e) {
+                  setState(() => _error = 'Unable to add year: $e');
+                }
+              },
+              child: const Text('Add'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _loadByTeacher() async {
@@ -337,7 +505,9 @@ class _TeacherAssignmentScreenState
     });
     try {
       final list = await _repo.listByTeacher(
-          _selectedTeacherId!, _selectedYearId);
+        _selectedTeacherId!,
+        _selectedYearId,
+      );
       setState(() => _assignments = list);
     } catch (e) {
       setState(() => _error = e.toString());
@@ -348,8 +518,9 @@ class _TeacherAssignmentScreenState
 
   Future<void> _loadByClass() async {
     if (_filterStandardId == null || _filterSection == null) {
-      setState(() =>
-          _error = 'Select both a class and section to filter by class.');
+      setState(
+        () => _error = 'Select both a class and section to filter by class.',
+      );
       return;
     }
     setState(() {
@@ -358,7 +529,10 @@ class _TeacherAssignmentScreenState
     });
     try {
       final list = await _repo.listByClass(
-          _filterStandardId!, _filterSection!, _selectedYearId);
+        _filterStandardId!,
+        _filterSection!,
+        _selectedYearId,
+      );
       setState(() => _assignments = list);
     } catch (e) {
       setState(() => _error = e.toString());
@@ -373,11 +547,13 @@ class _TeacherAssignmentScreenState
       builder: (ctx) => AlertDialog(
         title: const Text('Remove Assignment'),
         content: const Text(
-            'Remove this teacher-class-subject assignment? This only affects the selected academic year.'),
+          'Remove this teacher-class-subject assignment? This only affects the selected academic year.',
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Cancel')),
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () => Navigator.of(ctx).pop(true),
@@ -400,7 +576,7 @@ class _TeacherAssignmentScreenState
 
   Future<void> _showCreateDialog() async {
     if (!_canManage) return;
-    if (_schoolId == null || _selectedYearId == null) {
+    if (_selectedYearId == null) {
       setState(() => _error = 'Select an academic year first.');
       return;
     }
@@ -410,7 +586,7 @@ class _TeacherAssignmentScreenState
     String? selSection;
     String? selSubjectId;
     List<_DropdownItem> sectionOptions = [];
-    final subjects = await _repo.listSubjects(_schoolId!);
+    List<_DropdownItem> subjectOptions = [];
 
     await showDialog<void>(
       context: context,
@@ -427,28 +603,34 @@ class _TeacherAssignmentScreenState
                   DropdownButtonFormField<String>(
                     value: selTeacherId,
                     decoration: const InputDecoration(
-                        labelText: 'Teacher *', border: OutlineInputBorder()),
+                      labelText: 'Teacher *',
+                      border: OutlineInputBorder(),
+                    ),
                     items: _teachers
-                        .map((t) => DropdownMenuItem<String>(
-                              value: t.id,
-                              child: Text(
-                                  '${t.name} (${t.employeeCode})'),
-                            ))
+                        .map(
+                          (t) => DropdownMenuItem<String>(
+                            value: t.id,
+                            child: Text('${t.name} (${t.employeeCode})'),
+                          ),
+                        )
                         .toList(),
-                    onChanged: (v) =>
-                        setDlgState(() => selTeacherId = v),
+                    onChanged: (v) => setDlgState(() => selTeacherId = v),
                   ),
                   const SizedBox(height: 12),
                   // Class
                   DropdownButtonFormField<String>(
                     value: selStandardId,
                     decoration: const InputDecoration(
-                        labelText: 'Class *', border: OutlineInputBorder()),
+                      labelText: 'Class *',
+                      border: OutlineInputBorder(),
+                    ),
                     items: _standards
-                        .map((s) => DropdownMenuItem<String>(
-                              value: s.id,
-                              child: Text(s.name),
-                            ))
+                        .map(
+                          (s) => DropdownMenuItem<String>(
+                            value: s.id,
+                            child: Text(s.name),
+                          ),
+                        )
                         .toList(),
                     onChanged: (v) async {
                       setDlgState(() {
@@ -458,51 +640,58 @@ class _TeacherAssignmentScreenState
                       });
                       if (v != null) {
                         final secs = await _repo.listSections(
-                            _schoolId!, v, _selectedYearId!);
-                        setDlgState(() => sectionOptions = secs);
+                          v,
+                          _selectedYearId!,
+                        );
+                        final subs = await _repo.listSubjects(standardId: v);
+                        setDlgState(() {
+                          sectionOptions = secs;
+                          subjectOptions = subs;
+                          selSection = null;
+                          selSubjectId = null;
+                        });
                       }
                     },
                   ),
                   const SizedBox(height: 12),
                   // Section
-                  if (sectionOptions.isNotEmpty)
-                    DropdownButtonFormField<String>(
-                      value: selSection,
-                      decoration: const InputDecoration(
-                          labelText: 'Section *',
-                          border: OutlineInputBorder()),
-                      items: sectionOptions
-                          .map((s) => DropdownMenuItem<String>(
-                                value: s.id,
-                                child: Text(s.name),
-                              ))
-                          .toList(),
-                      onChanged: (v) =>
-                          setDlgState(() => selSection = v),
-                    )
-                  else
-                    TextFormField(
-                      decoration: const InputDecoration(
-                          labelText: 'Section * (e.g. A, B)',
-                          border: OutlineInputBorder()),
-                      onChanged: (v) =>
-                          setDlgState(() => selSection = v.trim().toUpperCase()),
+                  DropdownButtonFormField<String>(
+                    value: selSection,
+                    decoration: const InputDecoration(
+                      labelText: 'Section *',
+                      border: OutlineInputBorder(),
                     ),
+                    items: sectionOptions
+                        .map(
+                          (s) => DropdownMenuItem<String>(
+                            value: s.id,
+                            child: Text(s.name),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: sectionOptions.isEmpty
+                        ? null
+                        : (v) => setDlgState(() => selSection = v),
+                  ),
                   const SizedBox(height: 12),
                   // Subject
                   DropdownButtonFormField<String>(
                     value: selSubjectId,
                     decoration: const InputDecoration(
-                        labelText: 'Subject *',
-                        border: OutlineInputBorder()),
-                    items: subjects
-                        .map((s) => DropdownMenuItem<String>(
-                              value: s.id,
-                              child: Text(s.name),
-                            ))
+                      labelText: 'Subject *',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: subjectOptions
+                        .map(
+                          (s) => DropdownMenuItem<String>(
+                            value: s.id,
+                            child: Text(s.name),
+                          ),
+                        )
                         .toList(),
-                    onChanged: (v) =>
-                        setDlgState(() => selSubjectId = v),
+                    onChanged: subjectOptions.isEmpty
+                        ? null
+                        : (v) => setDlgState(() => selSubjectId = v),
                   ),
                 ],
               ),
@@ -510,8 +699,9 @@ class _TeacherAssignmentScreenState
           ),
           actions: [
             TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('Cancel')),
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
             ElevatedButton(
               onPressed: () async {
                 if (selTeacherId == null ||
@@ -548,24 +738,27 @@ class _TeacherAssignmentScreenState
 
   Future<void> _showEditDialog(_Assignment assignment) async {
     if (!_canManage) return;
-    if (_schoolId == null || _selectedYearId == null) return;
+    if (_selectedYearId == null) return;
 
     String selStandardId = assignment.standardId;
     String selSection = assignment.section;
     String selSubjectId = assignment.subjectId;
     String selYearId = assignment.academicYearId;
     List<_DropdownItem> sectionOptions = [];
-    final subjects = await _repo.listSubjects(_schoolId!);
+    List<_DropdownItem> subjects = await _repo.listSubjects(
+      standardId: selStandardId,
+    );
 
     // Pre-load sections for the current standard
-    sectionOptions = await _repo.listSections(
-        _schoolId!, selStandardId, selYearId);
+    sectionOptions = await _repo.listSections(selStandardId, selYearId);
 
     await showDialog<void>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDlgState) => AlertDialog(
-          title: Text('Edit: ${assignment.teacherName ?? assignment.employeeCode}'),
+          title: Text(
+            'Edit: ${assignment.teacherName ?? assignment.employeeCode}',
+          ),
           content: SizedBox(
             width: 420,
             child: SingleChildScrollView(
@@ -576,14 +769,16 @@ class _TeacherAssignmentScreenState
                   DropdownButtonFormField<String>(
                     value: selYearId,
                     decoration: const InputDecoration(
-                        labelText: 'Academic Year *',
-                        border: OutlineInputBorder()),
+                      labelText: 'Academic Year *',
+                      border: OutlineInputBorder(),
+                    ),
                     items: _years
-                        .map((y) => DropdownMenuItem<String>(
-                              value: y['id']?.toString() ?? '',
-                              child:
-                                  Text(y['name']?.toString() ?? ''),
-                            ))
+                        .map(
+                          (y) => DropdownMenuItem<String>(
+                            value: y['id']?.toString() ?? '',
+                            child: Text(y['name']?.toString() ?? ''),
+                          ),
+                        )
                         .toList(),
                     onChanged: (v) =>
                         setDlgState(() => selYearId = v ?? selYearId),
@@ -593,12 +788,16 @@ class _TeacherAssignmentScreenState
                   DropdownButtonFormField<String>(
                     value: selStandardId,
                     decoration: const InputDecoration(
-                        labelText: 'Class *', border: OutlineInputBorder()),
+                      labelText: 'Class *',
+                      border: OutlineInputBorder(),
+                    ),
                     items: _standards
-                        .map((s) => DropdownMenuItem<String>(
-                              value: s.id,
-                              child: Text(s.name),
-                            ))
+                        .map(
+                          (s) => DropdownMenuItem<String>(
+                            value: s.id,
+                            child: Text(s.name),
+                          ),
+                        )
                         .toList(),
                     onChanged: (v) async {
                       setDlgState(() {
@@ -607,54 +806,55 @@ class _TeacherAssignmentScreenState
                         sectionOptions = [];
                       });
                       if (v != null) {
-                        final secs = await _repo.listSections(
-                            _schoolId!, v, selYearId);
-                        setDlgState(() => sectionOptions = secs);
+                        final secs = await _repo.listSections(v, selYearId);
+                        final subs = await _repo.listSubjects(standardId: v);
+                        setDlgState(() {
+                          sectionOptions = secs;
+                          subjects = subs;
+                          selSection = '';
+                          selSubjectId = '';
+                        });
                       }
                     },
                   ),
                   const SizedBox(height: 12),
                   // Section
-                  if (sectionOptions.isNotEmpty)
-                    DropdownButtonFormField<String>(
-                      value: sectionOptions
-                              .any((s) => s.id == selSection)
-                          ? selSection
-                          : null,
-                      decoration: const InputDecoration(
-                          labelText: 'Section *',
-                          border: OutlineInputBorder()),
-                      items: sectionOptions
-                          .map((s) => DropdownMenuItem<String>(
-                                value: s.id,
-                                child: Text(s.name),
-                              ))
-                          .toList(),
-                      onChanged: (v) =>
-                          setDlgState(() => selSection = v ?? selSection),
-                    )
-                  else
-                    TextFormField(
-                      initialValue: selSection,
-                      decoration: const InputDecoration(
-                          labelText: 'Section *',
-                          border: OutlineInputBorder()),
-                      onChanged: (v) =>
-                          setDlgState(() =>
-                              selSection = v.trim().toUpperCase()),
+                  DropdownButtonFormField<String>(
+                    value: sectionOptions.any((s) => s.id == selSection)
+                        ? selSection
+                        : null,
+                    decoration: const InputDecoration(
+                      labelText: 'Section *',
+                      border: OutlineInputBorder(),
                     ),
+                    items: sectionOptions
+                        .map(
+                          (s) => DropdownMenuItem<String>(
+                            value: s.id,
+                            child: Text(s.name),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: sectionOptions.isEmpty
+                        ? null
+                        : (v) =>
+                              setDlgState(() => selSection = v ?? selSection),
+                  ),
                   const SizedBox(height: 12),
                   // Subject
                   DropdownButtonFormField<String>(
                     value: selSubjectId,
                     decoration: const InputDecoration(
-                        labelText: 'Subject *',
-                        border: OutlineInputBorder()),
+                      labelText: 'Subject *',
+                      border: OutlineInputBorder(),
+                    ),
                     items: subjects
-                        .map((s) => DropdownMenuItem<String>(
-                              value: s.id,
-                              child: Text(s.name),
-                            ))
+                        .map(
+                          (s) => DropdownMenuItem<String>(
+                            value: s.id,
+                            child: Text(s.name),
+                          ),
+                        )
                         .toList(),
                     onChanged: (v) =>
                         setDlgState(() => selSubjectId = v ?? selSubjectId),
@@ -665,8 +865,9 @@ class _TeacherAssignmentScreenState
           ),
           actions: [
             TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('Cancel')),
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
             ElevatedButton(
               onPressed: () async {
                 Navigator.of(ctx).pop();
@@ -728,30 +929,50 @@ class _TeacherAssignmentScreenState
                           isDense: true,
                           border: OutlineInputBorder(),
                           contentPadding: EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 8),
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
                         ),
-                        items: _years
-                            .map((y) => DropdownMenuItem<String>(
-                                  value: y['id']?.toString(),
-                                  child: Text(
-                                    '${y['name']}${y['is_active'] == true ? ' ✓' : ''}',
+                        items:
+                            _years
+                                .map(
+                                  (y) => DropdownMenuItem<String>(
+                                    value: y['id']?.toString(),
+                                    child: Text(
+                                      '${y['name']}${y['is_active'] == true ? ' ✓' : ''}',
+                                    ),
                                   ),
-                                ))
-                            .toList(),
+                                )
+                                .toList()
+                              ..insert(
+                                0,
+                                const DropdownMenuItem<String>(
+                                  value: null,
+                                  child: Text('All Years'),
+                                ),
+                              ),
                         onChanged: (v) async {
                           setState(() {
                             _selectedYearId = v;
                             _standards = [];
                             _assignments = [];
+                            _filterStandardId = null;
+                            _filterSection = null;
+                            _filterSections = [];
                           });
-                          if (v != null && _schoolId != null) {
-                            final stds = await _repo.listStandards(
-                                _schoolId!, v);
+                          if (v != null) {
+                            final stds = await _repo.listStandards(v);
                             setState(() => _standards = stds);
                           }
                         },
                       ),
                     ),
+                    if (_canManage)
+                      OutlinedButton.icon(
+                        onPressed: _showAddYearDialog,
+                        icon: const Icon(Icons.add, size: 16),
+                        label: const Text('Add Year'),
+                      ),
                     if (_canManage)
                       ElevatedButton.icon(
                         icon: const Icon(Icons.add, size: 16),
@@ -771,25 +992,26 @@ class _TeacherAssignmentScreenState
             // ── Status messages ───────────────────────────────────────────
             if (_error != null)
               _Banner(
-                  message: _error!,
-                  isError: true,
-                  onDismiss: () => setState(() => _error = null)),
+                message: _error!,
+                isError: true,
+                onDismiss: () => setState(() => _error = null),
+              ),
             if (_success != null)
               _Banner(
-                  message: _success!,
-                  isError: false,
-                  onDismiss: () => setState(() => _success = null)),
+                message: _success!,
+                isError: false,
+                onDismiss: () => setState(() => _success = null),
+              ),
 
             // ── Search tabs ───────────────────────────────────────────────
             TabBar(
               controller: _tabController,
               tabs: const [
                 Tab(
-                    icon: Icon(Icons.person_search_outlined),
-                    text: 'By Teacher'),
-                Tab(
-                    icon: Icon(Icons.class_outlined),
-                    text: 'By Class'),
+                  icon: Icon(Icons.person_search_outlined),
+                  text: 'By Teacher',
+                ),
+                Tab(icon: Icon(Icons.class_outlined), text: 'By Class'),
               ],
             ),
             const SizedBox(height: 10),
@@ -798,8 +1020,8 @@ class _TeacherAssignmentScreenState
             _loading
                 ? const LinearProgressIndicator()
                 : _tabController.index == 0
-                    ? _buildTeacherFilter()
-                    : _buildClassFilter(),
+                ? _buildTeacherFilter()
+                : _buildClassFilter(),
 
             const SizedBox(height: 12),
 
@@ -810,8 +1032,11 @@ class _TeacherAssignmentScreenState
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.assignment_ind_outlined,
-                              size: 56, color: Colors.grey),
+                          Icon(
+                            Icons.assignment_ind_outlined,
+                            size: 56,
+                            color: Colors.grey,
+                          ),
                           SizedBox(height: 12),
                           Text(
                             'Use the filters above and click Search to view assignments.',
@@ -822,8 +1047,9 @@ class _TeacherAssignmentScreenState
                     )
                   : SingleChildScrollView(
                       child: DataTable(
-                        headingRowColor:
-                            WidgetStateProperty.all(Colors.grey.shade100),
+                        headingRowColor: WidgetStateProperty.all(
+                          Colors.grey.shade100,
+                        ),
                         columns: [
                           const DataColumn(label: Text('Teacher')),
                           const DataColumn(label: Text('Emp. Code')),
@@ -835,36 +1061,43 @@ class _TeacherAssignmentScreenState
                             const DataColumn(label: Text('Actions')),
                         ],
                         rows: _assignments.map((a) {
-                          return DataRow(cells: [
-                            DataCell(Text(a.teacherName ?? '-')),
-                            DataCell(Text(a.employeeCode)),
-                            DataCell(Text(a.standardName)),
-                            DataCell(Text(a.section)),
-                            DataCell(Text(a.subjectName)),
-                            DataCell(Text(a.academicYearName)),
-                            if (_canManage)
-                              DataCell(Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  IconButton(
-                                    icon: const Icon(Icons.edit_outlined,
-                                        size: 18, color: Colors.blue),
-                                    tooltip: 'Edit',
-                                    onPressed: () =>
-                                        _showEditDialog(a),
+                          return DataRow(
+                            cells: [
+                              DataCell(Text(a.teacherName ?? '-')),
+                              DataCell(Text(a.employeeCode)),
+                              DataCell(Text(a.standardName)),
+                              DataCell(Text(a.section)),
+                              DataCell(Text(a.subjectName)),
+                              DataCell(Text(a.academicYearName)),
+                              if (_canManage)
+                                DataCell(
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      IconButton(
+                                        icon: const Icon(
+                                          Icons.edit_outlined,
+                                          size: 18,
+                                          color: Colors.blue,
+                                        ),
+                                        tooltip: 'Edit',
+                                        onPressed: () => _showEditDialog(a),
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(
+                                          Icons.delete_outline,
+                                          size: 18,
+                                          color: Colors.red,
+                                        ),
+                                        tooltip: 'Remove',
+                                        onPressed: () =>
+                                            _deleteAssignment(a.id),
+                                      ),
+                                    ],
                                   ),
-                                  IconButton(
-                                    icon: const Icon(
-                                        Icons.delete_outline,
-                                        size: 18,
-                                        color: Colors.red),
-                                    tooltip: 'Remove',
-                                    onPressed: () =>
-                                        _deleteAssignment(a.id),
-                                  ),
-                                ],
-                              )),
-                          ]);
+                                ),
+                            ],
+                          );
                         }).toList(),
                       ),
                     ),
@@ -886,14 +1119,15 @@ class _TeacherAssignmentScreenState
               labelText: 'Select Teacher',
               isDense: true,
               border: OutlineInputBorder(),
-              contentPadding:
-                  EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             ),
             items: _teachers
-                .map((t) => DropdownMenuItem<String>(
-                      value: t.id,
-                      child: Text('${t.name} (${t.employeeCode})'),
-                    ))
+                .map(
+                  (t) => DropdownMenuItem<String>(
+                    value: t.id,
+                    child: Text('${t.name} (${t.employeeCode})'),
+                  ),
+                )
                 .toList(),
             onChanged: (v) => setState(() => _selectedTeacherId = v),
           ),
@@ -909,7 +1143,6 @@ class _TeacherAssignmentScreenState
   }
 
   Widget _buildClassFilter() {
-    final sectionCtrl = TextEditingController(text: _filterSection);
     return Row(
       children: [
         SizedBox(
@@ -920,32 +1153,52 @@ class _TeacherAssignmentScreenState
               labelText: 'Class',
               isDense: true,
               border: OutlineInputBorder(),
-              contentPadding:
-                  EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             ),
             items: _standards
-                .map((s) => DropdownMenuItem<String>(
-                      value: s.id,
-                      child: Text(s.name),
-                    ))
+                .map(
+                  (s) => DropdownMenuItem<String>(
+                    value: s.id,
+                    child: Text(s.name),
+                  ),
+                )
                 .toList(),
-            onChanged: (v) => setState(() => _filterStandardId = v),
+            onChanged: (v) async {
+              setState(() {
+                _filterStandardId = v;
+                _filterSection = null;
+                _filterSections = [];
+              });
+              if (v != null && _selectedYearId != null) {
+                final sections = await _repo.listSections(v, _selectedYearId!);
+                if (!mounted) return;
+                setState(() => _filterSections = sections);
+              }
+            },
           ),
         ),
         const SizedBox(width: 10),
         SizedBox(
-          width: 120,
-          child: TextField(
-            controller: sectionCtrl,
+          width: 160,
+          child: DropdownButtonFormField<String>(
+            value: _filterSection,
             decoration: const InputDecoration(
               labelText: 'Section',
               isDense: true,
               border: OutlineInputBorder(),
-              contentPadding:
-                  EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             ),
-            onChanged: (v) =>
-                setState(() => _filterSection = v.trim().toUpperCase()),
+            items: _filterSections
+                .map(
+                  (s) => DropdownMenuItem<String>(
+                    value: s.id,
+                    child: Text(s.name),
+                  ),
+                )
+                .toList(),
+            onChanged: _filterSections.isEmpty
+                ? null
+                : (v) => setState(() => _filterSection = v),
           ),
         ),
         const SizedBox(width: 10),
@@ -987,16 +1240,21 @@ class _Banner extends StatelessWidget {
       child: Row(
         children: [
           Icon(
-              isError ? Icons.error_outline : Icons.check_circle_outline,
-              color: color.shade700,
-              size: 16),
+            isError ? Icons.error_outline : Icons.check_circle_outline,
+            color: color.shade700,
+            size: 16,
+          ),
           const SizedBox(width: 8),
           Expanded(
-              child: Text(message,
-                  style: TextStyle(fontSize: 13, color: color.shade800))),
+            child: Text(
+              message,
+              style: TextStyle(fontSize: 13, color: color.shade800),
+            ),
+          ),
           GestureDetector(
-              onTap: onDismiss,
-              child: Icon(Icons.close, size: 14, color: color.shade400)),
+            onTap: onDismiss,
+            child: Icon(Icons.close, size: 14, color: color.shade400),
+          ),
         ],
       ),
     );

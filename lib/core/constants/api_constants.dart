@@ -3,11 +3,17 @@
 
 class ApiConstants {
   // ── Base ──────────────────────────────────────────────────────────────────
-  static const String baseUrl = 'http://localhost:8000/api/v1';
+  // Override with:
+  // flutter run -d chrome --dart-define=ADMIN_API_BASE_URL=http://127.0.0.1:8000/api/v1
+  // flutter run -d android --dart-define=ADMIN_API_BASE_URL=http://10.0.2.2:8000/api/v1
+  static const String baseUrl = String.fromEnvironment(
+    'ADMIN_API_BASE_URL',
+    defaultValue: 'http://127.0.0.1:8000/api/v1',
+  );
 
   // ── Auth ──────────────────────────────────────────────────────────────────
   static const String login = '/auth/login';
-  static const String me = '/users/me';
+  static const String me = '/auth/me';
   static const String logout = '/auth/logout';
   static const String refresh = '/auth/refresh';
   static const String register = '/auth/register';
@@ -58,7 +64,7 @@ class ApiConstants {
   static const String parents = '/parents';
   static String parentById(String id) => '/parents/$id';
   static const String myChildren = '/parents/me/children';
-  static const String linkChild = '/parents/me/link-child';
+  static const String linkChild = '/parents/me/children/link';
 
   // ── Phase 6 & 7: Enrollment Mappings ─────────────────────────────────────
   static const String enrollmentMappings = '/enrollments/mappings';
@@ -84,13 +90,13 @@ class ApiConstants {
 
   // ── Fees ──────────────────────────────────────────────────────────────────
   static const String fees = '/fees';
-  static const String feeStructures = '/fees/structures';
+  static const String feeStructures = '/fees/structures/batch';
   static const String feeLedger = '/fees/ledger';
   static const String feePayments = '/fees/payments';
 
   // ── Attendance ────────────────────────────────────────────────────────────
   static const String attendance = '/attendance';
-  static const String attendanceSummary = '/attendance/summary';
+  static const String attendanceSummary = '/attendance/analytics/dashboard';
 
   // ── Assignments ───────────────────────────────────────────────────────────
   static const String assignments = '/assignments';

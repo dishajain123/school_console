@@ -13,26 +13,20 @@ class _SettingsRepository {
   _SettingsRepository(this._dio);
   final DioClient _dio;
 
-  Future<Map<String, dynamic>> getSchool(String schoolId) async {
-    final resp = await _dio.dio.get<Map<String, dynamic>>('/schools/$schoolId');
-    return resp.data ?? {};
-  }
-
-  Future<void> updateSchool(String schoolId, Map<String, dynamic> data) async {
-    await _dio.dio.patch<dynamic>('/schools/$schoolId', data: data);
-  }
-
-  Future<List<Map<String, dynamic>>> listSchools() async {
-    final resp = await _dio.dio.get<Map<String, dynamic>>('/schools');
-    return ((resp.data?['items'] as List?) ?? []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
-  }
-
-  Future<List<Map<String, dynamic>>> getSettings(String schoolId) async {
+  Future<List<Map<String, dynamic>>> getSettings() async {
     final resp = await _dio.dio.get<Map<String, dynamic>>(
       '/settings',
-      queryParameters: {'school_id': schoolId},
     );
-    return ((resp.data?['items'] as List?) ?? []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    return ((resp.data?['items'] as List?) ?? [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+  }
+
+  Future<void> updateSettings(List<Map<String, String>> items) async {
+    await _dio.dio.patch<dynamic>(
+      '/settings',
+      data: {'items': items},
+    );
   }
 }
 
@@ -51,13 +45,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   late final _SettingsRepository _repo;
 
   bool _loading = false;
-  Map<String, dynamic> _school = {};
-  List<Map<String, dynamic>> _schools = [];
   List<Map<String, dynamic>> _settings = [];
-
-  final _schoolNameCtrl = TextEditingController();
-  final _schoolAddressCtrl = TextEditingController();
-  final _schoolPhoneCtrl = TextEditingController();
+  final _newKeyCtrl = TextEditingController();
+  final _newValueCtrl = TextEditingController();
 
   @override
   void initState() {
@@ -70,28 +60,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   @override
   void dispose() {
     _tabController.dispose();
-    _schoolNameCtrl.dispose();
-    _schoolAddressCtrl.dispose();
-    _schoolPhoneCtrl.dispose();
+    _newKeyCtrl.dispose();
+    _newValueCtrl.dispose();
     super.dispose();
   }
 
-  String? get _schoolId => ref.read(authControllerProvider).valueOrNull?.schoolId;
+  String? get _schoolId =>
+      ref.read(authControllerProvider).valueOrNull?.schoolId;
   String get _role => ref.read(authControllerProvider).valueOrNull?.role.toUpperCase() ?? '';
-  bool get _isSuperAdmin => _role == 'SUPERADMIN';
+  bool get _canManageSettings => _role == 'SUPERADMIN' || _role == 'PRINCIPAL';
 
   Future<void> _loadData() async {
     setState(() => _loading = true);
     try {
-      if (_isSuperAdmin) {
-        _schools = await _repo.listSchools();
-      } else if (_schoolId != null) {
-        _school = await _repo.getSchool(_schoolId!);
-        _settings = await _repo.getSettings(_schoolId!);
-        _schoolNameCtrl.text = _school['name']?.toString() ?? '';
-        _schoolAddressCtrl.text = _school['address']?.toString() ?? '';
-        _schoolPhoneCtrl.text = _school['phone']?.toString() ?? '';
-      }
+      _settings = await _repo.getSettings();
     } catch (e) {
       // ignore errors gracefully for settings
     } finally {
@@ -99,18 +81,29 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     }
   }
 
-  Future<void> _saveSchool() async {
-    if (_schoolId == null) return;
+  Future<void> _saveSettingItem() async {
+    final key = _newKeyCtrl.text.trim();
+    final value = _newValueCtrl.text.trim();
+    if (key.isEmpty) return;
     setState(() => _loading = true);
     try {
-      await _repo.updateSchool(_schoolId!, {
-        if (_schoolNameCtrl.text.trim().isNotEmpty) 'name': _schoolNameCtrl.text.trim(),
-        if (_schoolAddressCtrl.text.trim().isNotEmpty) 'address': _schoolAddressCtrl.text.trim(),
-        if (_schoolPhoneCtrl.text.trim().isNotEmpty) 'phone': _schoolPhoneCtrl.text.trim(),
-      });
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('School settings saved')));
+      await _repo.updateSettings([
+        {'key': key, 'value': value},
+      ]);
+      _newKeyCtrl.clear();
+      _newValueCtrl.clear();
+      await _loadData();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Setting saved')),
+        );
+      }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString())),
+        );
+      }
     } finally {
       setState(() => _loading = false);
     }
@@ -129,9 +122,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                 children: [
                   TabBar(
                     controller: _tabController,
-                    tabs: [
-                      const Tab(text: 'School'),
-                      if (_isSuperAdmin) const Tab(text: 'All Schools') else const Tab(text: 'Config'),
+                    tabs: const [
+                      Tab(text: 'School'),
+                      Tab(text: 'Config'),
                     ],
                   ),
                   const SizedBox(height: 16),
@@ -139,84 +132,102 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                     child: TabBarView(
                       controller: _tabController,
                       children: [
-                        // ── School Info ────────────────────────────────────
+                        // ── Single-school info ─────────────────────────────
                         SingleChildScrollView(
                           child: ConstrainedBox(
                             constraints: const BoxConstraints(maxWidth: 560),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text('School Information', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                                const SizedBox(height: 16),
-                                TextField(
-                                  controller: _schoolNameCtrl,
-                                  decoration: const InputDecoration(labelText: 'School Name', border: OutlineInputBorder()),
-                                  readOnly: !_isSuperAdmin && _role != 'PRINCIPAL',
-                                ),
-                                const SizedBox(height: 12),
-                                TextField(
-                                  controller: _schoolAddressCtrl,
-                                  decoration: const InputDecoration(labelText: 'Address', border: OutlineInputBorder()),
-                                  maxLines: 2,
-                                  readOnly: !_isSuperAdmin && _role != 'PRINCIPAL',
-                                ),
-                                const SizedBox(height: 12),
-                                TextField(
-                                  controller: _schoolPhoneCtrl,
-                                  decoration: const InputDecoration(labelText: 'Phone', border: OutlineInputBorder()),
-                                  readOnly: !_isSuperAdmin && _role != 'PRINCIPAL',
-                                ),
-                                const SizedBox(height: 20),
-                                if (_isSuperAdmin || _role == 'PRINCIPAL')
-                                  ElevatedButton(
-                                    onPressed: _saveSchool,
-                                    child: const Text('Save Changes'),
+                                const Text(
+                                  'School Information',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
                                   ),
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'Mode: Single School',
+                                  style: TextStyle(color: Colors.green.shade700),
+                                ),
+                                const SizedBox(height: 12),
+                                ListTile(
+                                  contentPadding: EdgeInsets.zero,
+                                  title: const Text('School ID'),
+                                  subtitle: Text(_schoolId ?? 'Not available'),
+                                ),
                                 const SizedBox(height: 24),
-                                if (_settings.isNotEmpty) ...[
-                                  const Text('System Settings', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                                  const SizedBox(height: 8),
-                                  ..._settings.map(
-                                    (s) => ListTile(
-                                      title: Text(s['key']?.toString() ?? ''),
-                                      subtitle: Text(s['value']?.toString() ?? ''),
+                                const Text(
+                                  'System Settings',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                ..._settings.map(
+                                  (s) => ListTile(
+                                    contentPadding: EdgeInsets.zero,
+                                    title: Text(
+                                      s['setting_key']?.toString() ??
+                                          s['key']?.toString() ??
+                                          '',
+                                    ),
+                                    subtitle: Text(
+                                      s['setting_value']?.toString() ??
+                                          s['value']?.toString() ??
+                                          '',
                                     ),
                                   ),
-                                ],
+                                ),
                               ],
                             ),
                           ),
                         ),
-                        // ── All Schools (SuperAdmin) / Config ──────────────
-                        _isSuperAdmin
-                            ? SingleChildScrollView(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text('All Schools', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                                    const SizedBox(height: 12),
-                                    DataTable(
-                                      columns: const [
-                                        DataColumn(label: Text('Name')),
-                                        DataColumn(label: Text('Status')),
-                                        DataColumn(label: Text('Created')),
-                                      ],
-                                      rows: _schools
-                                          .map(
-                                            (s) => DataRow(cells: [
-                                              DataCell(Text(s['name']?.toString() ?? '-')),
-                                              DataCell(Text(s['is_active'] == true ? 'Active' : 'Inactive')),
-                                              DataCell(Text((s['created_at']?.toString() ?? '').substring(0, 10))),
-                                            ]),
-                                          )
-                                          .toList(),
-                                    ),
-                                  ],
+                        // ── Config ─────────────────────────────────────────
+                        SingleChildScrollView(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 560),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Configuration',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
-                              )
-                            : const Center(
-                                child: Text('Additional configuration options available via Identifier Config in the sidebar.'),
-                              ),
+                                const SizedBox(height: 12),
+                                TextField(
+                                  controller: _newKeyCtrl,
+                                  readOnly: !_canManageSettings,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Setting Key',
+                                    border: OutlineInputBorder(),
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                TextField(
+                                  controller: _newValueCtrl,
+                                  readOnly: !_canManageSettings,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Setting Value',
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  maxLines: 2,
+                                ),
+                                const SizedBox(height: 16),
+                                if (_canManageSettings)
+                                  ElevatedButton(
+                                    onPressed: _saveSettingItem,
+                                    child: const Text('Save Setting'),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                   ),

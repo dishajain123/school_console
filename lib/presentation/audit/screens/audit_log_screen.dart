@@ -129,6 +129,7 @@ class _AuditLogScreenState extends ConsumerState<AuditLogScreen> {
                           child: actions.when(
                             data: (list) => DropdownButtonFormField<String?>(
                               value: _selectedAction,
+                              isExpanded: true,
                               decoration: const InputDecoration(
                                 labelText: 'Action',
                                 isDense: true,
@@ -138,10 +139,38 @@ class _AuditLogScreenState extends ConsumerState<AuditLogScreen> {
                               ),
                               items: [
                                 const DropdownMenuItem<String?>(
-                                    value: null, child: Text('All')),
+                                  value: null,
+                                  child: Text(
+                                    'All',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
                                 ...list.map((a) => DropdownMenuItem<String>(
-                                    value: a, child: Text(a))),
+                                      value: a,
+                                      child: Text(
+                                        a,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    )),
                               ],
+                              selectedItemBuilder: (context) {
+                                return [
+                                  const Text(
+                                    'All',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  ...list.map(
+                                    (a) => Text(
+                                      a,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ];
+                              },
                               onChanged: (v) =>
                                   setState(() => _selectedAction = v),
                             ),
@@ -159,6 +188,7 @@ class _AuditLogScreenState extends ConsumerState<AuditLogScreen> {
                             data: (list) =>
                                 DropdownButtonFormField<String?>(
                               value: _selectedEntityType,
+                              isExpanded: true,
                               decoration: const InputDecoration(
                                 labelText: 'Entity Type',
                                 isDense: true,
@@ -168,10 +198,38 @@ class _AuditLogScreenState extends ConsumerState<AuditLogScreen> {
                               ),
                               items: [
                                 const DropdownMenuItem<String?>(
-                                    value: null, child: Text('All')),
+                                  value: null,
+                                  child: Text(
+                                    'All',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
                                 ...list.map((e) => DropdownMenuItem<String>(
-                                    value: e, child: Text(e))),
+                                      value: e,
+                                      child: Text(
+                                        e,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    )),
                               ],
+                              selectedItemBuilder: (context) {
+                                return [
+                                  const Text(
+                                    'All',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  ...list.map(
+                                    (e) => Text(
+                                      e,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ];
+                              },
                               onChanged: (v) =>
                                   setState(() => _selectedEntityType = v),
                             ),

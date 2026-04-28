@@ -17,6 +17,13 @@ class AdminLoginScreen extends ConsumerStatefulWidget {
 
 class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
   String? _error;
+  String _cleanErrorText(Object error) {
+    final raw = error.toString().trim();
+    if (raw.startsWith('Exception: ')) {
+      return raw.substring('Exception: '.length).trim();
+    }
+    return raw;
+  }
 
   // Determine where to land after login based on the user's role/permissions.
   // Phase 5 requirement: each role type lands on their primary module.
@@ -51,7 +58,7 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
         },
         error: (error, _) {
           setState(() {
-            _error = error.toString();
+            _error = _cleanErrorText(error);
           });
         },
       );
@@ -81,13 +88,17 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
                         _error = null;
                       });
                       final isEmail = credential.contains('@');
-                      await ref
-                          .read(authControllerProvider.notifier)
-                          .login(
+                      await ref.read(authControllerProvider.notifier).login(
                             email: isEmail ? credential : null,
                             phone: isEmail ? null : credential,
                             password: password,
                           );
+                      if (!context.mounted) return;
+                      final next = ref.read(authControllerProvider);
+                      final user = next.valueOrNull;
+                      if (user != null) {
+                        context.go(_resolveInitialRoute(user));
+                      }
                     },
                   ),
                 ],

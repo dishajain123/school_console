@@ -104,13 +104,9 @@ class _DocRepository {
   _DocRepository(this._dio);
   final DioClient _dio;
 
-  Future<List<_Document>> listAllDocuments({String? status}) async {
+  Future<List<_Document>> listAllDocuments() async {
     final r = await _dio.dio.get<Map<String, dynamic>>(
       '/documents',
-      queryParameters: {
-        if (status != null) 'status': status,
-        'page_size': 100,
-      },
     );
     return ((r.data?['items'] as List?) ?? [])
         .map((e) => _Document.fromJson(Map<String, dynamic>.from(e as Map)))
@@ -226,8 +222,11 @@ class _DocumentManagementScreenState
       _error = null;
     });
     try {
-      final docs = await _repo.listAllDocuments(status: _statusFilter);
-      setState(() => _documents = docs);
+      final docs = await _repo.listAllDocuments();
+      final filtered = _statusFilter == null
+          ? docs
+          : docs.where((d) => d.status.toUpperCase() == _statusFilter).toList();
+      setState(() => _documents = filtered);
     } catch (e) {
       setState(() => _error = e.toString());
     } finally {

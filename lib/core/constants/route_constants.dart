@@ -13,17 +13,24 @@ class RouteNames {
   static const String academics = '/academics';
   static const String academicStructure = '/academics/structure';
 
-  // Phase 4 — Enrollment & Parent Linking
+  // Phase 4 & 6 — Enrollment
   static const String enrollment = '/enrollment';
 
   // Phase 7 — Promotion Workflow
   static const String promotion = '/enrollment/promotion';
+
+  // Phase 14/15 — Student Lifecycle Management (unified screen)
+  static const String lifecycleManagement = '/enrollment/lifecycle';
 
   // Phase 4 — Teacher Assignment Management (assign teacher → subject → class → section)
   static const String teacherAssignments = '/teacher-assignments';
 
   // Phase 2 — Role Profiles & Identifiers
   static const String roleProfiles = '/role-profiles';
+  static const String identifierConfigs = '/role-profiles/identifier-configs';
+
+  // Phase 5 — Admin Modules
+  static const String users = '/users';
 
   // Phase 8 — Fees Management
   static const String fees = '/fees';

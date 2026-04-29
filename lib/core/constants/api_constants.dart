@@ -94,10 +94,6 @@ class ApiConstants {
   static const String feeLedger = '/fees/ledger';
   static const String feePayments = '/fees/payments';
 
-  // ── Attendance ────────────────────────────────────────────────────────────
-  static const String attendance = '/attendance';
-  static const String attendanceSummary = '/attendance/analytics/dashboard';
-
   // ── Assignments ───────────────────────────────────────────────────────────
   static const String assignments = '/assignments';
   static String assignmentById(String id) => '/assignments/$id';

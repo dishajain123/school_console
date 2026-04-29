@@ -22,6 +22,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
 
 import '../../../core/network/dio_client.dart';
+import '../../../domains/providers/active_year_provider.dart';
 import '../../../domains/providers/auth_provider.dart';
 import '../../common/layout/admin_scaffold.dart';
 
@@ -240,8 +241,10 @@ class _TeacherAssignmentRepository {
     final items = (r.data?['items'] as List?) ?? [];
     return items.map((e) {
       final m = Map<String, dynamic>.from(e as Map);
+      final teacherId =
+          m['teacher_id']?.toString() ?? m['id']?.toString() ?? '';
       return _Teacher(
-        id: m['teacher_id']?.toString() ?? m['user_id']?.toString() ?? '',
+        id: teacherId,
         name: m['full_name']?.toString() ?? '',
         employeeCode: m['employee_id']?.toString() ?? '',
       );
@@ -357,15 +360,22 @@ class _TeacherAssignmentScreenState
     try {
       final years = await _repo.listYears();
       final teachers = await _repo.listTeachers();
+      final preferredYearId = ref.read(activeAcademicYearProvider);
+      final preferred = years.firstWhere(
+        (y) => y['id']?.toString() == preferredYearId,
+        orElse: () => <String, dynamic>{},
+      );
       final active = years.firstWhere(
         (y) => y['is_active'] == true,
-        orElse: () => years.isNotEmpty ? years.first : {},
+        orElse: () => years.isNotEmpty ? years.first : <String, dynamic>{},
       );
+      final selected = preferred.isNotEmpty ? preferred : active;
       setState(() {
         _years = years;
         _teachers = teachers;
-        _selectedYearId = active.isNotEmpty ? active['id']?.toString() : null;
+        _selectedYearId = selected.isNotEmpty ? selected['id']?.toString() : null;
       });
+      ref.read(activeAcademicYearProvider.notifier).setYear(_selectedYearId);
       if (_selectedYearId != null) {
         final stds = await _repo.listStandards(_selectedYearId!);
         setState(() => _standards = stds);
@@ -960,6 +970,7 @@ class _TeacherAssignmentScreenState
                             _filterSection = null;
                             _filterSections = [];
                           });
+                          ref.read(activeAcademicYearProvider.notifier).setYear(v);
                           if (v != null) {
                             final stds = await _repo.listStandards(v);
                             setState(() => _standards = stds);
@@ -1051,7 +1062,6 @@ class _TeacherAssignmentScreenState
                           Colors.grey.shade100,
                         ),
                         columns: [
-                          const DataColumn(label: Text('Teacher')),
                           const DataColumn(label: Text('Emp. Code')),
                           const DataColumn(label: Text('Class')),
                           const DataColumn(label: Text('Section')),
@@ -1063,7 +1073,6 @@ class _TeacherAssignmentScreenState
                         rows: _assignments.map((a) {
                           return DataRow(
                             cells: [
-                              DataCell(Text(a.teacherName ?? '-')),
                               DataCell(Text(a.employeeCode)),
                               DataCell(Text(a.standardName)),
                               DataCell(Text(a.section)),

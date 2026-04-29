@@ -15,7 +15,7 @@ class AdminScaffold extends StatelessWidget {
       appBar: TopBar(title: title),
       body: Row(
         children: [
-          const Sidebar(),
+          const AdminSidebar(),
           const VerticalDivider(width: 1),
           Expanded(child: child),
         ],

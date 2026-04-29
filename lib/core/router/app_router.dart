@@ -12,11 +12,11 @@ import '../../presentation/auth/screens/admin_login_screen.dart';
 import '../../presentation/academics/screens/academic_years_screen.dart';
 import '../../presentation/academics/screens/academic_structure_screen.dart';
 import '../../presentation/enrollment/screens/enrollment_screen.dart';
+import '../../presentation/enrollment/screens/lifecycle_management_screen.dart';
 import '../../presentation/enrollment/screens/promotion_workflow_screen.dart';
 import '../../presentation/teacher_assignments/screens/teacher_assignment_screen.dart';
 import '../../presentation/role_profiles/screens/role_profiles_screen.dart';
 import '../../presentation/fees/screens/fee_management_screen.dart';
-import '../../presentation/attendance/screens/attendance_monitor_screen.dart';
 import '../../domains/providers/results/screens/exams_results_screen.dart';
 import '../../presentation/reports/screens/reports_screen.dart';
 import '../../presentation/communication/screens/communication_screen.dart';
@@ -88,6 +88,10 @@ GoRouter buildRouter(Ref ref) {
         path: RouteNames.enrollment,
         builder: (context, state) => const EnrollmentScreen(),
       ),
+      GoRoute(
+        path: RouteNames.lifecycleManagement,
+        builder: (context, state) => const LifecycleManagementScreen(),
+      ),
 
       // Phase 7 — Promotion Workflow
       GoRoute(
@@ -110,12 +114,6 @@ GoRouter buildRouter(Ref ref) {
       GoRoute(
         path: RouteNames.fees,
         builder: (context, state) => const FeeManagementScreen(),
-      ),
-
-      // Phase 9 — Attendance Monitor
-      GoRoute(
-        path: RouteNames.attendanceMonitor,
-        builder: (context, state) => const AttendanceMonitorScreen(),
       ),
 
       // Phase 10 — Exams & Results

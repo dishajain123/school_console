@@ -1,21 +1,20 @@
 // lib/presentation/reports/screens/reports_screen.dart  [Admin Console]
 // Phase 11 — Reporting & Analytics.
-// Tabs: Overview | Student Strength | Attendance | Fee Collection | Performance | Details
+// Tabs: Overview | Fee Collection | Detailed Report
 // PRINCIPAL / TRUSTEE / SUPERADMIN access.
 // Export: CSV download via browser for management sharing.
 // APIs used:
 //   GET /principal-reports/overview      — summary KPIs
 //   GET /principal-reports/details       — drill-down with metric/class/section filters
 //   GET /fees/analytics                  — fee collection breakdown
-//   GET /attendance/analytics/dashboard  — attendance dashboard
 //   GET /students + /masters/standards   — student strength by class
-//   GET /results/exams                   — performance overview
 import 'dart:convert';
 import 'dart:html' as html;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/network/dio_client.dart';
+import '../../../domains/providers/active_year_provider.dart';
 import '../../../domains/providers/auth_provider.dart';
 import '../../common/layout/admin_scaffold.dart';
 
@@ -95,21 +94,6 @@ class _ReportsRepository {
     return r.data ?? {};
   }
 
-  // Phase 11: GET /attendance/analytics/dashboard — attendance dashboard
-  Future<Map<String, dynamic>> getAttendanceDashboard({
-    required String yearId,
-    String? standardId,
-  }) async {
-    final r = await _dio.dio.get<Map<String, dynamic>>(
-      '/attendance/analytics/dashboard',
-      queryParameters: {
-        'academic_year_id': yearId,
-        if (standardId != null) 'standard_id': standardId,
-      },
-    );
-    return r.data ?? {};
-  }
-
   // Phase 11: student strength — list students per class
   Future<Map<String, dynamic>> getStudentStrength(
       String schoolId, String yearId) async {
@@ -122,26 +106,6 @@ class _ReportsRepository {
       },
     );
     return r.data ?? {};
-  }
-
-  // Phase 11: GET /results/exams — performance overview
-  Future<List<Map<String, dynamic>>> listExams({String? yearId}) async {
-    try {
-      final r = await _dio.dio.get<dynamic>(
-        '/results/exams',
-        queryParameters: {
-          if (yearId != null) 'academic_year_id': yearId,
-        },
-      );
-      final raw = r.data is List
-          ? r.data as List
-          : ((r.data as Map?)?['items'] as List? ?? []);
-      return raw
-          .map((e) => Map<String, dynamic>.from(e as Map))
-          .toList();
-    } catch (_) {
-      return [];
-    }
   }
 
   Future<List<Map<String, dynamic>>> getDefaulters({String? yearId}) async {
@@ -180,11 +144,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
   // Data caches per tab
   Map<String, dynamic> _overview = {};
   Map<String, dynamic> _feeData = {};
-  Map<String, dynamic> _attendanceData = {};
-  List<Map<String, dynamic>> _exams = [];
   List<Map<String, dynamic>> _defaulters = [];
   Map<String, dynamic> _detailsData = {};
-  String _selectedDetailMetric = 'student_attendance';
+  String _selectedDetailMetric = 'fees_paid';
 
   bool _loading = false;
   String? _error;
@@ -192,7 +154,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _repo = _ReportsRepository(ref.read(dioClientProvider));
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging) _onTabChanged(_tabController.index);
@@ -215,10 +177,19 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
     try {
       final years = await _repo.listYears(_schoolId!);
       setState(() => _years = years);
-      final active =
-          years.firstWhere((y) => y['is_active'] == true, orElse: () => {});
-      if (active.isNotEmpty) {
-        _selectedYearId = active['id']?.toString();
+      final preferredYearId = ref.read(activeAcademicYearProvider);
+      final preferred = years.firstWhere(
+        (y) => y['id']?.toString() == preferredYearId,
+        orElse: () => <String, dynamic>{},
+      );
+      final active = years.firstWhere(
+        (y) => y['is_active'] == true,
+        orElse: () => years.isNotEmpty ? years.first : <String, dynamic>{},
+      );
+      final selected = preferred.isNotEmpty ? preferred : active;
+      if (selected.isNotEmpty) {
+        _selectedYearId = selected['id']?.toString();
+        ref.read(activeAcademicYearProvider.notifier).setYear(_selectedYearId);
         await _loadStandards();
         await _loadOverview();
       }
@@ -246,12 +217,6 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
         if (_feeData.isEmpty) await _loadFeeAnalytics();
         break;
       case 2:
-        if (_attendanceData.isEmpty) await _loadAttendanceDashboard();
-        break;
-      case 3:
-        if (_exams.isEmpty) await _loadPerformance();
-        break;
-      case 4:
         if (_detailsData.isEmpty) await _loadDetails();
         break;
     }
@@ -285,39 +250,6 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
         _feeData = d;
         _defaulters = def;
       });
-    } catch (e) {
-      setState(() => _error = e.toString());
-    } finally {
-      setState(() => _loading = false);
-    }
-  }
-
-  Future<void> _loadAttendanceDashboard() async {
-    if (_selectedYearId == null) return;
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    try {
-      final d = await _repo.getAttendanceDashboard(
-          yearId: _selectedYearId!,
-          standardId: _filterStandardId);
-      setState(() => _attendanceData = d);
-    } catch (e) {
-      setState(() => _error = e.toString());
-    } finally {
-      setState(() => _loading = false);
-    }
-  }
-
-  Future<void> _loadPerformance() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    try {
-      final ex = await _repo.listExams(yearId: _selectedYearId);
-      setState(() => _exams = ex);
     } catch (e) {
       setState(() => _error = e.toString());
     } finally {
@@ -397,8 +329,6 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
               tabs: const [
                 Tab(text: 'Overview'),
                 Tab(text: 'Fee Collection'),
-                Tab(text: 'Attendance'),
-                Tab(text: 'Performance'),
                 Tab(text: 'Detailed Report'),
               ],
             ),
@@ -411,8 +341,6 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
                       children: [
                         _buildOverviewTab(),
                         _buildFeeTab(),
-                        _buildAttendanceTab(),
-                        _buildPerformanceTab(),
                         _buildDetailsTab(),
                       ],
                     ),
@@ -448,10 +376,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
                 _selectedYearId = v;
                 _overview = {};
                 _feeData = {};
-                _attendanceData = {};
-                _exams = [];
                 _detailsData = {};
               });
+              ref.read(activeAcademicYearProvider.notifier).setYear(v);
               _loadStandards();
             },
           ),
@@ -496,8 +423,6 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
             setState(() {
               _overview = {};
               _feeData = {};
-              _attendanceData = {};
-              _exams = [];
               _detailsData = {};
             });
             _onTabChanged(i);
@@ -520,21 +445,18 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
       );
     }
 
-    final stdAtt = (_overview['student_attendance_percentage'] as num?)?.toDouble() ?? 0;
     final feesPaid = (_overview['fees_paid_amount'] as num?)?.toDouble() ?? 0;
     final results = (_overview['results_average_percentage'] as num?)?.toDouble() ?? 0;
-    final tchAtt = (_overview['teacher_attendance_percentage'] as num?)?.toDouble() ?? 0;
     final totalStudents = _overview['student_total_records'] ?? 0;
-    final totalTeachers = _overview['total_teachers'] ?? 0;
-    final presentStudents = _overview['student_present_count'] ?? 0;
-    final presentTeachers = _overview['teachers_present_today'] ?? 0;
+    final paidTxns = _overview['fees_paid_transactions'] ?? 0;
+    final resultStudents = _overview['students_with_results'] ?? 0;
+    final resultEntries = _overview['result_entries_count'] ?? 0;
 
     final rows = [
-      ['Metric', 'Value', 'Numerator', 'Denominator'],
-      ['Student Attendance %', '${stdAtt.toStringAsFixed(1)}%', '$presentStudents', '$totalStudents'],
-      ['Fees Paid Amount', _fmt(feesPaid), '${_overview['fees_paid_transactions'] ?? 0}', 'transactions'],
-      ['Results Average %', '${results.toStringAsFixed(1)}%', '${_overview['students_with_results'] ?? 0}', '${_overview['result_entries_count'] ?? 0}'],
-      ['Teacher Attendance %', '${tchAtt.toStringAsFixed(1)}%', '$presentTeachers', '$totalTeachers'],
+      ['Metric', 'Value', 'Numerator', 'Denominator/Unit'],
+      ['Student Strength', '$totalStudents', '$totalStudents', 'students'],
+      ['Fees Paid Amount', _fmt(feesPaid), '$paidTxns', 'transactions'],
+      ['Results Average %', '${results.toStringAsFixed(1)}%', '$resultStudents', '$resultEntries'],
     ];
 
     return SingleChildScrollView(
@@ -553,18 +475,14 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
             spacing: 12,
             runSpacing: 12,
             children: [
-              _KpiCard('Student Attendance', '${stdAtt.toStringAsFixed(1)}%',
-                  Icons.how_to_reg_outlined, stdAtt >= 75 ? Colors.green : Colors.red),
+              _KpiCard('Student Strength', '$totalStudents',
+                  Icons.how_to_reg_outlined, Colors.blueGrey),
               _KpiCard('Fees Collected', _fmt(feesPaid),
                   Icons.payments_outlined, Colors.blue),
               _KpiCard('Avg Results', '${results.toStringAsFixed(1)}%',
                   Icons.analytics_outlined, results >= 50 ? Colors.green : Colors.orange),
-              _KpiCard('Teacher Attendance', '${tchAtt.toStringAsFixed(1)}%',
-                  Icons.school_outlined, tchAtt >= 80 ? Colors.green : Colors.orange),
-              _KpiCard('Students', '$presentStudents / $totalStudents present',
+              _KpiCard('Students', '$totalStudents',
                   Icons.people_outline, Colors.blueGrey),
-              _KpiCard('Teachers Present', '$presentTeachers / $totalTeachers',
-                  Icons.person_outline, Colors.purple),
             ],
           ),
           const SizedBox(height: 20),
@@ -716,240 +634,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
     );
   }
 
-  // ── Tab 2: Attendance ───────────────────────────────────────────────────────
-
-  Widget _buildAttendanceTab() {
-    if (_attendanceData.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (_selectedYearId == null)
-              const Text('Select an academic year first.',
-                  style: TextStyle(color: Colors.grey))
-            else
-              ElevatedButton.icon(
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Load Attendance Dashboard'),
-                  onPressed: _loadAttendanceDashboard),
-          ],
-        ),
-      );
-    }
-
-    final overall =
-        (_attendanceData['overall_percentage'] as num?)?.toDouble() ?? 0;
-    final totalRecords = _attendanceData['total_records'] ?? 0;
-    final present = _attendanceData['present'] ?? 0;
-    final classByClass =
-        (_attendanceData['class_breakdown'] as List<dynamic>? ?? [])
-            .map((e) => Map<String, dynamic>.from(e as Map))
-            .toList();
-    final topAbsentees =
-        (_attendanceData['top_absentees'] as List<dynamic>? ?? [])
-            .map((e) => Map<String, dynamic>.from(e as Map))
-            .toList();
-
-    final exportRows = [
-      ['Class', 'Section', 'Total', 'Present', 'Attendance %'],
-      ...classByClass.map((c) => [
-            c['standard_name']?.toString() ?? '-',
-            c['section']?.toString() ?? '-',
-            '${c['total'] ?? 0}',
-            '${c['present'] ?? 0}',
-            '${((c['percentage'] as num?)?.toDouble() ?? 0).toStringAsFixed(1)}%',
-          ]),
-    ];
-
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton.icon(
-              icon: const Icon(Icons.download_outlined, size: 14),
-              label: const Text('Export CSV'),
-              onPressed: () => _exportCsv('attendance', exportRows),
-            ),
-          ),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              _KpiCard('Overall %', '${overall.toStringAsFixed(1)}%',
-                  Icons.check_circle_outline,
-                  overall >= 75 ? Colors.green : Colors.red),
-              _KpiCard('Total Records', '$totalRecords',
-                  Icons.calendar_today_outlined, Colors.blue),
-              _KpiCard('Present', '$present',
-                  Icons.person_outline, Colors.green),
-            ],
-          ),
-          const SizedBox(height: 16),
-          if (classByClass.isNotEmpty) ...[
-            const Text('Class-wise Breakdown',
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
-            const SizedBox(height: 8),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                headingRowColor:
-                    WidgetStateProperty.all(Colors.grey.shade100),
-                columns: ['Class', 'Section', 'Total', 'Present', '%']
-                    .map((c) => DataColumn(label: Text(c)))
-                    .toList(),
-                rows: classByClass.map((c) {
-                  final pct = (c['percentage'] as num?)?.toDouble() ?? 0;
-                  return DataRow(cells: [
-                    DataCell(Text(c['standard_name']?.toString() ?? '-')),
-                    DataCell(Text(c['section']?.toString() ?? '-')),
-                    DataCell(Text('${c['total'] ?? 0}')),
-                    DataCell(Text('${c['present'] ?? 0}')),
-                    DataCell(Text('${pct.toStringAsFixed(1)}%',
-                        style: TextStyle(
-                            color: pct >= 75 ? Colors.green : Colors.red,
-                            fontWeight: FontWeight.w600))),
-                  ]);
-                }).toList(),
-              ),
-            ),
-          ],
-          if (topAbsentees.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            const Text('Top Absentees',
-                style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 14,
-                    color: Colors.red)),
-            const SizedBox(height: 8),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                headingRowColor:
-                    WidgetStateProperty.all(Colors.red.shade50),
-                columns: ['Student', 'Adm. No.', 'Absent', 'Total', '%']
-                    .map((c) => DataColumn(label: Text(c)))
-                    .toList(),
-                rows: topAbsentees.map((s) {
-                  final pct = (s['attendance_percentage'] as num?)?.toDouble() ?? 0;
-                  return DataRow(cells: [
-                    DataCell(Text(s['student_name']?.toString() ?? '-')),
-                    DataCell(Text(s['admission_number']?.toString() ?? '-')),
-                    DataCell(Text('${s['absent'] ?? 0}')),
-                    DataCell(Text('${s['total'] ?? 0}')),
-                    DataCell(Text('${pct.toStringAsFixed(1)}%',
-                        style: const TextStyle(color: Colors.red, fontWeight: FontWeight.w700))),
-                  ]);
-                }).toList(),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  // ── Tab 3: Performance ──────────────────────────────────────────────────────
-
-  Widget _buildPerformanceTab() {
-    if (_exams.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ElevatedButton.icon(
-                icon: const Icon(Icons.refresh),
-                label: const Text('Load Exam Performance'),
-                onPressed: _loadPerformance),
-          ],
-        ),
-      );
-    }
-
-    final exportRows = [
-      ['Exam Name', 'Class', 'Type', 'Start', 'End', 'Published'],
-      ..._exams.map((e) => [
-            e['name']?.toString() ?? '-',
-            e['standard']?['name']?.toString() ?? e['standard_name']?.toString() ?? '-',
-            e['exam_type']?.toString() ?? '-',
-            e['start_date']?.toString() ?? '-',
-            e['end_date']?.toString() ?? '-',
-            e['is_published'] == true ? 'Yes' : 'No',
-          ]),
-    ];
-
-    final published = _exams.where((e) => e['is_published'] == true).length;
-    final pending = _exams.length - published;
-
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton.icon(
-              icon: const Icon(Icons.download_outlined, size: 14),
-              label: const Text('Export CSV'),
-              onPressed: () => _exportCsv('performance', exportRows),
-            ),
-          ),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              _KpiCard('Total Exams', '${_exams.length}',
-                  Icons.assignment_outlined, Colors.blue),
-              _KpiCard('Published', '$published',
-                  Icons.publish_outlined, Colors.green),
-              _KpiCard('Pending Publish', '$pending',
-                  Icons.pending_actions_outlined, Colors.orange),
-            ],
-          ),
-          const SizedBox(height: 16),
-          const Text('Exams & Publication Status',
-              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
-          const SizedBox(height: 8),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: DataTable(
-              headingRowColor:
-                  WidgetStateProperty.all(Colors.grey.shade100),
-              columns: ['Exam Name', 'Class', 'Type', 'Start', 'End', 'Published']
-                  .map((c) => DataColumn(label: Text(c)))
-                  .toList(),
-              rows: _exams.map((e) {
-                final isPub = e['is_published'] == true;
-                return DataRow(cells: [
-                  DataCell(Text(e['name']?.toString() ?? '-',
-                      style: const TextStyle(fontWeight: FontWeight.w600))),
-                  DataCell(Text(
-                      e['standard']?['name']?.toString() ?? e['standard_name']?.toString() ?? '-')),
-                  DataCell(Text(e['exam_type']?.toString() ?? '-')),
-                  DataCell(Text(e['start_date']?.toString() ?? '-')),
-                  DataCell(Text(e['end_date']?.toString() ?? '-')),
-                  DataCell(Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: isPub ? Colors.green.shade50 : Colors.orange.shade50,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(isPub ? 'Published' : 'Pending',
-                        style: TextStyle(
-                            color: isPub ? Colors.green.shade700 : Colors.orange.shade700,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600)),
-                  )),
-                ]);
-              }).toList(),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── Tab 4: Detailed Report ──────────────────────────────────────────────────
+  // ── Tab 2: Detailed Report ──────────────────────────────────────────────────
 
   Widget _buildDetailsTab() {
     return Column(
@@ -965,15 +650,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
                 value: _selectedDetailMetric,
                 items: const [
                   DropdownMenuItem(
-                      value: 'student_attendance',
-                      child: Text('Student Attendance')),
-                  DropdownMenuItem(
                       value: 'fees_paid', child: Text('Fees Paid')),
                   DropdownMenuItem(
                       value: 'results', child: Text('Results')),
-                  DropdownMenuItem(
-                      value: 'teacher_attendance',
-                      child: Text('Teacher Attendance')),
                 ],
                 onChanged: (v) {
                   if (v != null) {
@@ -1001,19 +680,18 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
   }
 
   Widget _buildDetailBody() {
-    // Student Attendance Detail
-    if (_selectedDetailMetric == 'student_attendance') {
-      final attSub = (_detailsData['attendance_by_subject'] as List<dynamic>? ?? [])
+    // Fees Paid Detail
+    if (_selectedDetailMetric == 'fees_paid') {
+      final byStudent = (_detailsData['fees_by_student'] as List<dynamic>? ?? [])
           .map((e) => Map<String, dynamic>.from(e as Map))
           .toList();
-      final overall = _detailsData['student_attendance'] as Map? ?? {};
+      final overall = _detailsData['fees_paid'] as Map? ?? {};
       final exportRows = [
-        ['Subject', 'Present', 'Total', '%'],
-        ...attSub.map((s) => [
-              s['subject_name']?.toString() ?? '-',
-              '${s['present'] ?? 0}',
-              '${s['total'] ?? 0}',
-              '${((s['percentage'] as num?)?.toDouble() ?? 0).toStringAsFixed(1)}%',
+        ['Admission Number', 'Paid Amount', 'Transactions'],
+        ...byStudent.map((s) => [
+              s['admission_number']?.toString() ?? '-',
+              _fmt((s['paid_amount'] as num?)?.toDouble() ?? 0),
+              '${s['transactions'] ?? 0}',
             ]),
       ];
       return Column(
@@ -1024,57 +702,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
             child: TextButton.icon(
               icon: const Icon(Icons.download_outlined, size: 14),
               label: const Text('Export CSV'),
-              onPressed: () => _exportCsv('student_attendance_detail', exportRows),
+              onPressed: () => _exportCsv('fees_paid_detail', exportRows),
             ),
           ),
-          Wrap(spacing: 12, children: [
-            _KpiCard('Overall %',
-                '${((overall['value'] as num?)?.toDouble() ?? 0).toStringAsFixed(1)}%',
-                Icons.check_circle_outline, Colors.green),
-            _KpiCard('Present', '${overall['numerator'] ?? 0}',
-                Icons.person_outline, Colors.blue),
-            _KpiCard('Total', '${overall['denominator'] ?? 0}',
-                Icons.groups_outlined, Colors.blueGrey),
-          ]),
-          const SizedBox(height: 12),
-          if (attSub.isNotEmpty) ...[
-            const Text('Subject-wise',
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
-            const SizedBox(height: 6),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                columns: ['Subject', 'Present', 'Total', '%']
-                    .map((c) => DataColumn(label: Text(c)))
-                    .toList(),
-                rows: attSub.map((s) {
-                  final pct = (s['percentage'] as num?)?.toDouble() ?? 0;
-                  return DataRow(cells: [
-                    DataCell(Text(s['subject_name']?.toString() ?? '-')),
-                    DataCell(Text('${s['present'] ?? 0}')),
-                    DataCell(Text('${s['total'] ?? 0}')),
-                    DataCell(Text('${pct.toStringAsFixed(1)}%',
-                        style: TextStyle(
-                            color: pct >= 75 ? Colors.green : Colors.red,
-                            fontWeight: FontWeight.w600))),
-                  ]);
-                }).toList(),
-              ),
-            ),
-          ],
-        ],
-      );
-    }
-
-    // Fees Paid Detail
-    if (_selectedDetailMetric == 'fees_paid') {
-      final byStudent = (_detailsData['fees_by_student'] as List<dynamic>? ?? [])
-          .map((e) => Map<String, dynamic>.from(e as Map))
-          .toList();
-      final overall = _detailsData['fees_paid'] as Map? ?? {};
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
           Wrap(spacing: 12, children: [
             _KpiCard('Total Paid',
                 _fmt((overall['amount'] as num?)?.toDouble() ?? 0),
@@ -1112,9 +742,25 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
           .map((e) => Map<String, dynamic>.from(e as Map))
           .toList();
       final overall = _detailsData['results'] as Map? ?? {};
+      final exportRows = [
+        ['Subject', 'Entries', 'Average Percentage'],
+        ...bySubject.map((s) => [
+              s['subject_name']?.toString() ?? '-',
+              '${s['entries'] ?? 0}',
+              '${((s['average_percentage'] as num?)?.toDouble() ?? 0).toStringAsFixed(1)}%',
+            ]),
+      ];
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              icon: const Icon(Icons.download_outlined, size: 14),
+              label: const Text('Export CSV'),
+              onPressed: () => _exportCsv('results_detail', exportRows),
+            ),
+          ),
           Wrap(spacing: 12, children: [
             _KpiCard('Avg %',
                 '${((overall['value'] as num?)?.toDouble() ?? 0).toStringAsFixed(1)}%',
@@ -1145,70 +791,6 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
                         style: TextStyle(
                             color: avg >= 50 ? Colors.green : Colors.red,
                             fontWeight: FontWeight.w600))),
-                  ]);
-                }).toList(),
-              ),
-            ),
-          ],
-        ],
-      );
-    }
-
-    // Teacher Attendance Detail
-    if (_selectedDetailMetric == 'teacher_attendance') {
-      final teachers = (_detailsData['teacher_attendance_items'] as List<dynamic>? ?? [])
-          .map((e) => Map<String, dynamic>.from(e as Map))
-          .toList();
-      final overall = _detailsData['teacher_attendance'] as Map? ?? {};
-      final exportRows = [
-        ['Teacher', 'Present', 'On Leave'],
-        ...teachers.map((t) => [
-              t['teacher_label']?.toString() ?? '-',
-              t['is_present'] == true ? 'Yes' : 'No',
-              t['on_leave'] == true ? 'Yes' : 'No',
-            ]),
-      ];
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton.icon(
-              icon: const Icon(Icons.download_outlined, size: 14),
-              label: const Text('Export CSV'),
-              onPressed: () => _exportCsv('teacher_attendance', exportRows),
-            ),
-          ),
-          Wrap(spacing: 12, children: [
-            _KpiCard('Attendance %',
-                '${((overall['value'] as num?)?.toDouble() ?? 0).toStringAsFixed(1)}%',
-                Icons.school_outlined, Colors.blue),
-            _KpiCard('Present', '${overall['numerator'] ?? 0}',
-                Icons.person_outline, Colors.green),
-            _KpiCard('Total', '${overall['denominator'] ?? 0}',
-                Icons.groups_outlined, Colors.blueGrey),
-          ]),
-          const SizedBox(height: 12),
-          if (teachers.isNotEmpty) ...[
-            const Text('Teacher Status Today',
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
-            const SizedBox(height: 6),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                columns: ['Teacher', 'Present', 'On Leave']
-                    .map((c) => DataColumn(label: Text(c)))
-                    .toList(),
-                rows: teachers.map((t) {
-                  final present = t['is_present'] == true;
-                  final onLeave = t['on_leave'] == true;
-                  return DataRow(cells: [
-                    DataCell(Text(t['teacher_label']?.toString() ?? '-')),
-                    DataCell(Icon(present ? Icons.check : Icons.close,
-                        color: present ? Colors.green : Colors.red, size: 16)),
-                    DataCell(Icon(onLeave ? Icons.beach_access : Icons.work,
-                        color: onLeave ? Colors.orange : Colors.grey,
-                        size: 16)),
                   ]);
                 }).toList(),
               ),

@@ -22,6 +22,21 @@ class AdminUser {
   bool get canReview => permissions.contains('approval:review');
   bool get canDecide => permissions.contains('approval:decide');
 
+  AdminUser copyWith({
+    String? schoolId,
+  }) {
+    return AdminUser(
+      id: id,
+      role: role,
+      email: email,
+      phone: phone,
+      schoolId: schoolId ?? this.schoolId,
+      status: status,
+      isActive: isActive,
+      permissions: permissions,
+    );
+  }
+
   factory AdminUser.fromJson(Map<String, dynamic> json) {
     return AdminUser(
       id: json['id'] as String,

@@ -41,23 +41,17 @@ const _allItems = [
   _NavItem(icon: Icons.assignment_ind_outlined, selectedIcon: Icons.assignment_ind, label: 'Teacher Assign.', route: RouteNames.teacherAssignments),
   // 8 — Role Profiles
   _NavItem(icon: Icons.badge_outlined, selectedIcon: Icons.badge, label: 'Profiles', route: RouteNames.roleProfiles),
-  // 9 — ID Config
-  _NavItem(icon: Icons.numbers_outlined, selectedIcon: Icons.numbers, label: 'ID Config', route: RouteNames.identifierConfigs),
-  // 10 — Users
-  _NavItem(icon: Icons.people_outline, selectedIcon: Icons.people, label: 'Users', route: RouteNames.users),
-  // 11 — Fees (Phase 8)
+  // 9 — Fees (Phase 8)
   _NavItem(icon: Icons.payments_outlined, selectedIcon: Icons.payments, label: 'Fees', route: RouteNames.fees),
-  // 12 — Attendance Monitor (Phase 9)
-  _NavItem(icon: Icons.today_outlined, selectedIcon: Icons.today, label: 'Attendance', route: RouteNames.attendanceMonitor),
-  // 13 — Exams & Results (Phase 10)
+  // 10 — Exams & Results (Phase 10)
   _NavItem(icon: Icons.analytics_outlined, selectedIcon: Icons.analytics, label: 'Results', route: RouteNames.examsResults),
-  // 14 — Reports & Analytics (Phase 11)
+  // 11 — Reports & Analytics (Phase 11)
   _NavItem(icon: Icons.bar_chart_outlined, selectedIcon: Icons.bar_chart, label: 'Reports', route: RouteNames.reports),
-  // 15 — Communication (Phase 12)
+  // 12 — Communication (Phase 12)
   _NavItem(icon: Icons.campaign_outlined, selectedIcon: Icons.campaign, label: 'Communication', route: RouteNames.communication),
-  // 16 — Documents (Phase 13)
+  // 13 — Documents (Phase 13)
   _NavItem(icon: Icons.folder_outlined, selectedIcon: Icons.folder, label: 'Documents', route: RouteNames.documents),
-  // 17 — Settings
+  // 14 — Settings
   _NavItem(icon: Icons.settings_outlined, selectedIcon: Icons.settings, label: 'Settings', route: RouteNames.settings),
 ];
 
@@ -65,17 +59,21 @@ const _allItems = [
 List<_NavItem> _itemsForUser(AdminUser user) {
   final role = user.role.toUpperCase();
   final perms = user.permissions;
+  final byRoute = {for (final item in _allItems) item.route: item};
+  void addRoute(List<_NavItem> list, String route) {
+    final item = byRoute[route];
+    if (item != null) list.add(item);
+  }
 
   // SUPERADMIN sees everything
   if (role == 'SUPERADMIN') return _allItems;
 
-  // TRUSTEE: read-only — Reports, Fees view, Attendance view, Results view
+  // TRUSTEE: read-only — Reports, Fees view, Results view
   if (role == 'TRUSTEE') {
     return [
-      _allItems[14], // Reports
-      _allItems[11], // Fees (read-only)
-      _allItems[12], // Attendance
-      _allItems[13], // Results
+      byRoute[RouteNames.reports]!,
+      byRoute[RouteNames.fees]!,
+      byRoute[RouteNames.examsResults]!,
     ];
   }
 
@@ -83,75 +81,66 @@ List<_NavItem> _itemsForUser(AdminUser user) {
 
   // Approvals & Audit — PRINCIPAL or staff with approval:review
   if (role == 'PRINCIPAL' || user.canReview) {
-    visible.add(_allItems[0]);
-    visible.add(_allItems[1]);
+    addRoute(visible, RouteNames.approvals);
+    addRoute(visible, RouteNames.audit);
   }
 
   // Academic structure — PRINCIPAL or settings:manage
   if (role == 'PRINCIPAL' || perms.contains('settings:manage')) {
-    visible.add(_allItems[2]);
-    visible.add(_allItems[3]);
+    addRoute(visible, RouteNames.academics);
+    addRoute(visible, RouteNames.academicStructure);
   }
 
   // Enrollment & Lifecycle — PRINCIPAL or user:manage
   if (role == 'PRINCIPAL' || perms.contains('user:manage')) {
-    visible.add(_allItems[4]);  // Enrollment roster
-    visible.add(_allItems[5]);  // Lifecycle management (Phase 14/15)
+    addRoute(visible, RouteNames.enrollment); // Enrollment roster
+    addRoute(visible, RouteNames.lifecycleManagement); // Lifecycle management
   }
 
   // Promotion (Phase 7) — PRINCIPAL or student:promote
   if (role == 'PRINCIPAL' || perms.contains('student:promote')) {
-    visible.add(_allItems[6]);
+    addRoute(visible, RouteNames.promotion);
   }
 
   // Teacher Assignments — PRINCIPAL or teacher_assignment:manage
   if (role == 'PRINCIPAL' || perms.contains('teacher_assignment:manage')) {
-    visible.add(_allItems[7]);
+    addRoute(visible, RouteNames.teacherAssignments);
   }
 
-  // Role Profiles & ID Config — PRINCIPAL or settings:manage
+  // Role Profiles — PRINCIPAL or settings:manage
   if (role == 'PRINCIPAL' || perms.contains('settings:manage')) {
-    visible.add(_allItems[8]);
-    visible.add(_allItems[9]);
-  }
-
-  // Users — PRINCIPAL or user:manage
-  if (role == 'PRINCIPAL' || perms.contains('user:manage')) {
-    visible.add(_allItems[10]);
+    addRoute(visible, RouteNames.roleProfiles);
   }
 
   // Fees — fee:read or PRINCIPAL
   if (role == 'PRINCIPAL' || perms.contains('fee:read') || perms.contains('fee:create')) {
-    visible.add(_allItems[11]);
-  }
-
-  // Attendance monitor — PRINCIPAL or attendance:read
-  if (role == 'PRINCIPAL' || perms.contains('attendance:read')) {
-    visible.add(_allItems[12]);
+    addRoute(visible, RouteNames.fees);
   }
 
   // Results — PRINCIPAL or result:read
   if (role == 'PRINCIPAL' || perms.contains('result:read')) {
-    visible.add(_allItems[13]);
+    addRoute(visible, RouteNames.examsResults);
   }
 
   // Reports — PRINCIPAL or reports:read
   if (role == 'PRINCIPAL' || perms.contains('reports:read')) {
-    visible.add(_allItems[14]);
+    addRoute(visible, RouteNames.reports);
   }
 
   // Communication — PRINCIPAL or announcement:create
   if (role == 'PRINCIPAL' || perms.contains('announcement:create')) {
-    visible.add(_allItems[15]);
+    addRoute(visible, RouteNames.communication);
   }
 
   // Documents — PRINCIPAL or document:manage
   if (role == 'PRINCIPAL' || perms.contains('document:manage')) {
-    visible.add(_allItems[16]);
+    addRoute(visible, RouteNames.documents);
   }
 
-  // Settings always visible
-  visible.add(_allItems[17]);
+  // Settings — only users who can manage settings
+  if (role == 'PRINCIPAL' || perms.contains('settings:manage')) {
+    addRoute(visible, RouteNames.settings);
+  }
 
   return visible;
 }
@@ -161,6 +150,56 @@ List<_NavItem> _itemsForUser(AdminUser user) {
 class AdminSidebar extends ConsumerWidget {
   const AdminSidebar({super.key});
 
+  String _normalizePath(String path) {
+    if (path.isEmpty) return '/';
+    if (path.length > 1 && path.endsWith('/')) {
+      return path.substring(0, path.length - 1);
+    }
+    return path;
+  }
+
+  int _resolveSelectedIndex(List<_NavItem> items, String rawLocation) {
+    final location = _normalizePath(rawLocation);
+
+    // Prefer exact route match first.
+    final exactIndex = items.indexWhere(
+      (item) => location == _normalizePath(item.route),
+    );
+    if (exactIndex != -1) return exactIndex;
+
+    // Explicit family priority prevents parent routes (e.g. /enrollment)
+    // from stealing selection for child routes.
+    const orderedRoutePriority = <String>[
+      RouteNames.lifecycleManagement,
+      RouteNames.promotion,
+      RouteNames.academicStructure,
+      RouteNames.enrollment,
+      RouteNames.academics,
+    ];
+    for (final route in orderedRoutePriority) {
+      final normalized = _normalizePath(route);
+      if (location == normalized || location.startsWith('$normalized/')) {
+        final idx = items.indexWhere((item) => item.route == route);
+        if (idx != -1) return idx;
+      }
+    }
+
+    // Generic fallback: most specific prefix wins.
+    final matches = <int>[];
+    for (var i = 0; i < items.length; i++) {
+      final route = _normalizePath(items[i].route);
+      if (location.startsWith('$route/')) {
+        matches.add(i);
+      }
+    }
+    if (matches.isEmpty) return -1;
+
+    matches.sort(
+      (a, b) => items[b].route.length.compareTo(items[a].route.length),
+    );
+    return matches.first;
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authControllerProvider);
@@ -168,12 +207,13 @@ class AdminSidebar extends ConsumerWidget {
     if (user == null) return const SizedBox.shrink();
 
     final items = _itemsForUser(user);
-    final location = GoRouterState.of(context).matchedLocation;
+    final location = _normalizePath(
+      GoRouter.of(context).routeInformationProvider.value.uri.path,
+    );
+    final selectedIndex = _resolveSelectedIndex(items, location);
 
     return NavigationDrawer(
-      selectedIndex: items.indexWhere(
-        (item) => location.startsWith(item.route),
-      ),
+      selectedIndex: selectedIndex,
       onDestinationSelected: (i) {
         context.go(items[i].route);
         if (Scaffold.of(context).isDrawerOpen) {

@@ -9,10 +9,14 @@ class DecisionPanel extends ConsumerStatefulWidget {
     super.key,
     required this.userId,
     required this.canDecide,
+    required this.isSuperAdmin,
+    required this.currentStatus,
   });
 
   final String userId;
   final bool canDecide;
+  final bool isSuperAdmin;
+  final String currentStatus;
 
   @override
   ConsumerState<DecisionPanel> createState() => _DecisionPanelState();
@@ -79,30 +83,41 @@ class _DecisionPanelState extends ConsumerState<DecisionPanel> {
             const SizedBox(height: 8),
             CheckboxListTile(
               value: _overrideValidation,
-              onChanged: widget.canDecide
+              onChanged: (widget.canDecide && widget.isSuperAdmin)
                   ? (v) => setState(() => _overrideValidation = v ?? false)
                   : null,
               title: const Text('Override validation (Superadmin only)'),
               contentPadding: EdgeInsets.zero,
             ),
+            if (widget.currentStatus.toUpperCase() == 'ACTIVE')
+              const Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: Text(
+                  'This user is already ACTIVE. Further approval decisions are blocked.',
+                  style: TextStyle(color: Colors.orange),
+                ),
+              ),
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
               children: [
                 ElevatedButton(
-                  onPressed: widget.canDecide
+                  onPressed: (widget.canDecide &&
+                          widget.currentStatus.toUpperCase() != 'ACTIVE')
                       ? () => _decide(ApprovalActionType.approve)
                       : null,
                   child: const Text('Approve'),
                 ),
                 ElevatedButton(
-                  onPressed: widget.canDecide
+                  onPressed: (widget.canDecide &&
+                          widget.currentStatus.toUpperCase() != 'ACTIVE')
                       ? () => _decide(ApprovalActionType.reject)
                       : null,
                   child: const Text('Reject'),
                 ),
                 ElevatedButton(
-                  onPressed: widget.canDecide
+                  onPressed: (widget.canDecide &&
+                          widget.currentStatus.toUpperCase() != 'ACTIVE')
                       ? () => _decide(ApprovalActionType.hold)
                       : null,
                   child: const Text('Hold'),

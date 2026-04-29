@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/network/dio_client.dart';
+import '../../active_year_provider.dart';
 import '../../auth_provider.dart';
 import '../../../../presentation/common/layout/admin_scaffold.dart';
 
@@ -231,10 +232,19 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
     try {
       final years = await _repo.listYears(_schoolId!);
       setState(() => _years = years);
-      final active =
-          years.firstWhere((y) => y['is_active'] == true, orElse: () => {});
-      if (active.isNotEmpty && _selectedYearId == null) {
-        _selectedYearId = active['id']?.toString();
+      final preferredYearId = ref.read(activeAcademicYearProvider);
+      final preferred = years.firstWhere(
+        (y) => y['id']?.toString() == preferredYearId,
+        orElse: () => <String, dynamic>{},
+      );
+      final active = years.firstWhere(
+        (y) => y['is_active'] == true,
+        orElse: () => years.isNotEmpty ? years.first : <String, dynamic>{},
+      );
+      final selected = preferred.isNotEmpty ? preferred : active;
+      if (selected.isNotEmpty) {
+        _selectedYearId = selected['id']?.toString();
+        ref.read(activeAcademicYearProvider.notifier).setYear(_selectedYearId);
         await _loadStandards();
         await _loadExams();
       }
@@ -368,6 +378,7 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
                         .toList(),
                     onChanged: (v) {
                       setState(() => _selectedYearId = v);
+                      ref.read(activeAcademicYearProvider.notifier).setYear(v);
                       _loadStandards();
                     },
                   ),

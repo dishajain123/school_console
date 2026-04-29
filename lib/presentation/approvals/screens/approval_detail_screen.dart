@@ -29,6 +29,8 @@ class ApprovalDetailScreen extends ConsumerWidget {
               DecisionPanel(
                 userId: userId,
                 canDecide: auth?.canDecide ?? false,
+                isSuperAdmin: (auth?.role.toUpperCase() ?? '') == 'SUPERADMIN',
+                currentStatus: item.status,
               ),
             ],
           ),

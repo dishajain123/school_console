@@ -35,9 +35,6 @@ class RouteNames {
   // Phase 8 — Fees Management
   static const String fees = '/fees';
 
-  // Phase 9 — Attendance Monitoring
-  static const String attendanceMonitor = '/attendance';
-
   // Phase 10 — Exams & Results
   static const String examsResults = '/results';
 

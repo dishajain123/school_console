@@ -4,8 +4,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/network/dio_client.dart';
 import '../../../domains/providers/auth_provider.dart';
+import '../../../domains/providers/enrollment_provider.dart';
+import '../../../data/repositories/enrollment_repository.dart';
 import '../../common/layout/admin_scaffold.dart';
 
 // ── Models ────────────────────────────────────────────────────────────────────
@@ -48,46 +49,28 @@ class _RosterStudent {
 // ── Repository ────────────────────────────────────────────────────────────────
 
 class _RosterRepository {
-  _RosterRepository(this._dio);
-  final DioClient _dio;
+  _RosterRepository(this._api);
+  final EnrollmentRepository _api;
 
   Future<List<Map<String, dynamic>>> listYears(String schoolId) async {
-    final resp = await _dio.dio.get<Map<String, dynamic>>(
-      '/academic-years',
-      queryParameters: {'school_id': schoolId},
-    );
-    return ((resp.data?['items'] as List?) ?? [])
-        .map((e) => Map<String, dynamic>.from(e as Map))
-        .toList();
+    return _api.listAcademicYears(schoolId: schoolId);
   }
 
   Future<List<Map<String, dynamic>>> listStandards(
       String schoolId, String academicYearId) async {
-    final resp = await _dio.dio.get<Map<String, dynamic>>(
-      '/masters/standards',
-      queryParameters: {
-        'school_id': schoolId,
-        'academic_year_id': academicYearId,
-      },
+    return _api.listStandards(
+      schoolId: schoolId,
+      academicYearId: academicYearId,
     );
-    return ((resp.data?['items'] as List?) ?? [])
-        .map((e) => Map<String, dynamic>.from(e as Map))
-        .toList();
   }
 
   Future<List<Map<String, dynamic>>> listSections(
       String schoolId, String standardId, String academicYearId) async {
-    final resp = await _dio.dio.get<Map<String, dynamic>>(
-      '/masters/sections',
-      queryParameters: {
-        'school_id': schoolId,
-        'standard_id': standardId,
-        'academic_year_id': academicYearId,
-      },
+    return _api.listSections(
+      schoolId: schoolId,
+      standardId: standardId,
+      academicYearId: academicYearId,
     );
-    return ((resp.data?['items'] as List?) ?? [])
-        .map((e) => Map<String, dynamic>.from(e as Map))
-        .toList();
   }
 
   Future<Map<String, dynamic>> getRoster({
@@ -95,15 +78,11 @@ class _RosterRepository {
     required String academicYearId,
     String? sectionId,
   }) async {
-    final resp = await _dio.dio.get<Map<String, dynamic>>(
-      '/enrollments/roster',
-      queryParameters: {
-        'standard_id': standardId,
-        'academic_year_id': academicYearId,
-        if (sectionId != null) 'section_id': sectionId,
-      },
+    return _api.getRoster(
+      standardId: standardId,
+      academicYearId: academicYearId,
+      sectionId: sectionId,
     );
-    return resp.data ?? {};
   }
 }
 
@@ -137,7 +116,7 @@ class _ClassRosterScreenState extends ConsumerState<ClassRosterScreen> {
   @override
   void initState() {
     super.initState();
-    _repo = _RosterRepository(ref.read(dioClientProvider));
+    _repo = _RosterRepository(ref.read(enrollmentRepositoryProvider));
     _loadYears();
   }
 

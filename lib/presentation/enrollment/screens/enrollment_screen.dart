@@ -3,8 +3,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/network/dio_client.dart';
 import '../../../domains/providers/auth_provider.dart';
+import '../../../domains/providers/enrollment_provider.dart';
+import '../../../data/repositories/enrollment_repository.dart';
 import '../../common/layout/admin_scaffold.dart';
 
 // ── Lightweight models ────────────────────────────────────────────────────────
@@ -50,8 +51,8 @@ class _EnrollmentMapping {
 // ── Repository ────────────────────────────────────────────────────────────────
 
 class _EnrollmentRepository {
-  _EnrollmentRepository(this._dio);
-  final DioClient _dio;
+  _EnrollmentRepository(this._api);
+  final EnrollmentRepository _api;
 
   Future<List<_EnrollmentMapping>> listRoster({
     required String schoolId,
@@ -59,16 +60,12 @@ class _EnrollmentRepository {
     required String academicYearId,
     String? sectionId,
   }) async {
-    final resp = await _dio.dio.get<Map<String, dynamic>>(
-      '/enrollments/roster',
-      queryParameters: {
-        'school_id': schoolId,
-        'standard_id': standardId,
-        'academic_year_id': academicYearId,
-        if (sectionId != null) 'section_id': sectionId,
-      },
+    final data = await _api.getRoster(
+      standardId: standardId,
+      academicYearId: academicYearId,
+      sectionId: sectionId,
     );
-    final mappings = (resp.data?['mappings'] as List?) ?? [];
+    final mappings = (data['mappings'] as List?) ?? [];
     return mappings
         .map((e) => _EnrollmentMapping.fromJson(Map<String, dynamic>.from(e as Map)))
         .toList();
@@ -81,40 +78,32 @@ class _EnrollmentRepository {
     String? sectionId,
     String? rollNumber,
   }) async {
-    await _dio.dio.post<dynamic>(
-      '/enrollments/mappings',
-      data: {
-        'student_id': studentId,
-        'standard_id': standardId,
-        'academic_year_id': academicYearId,
-        if (sectionId != null) 'section_id': sectionId,
-        if (rollNumber != null && rollNumber.isNotEmpty) 'roll_number': rollNumber,
-      },
+    await _api.createMapping(
+      studentId: studentId,
+      standardId: standardId,
+      academicYearId: academicYearId,
+      sectionId: sectionId,
+      rollNumber: rollNumber,
     );
   }
 
   Future<List<Map<String, dynamic>>> listStandards(String schoolId, String academicYearId) async {
-    final resp = await _dio.dio.get<Map<String, dynamic>>(
-      '/masters/standards',
-      queryParameters: {'school_id': schoolId, 'academic_year_id': academicYearId},
+    return _api.listStandards(
+      schoolId: schoolId,
+      academicYearId: academicYearId,
     );
-    return ((resp.data?['items'] as List?) ?? []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
 
   Future<List<Map<String, dynamic>>> listSections(String schoolId, String standardId, String academicYearId) async {
-    final resp = await _dio.dio.get<Map<String, dynamic>>(
-      '/masters/sections',
-      queryParameters: {'school_id': schoolId, 'standard_id': standardId, 'academic_year_id': academicYearId},
+    return _api.listSections(
+      schoolId: schoolId,
+      standardId: standardId,
+      academicYearId: academicYearId,
     );
-    return ((resp.data?['items'] as List?) ?? []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
 
   Future<List<Map<String, dynamic>>> listAcademicYears(String schoolId) async {
-    final resp = await _dio.dio.get<Map<String, dynamic>>(
-      '/academic-years',
-      queryParameters: {'school_id': schoolId},
-    );
-    return ((resp.data?['items'] as List?) ?? []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    return _api.listAcademicYears(schoolId: schoolId);
   }
 }
 
@@ -145,7 +134,7 @@ class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
   @override
   void initState() {
     super.initState();
-    _repo = _EnrollmentRepository(ref.read(dioClientProvider));
+    _repo = _EnrollmentRepository(ref.read(enrollmentRepositoryProvider));
     _loadYears();
   }
 

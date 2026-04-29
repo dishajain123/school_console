@@ -12,9 +12,27 @@ class ApprovalRepository {
   // Backend default now returns PENDING_APPROVAL + ON_HOLD + REJECTED together,
   // so all actionable users are visible in one queue view.
   Future<List<RegistrationRequest>> queue() async {
+    return queueFiltered();
+  }
+
+  Future<List<RegistrationRequest>> queueFiltered({
+    String? status,
+    String? role,
+    String? source,
+    String? q,
+    int page = 1,
+    int pageSize = 100,
+  }) async {
     final resp = await _client.dio.get<Map<String, dynamic>>(
       '/approvals/queue',
-      queryParameters: {'page': 1, 'page_size': 100},
+      queryParameters: {
+        'page': page,
+        'page_size': pageSize,
+        if (status != null && status.trim().isNotEmpty) 'status': status.trim(),
+        if (role != null && role.trim().isNotEmpty) 'role': role.trim(),
+        if (source != null && source.trim().isNotEmpty) 'source': source.trim(),
+        if (q != null && q.trim().isNotEmpty) 'q': q.trim(),
+      },
     );
     final items = ((resp.data?['items'] as List?) ?? const <dynamic>[])
         .whereType<Map>()

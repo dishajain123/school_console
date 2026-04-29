@@ -10,6 +10,7 @@ class RoleProfileRepository {
   Future<RoleProfileListData> listProfiles({
     required String role,
     String? search,
+    String? academicYearId,
     String? standardId,
     String? section,
     int page = 1,
@@ -22,6 +23,7 @@ class RoleProfileRepository {
         'page': page,
         'page_size': pageSize,
         if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
+        if (academicYearId != null && academicYearId.isNotEmpty) 'academic_year_id': academicYearId,
         if (standardId != null && standardId.isNotEmpty) 'standard_id': standardId,
         if (section != null && section.trim().isNotEmpty) 'section': section.trim(),
       },
@@ -29,19 +31,30 @@ class RoleProfileRepository {
     return RoleProfileListData.fromJson(resp.data ?? const {});
   }
 
-  Future<List<Map<String, dynamic>>> listStandards() async {
+  Future<List<Map<String, dynamic>>> listStandards({String? academicYearId}) async {
     final resp = await _client.dio.get<Map<String, dynamic>>(
       '/masters/standards',
+      queryParameters: {
+        if (academicYearId != null && academicYearId.isNotEmpty)
+          'academic_year_id': academicYearId,
+      },
     );
     return ((resp.data?['items'] as List?) ?? [])
         .map((e) => Map<String, dynamic>.from(e as Map))
         .toList();
   }
 
-  Future<List<String>> listSections({required String standardId}) async {
+  Future<List<String>> listSections({
+    required String standardId,
+    String? academicYearId,
+  }) async {
     final resp = await _client.dio.get<Map<String, dynamic>>(
       '/masters/sections',
-      queryParameters: {'standard_id': standardId},
+      queryParameters: {
+        'standard_id': standardId,
+        if (academicYearId != null && academicYearId.isNotEmpty)
+          'academic_year_id': academicYearId,
+      },
     );
     final items = (resp.data?['items'] as List?) ?? [];
     return items
@@ -50,6 +63,18 @@ class RoleProfileRepository {
         .toSet()
         .toList()
       ..sort();
+  }
+
+  Future<List<Map<String, dynamic>>> listAcademicYears({String? schoolId}) async {
+    final resp = await _client.dio.get<Map<String, dynamic>>(
+      '/academic-years',
+      queryParameters: {
+        if (schoolId != null && schoolId.isNotEmpty) 'school_id': schoolId,
+      },
+    );
+    return ((resp.data?['items'] as List?) ?? [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
   }
 
   Future<List<IdentifierConfigItem>> getIdentifierConfigs() async {

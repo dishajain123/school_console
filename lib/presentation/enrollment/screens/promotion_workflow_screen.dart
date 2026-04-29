@@ -7,8 +7,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/network/dio_client.dart';
 import '../../../domains/providers/auth_provider.dart';
+import '../../../domains/providers/enrollment_provider.dart';
+import '../../../data/repositories/enrollment_repository.dart';
 import '../../common/layout/admin_scaffold.dart';
 
 // ── Enums ─────────────────────────────────────────────────────────────────────
@@ -144,17 +145,13 @@ class _PreviewItem {
 // ── Repository ────────────────────────────────────────────────────────────────
 
 class _PromotionRepository {
-  _PromotionRepository(this._dio);
-  final DioClient _dio;
+  _PromotionRepository(this._api);
+  final EnrollmentRepository _api;
 
   Future<List<_AcademicYear>> listYears(String schoolId) async {
-    final resp = await _dio.dio.get<Map<String, dynamic>>(
-      '/academic-years',
-      queryParameters: {'school_id': schoolId},
-    );
-    final items = (resp.data?['items'] as List?) ?? [];
+    final items = await _api.listAcademicYears(schoolId: schoolId);
     return items.map((e) {
-      final m = e as Map;
+      final m = e;
       return _AcademicYear(
         id: m['id'].toString(),
         name: m['name'].toString(),
@@ -164,16 +161,12 @@ class _PromotionRepository {
   }
 
   Future<List<_Standard>> listStandards(String schoolId, String academicYearId) async {
-    final resp = await _dio.dio.get<Map<String, dynamic>>(
-      '/masters/standards',
-      queryParameters: {
-        'school_id': schoolId,
-        'academic_year_id': academicYearId,
-      },
+    final items = await _api.listStandards(
+      schoolId: schoolId,
+      academicYearId: academicYearId,
     );
-    final items = (resp.data?['items'] as List?) ?? [];
     return items.map((e) {
-      final m = e as Map;
+      final m = e;
       return _Standard(
         id: m['id'].toString(),
         name: m['name'].toString(),
@@ -188,15 +181,12 @@ class _PromotionRepository {
     required String targetYearId,
     String? standardId,
   }) async {
-    final resp = await _dio.dio.get<Map<String, dynamic>>(
-      '/promotions/preview',
-      queryParameters: {
-        'source_year_id': sourceYearId,
-        'target_year_id': targetYearId,
-        if (standardId != null) 'standard_id': standardId,
-      },
+    final data = await _api.previewPromotion(
+      sourceYearId: sourceYearId,
+      targetYearId: targetYearId,
+      standardId: standardId,
     );
-    final items = (resp.data?['items'] as List?) ?? [];
+    final items = (data['items'] as List?) ?? [];
     return items
         .map((e) => _PreviewItem.fromJson(Map<String, dynamic>.from(e as Map)))
         .toList();
@@ -221,15 +211,11 @@ class _PromotionRepository {
       return m;
     }).toList();
 
-    final resp = await _dio.dio.post<Map<String, dynamic>>(
-      '/promotions/execute',
-      data: {
-        'source_year_id': sourceYearId,
-        'target_year_id': targetYearId,
-        'items': payload,
-      },
+    return _api.executePromotion(
+      sourceYearId: sourceYearId,
+      targetYearId: targetYearId,
+      items: payload.cast<Map<String, dynamic>>(),
     );
-    return resp.data ?? {};
   }
 
   Future<Map<String, dynamic>> copyTeacherAssignments({
@@ -237,15 +223,11 @@ class _PromotionRepository {
     required String targetYearId,
     bool overwriteExisting = false,
   }) async {
-    final resp = await _dio.dio.post<Map<String, dynamic>>(
-      '/promotions/copy-teacher-assignments',
-      data: {
-        'source_year_id': sourceYearId,
-        'target_year_id': targetYearId,
-        'overwrite_existing': overwriteExisting,
-      },
+    return _api.copyTeacherAssignments(
+      sourceYearId: sourceYearId,
+      targetYearId: targetYearId,
+      overwriteExisting: overwriteExisting,
     );
-    return resp.data ?? {};
   }
 }
 
@@ -274,12 +256,11 @@ class _PromotionWorkflowScreenState extends ConsumerState<PromotionWorkflowScree
   bool _copyingAssignments = false;
   String? _error;
   String? _successMessage;
-  Map<String, dynamic>? _executeResult;
 
   @override
   void initState() {
     super.initState();
-    _repo = _PromotionRepository(ref.read(dioClientProvider));
+    _repo = _PromotionRepository(ref.read(enrollmentRepositoryProvider));
     _loadYears();
   }
 
@@ -317,7 +298,7 @@ class _PromotionWorkflowScreenState extends ConsumerState<PromotionWorkflowScree
       setState(() => _error = 'Source and target academic years must be different.');
       return;
     }
-    setState(() { _loading = true; _error = null; _successMessage = null; _executeResult = null; });
+    setState(() { _loading = true; _error = null; _successMessage = null; });
     try {
       final items = await _repo.preview(
         sourceYearId: _sourceYearId!,
@@ -367,7 +348,6 @@ class _PromotionWorkflowScreenState extends ConsumerState<PromotionWorkflowScree
         items: _previewItems,
       );
       setState(() {
-        _executeResult = result;
         _successMessage =
             'Promotion complete. '
             'Promoted: ${result['promoted_count'] ?? 0}, '

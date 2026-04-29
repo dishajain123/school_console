@@ -45,6 +45,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   late final _SettingsRepository _repo;
 
   bool _loading = false;
+  String? _error;
   List<Map<String, dynamic>> _settings = [];
   final _newKeyCtrl = TextEditingController();
   final _newValueCtrl = TextEditingController();
@@ -67,15 +68,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
 
   String? get _schoolId =>
       ref.read(authControllerProvider).valueOrNull?.schoolId;
-  String get _role => ref.read(authControllerProvider).valueOrNull?.role.toUpperCase() ?? '';
-  bool get _canManageSettings => _role == 'SUPERADMIN' || _role == 'PRINCIPAL';
+  bool get _canManageSettings {
+    final user = ref.read(authControllerProvider).valueOrNull;
+    if (user == null) return false;
+    if (user.role.toUpperCase() == 'SUPERADMIN') return true;
+    return user.permissions.contains('settings:manage');
+  }
 
   Future<void> _loadData() async {
     setState(() => _loading = true);
     try {
       _settings = await _repo.getSettings();
+      _error = null;
     } catch (e) {
-      // ignore errors gracefully for settings
+      _error = e.toString();
     } finally {
       setState(() => _loading = false);
     }
@@ -120,6 +126,31 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (_error != null)
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.red.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              _error!,
+                              style: TextStyle(color: Colors.red.shade700),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: _loadData,
+                            child: const Text('Retry'),
+                          ),
+                        ],
+                      ),
+                    ),
                   TabBar(
                     controller: _tabController,
                     tabs: const [

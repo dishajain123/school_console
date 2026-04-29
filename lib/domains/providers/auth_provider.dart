@@ -45,7 +45,18 @@ class AuthController extends StateNotifier<AsyncValue<AdminUser?>> {
       final user = await _repo
           .me(accessToken: token.accessToken)
           .timeout(const Duration(seconds: 12));
-      state = AsyncData(user);
+      var resolvedUser = user;
+      if ((resolvedUser.schoolId == null || resolvedUser.schoolId!.isEmpty) &&
+          resolvedUser.role.toUpperCase() == 'SUPERADMIN') {
+        try {
+          final schoolId =
+              await _repo.resolveSchoolContext(accessToken: token.accessToken);
+          if (schoolId != null && schoolId.isNotEmpty) {
+            resolvedUser = resolvedUser.copyWith(schoolId: schoolId);
+          }
+        } catch (_) {}
+      }
+      state = AsyncData(resolvedUser);
     } on TimeoutException catch (_, st) {
       state = AsyncError(
         'Login request timed out. Please ensure backend is running and try again.',
@@ -117,7 +128,16 @@ class AuthController extends StateNotifier<AsyncValue<AdminUser?>> {
       return;
     }
     try {
-      final user = await _repo.me(accessToken: token);
+      var user = await _repo.me(accessToken: token);
+      if ((user.schoolId == null || user.schoolId!.isEmpty) &&
+          user.role.toUpperCase() == 'SUPERADMIN') {
+        try {
+          final schoolId = await _repo.resolveSchoolContext(accessToken: token);
+          if (schoolId != null && schoolId.isNotEmpty) {
+            user = user.copyWith(schoolId: schoolId);
+          }
+        } catch (_) {}
+      }
       state = AsyncData(user);
     } catch (_) {
       await _storage.clearTokens();

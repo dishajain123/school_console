@@ -39,7 +39,32 @@ class AuthRepository {
           ? null
           : Options(headers: {'Authorization': 'Bearer $accessToken'}),
     );
-    return AdminUser.fromJson(resp.data ?? {});
+    final user = AdminUser.fromJson(resp.data ?? {});
+    if (user.schoolId != null && user.schoolId!.trim().isNotEmpty) {
+      await _storage.saveSchoolId(user.schoolId!.trim());
+    }
+    return user;
+  }
+
+  Future<String?> resolveSchoolContext({String? accessToken}) async {
+    final resp = await _client.dio.get<Map<String, dynamic>>(
+      '/schools',
+      queryParameters: {'page': 1, 'page_size': 1, 'is_active': true},
+      options: accessToken == null || accessToken.isEmpty
+          ? null
+          : Options(headers: {'Authorization': 'Bearer $accessToken'}),
+    );
+    final items = (resp.data?['items'] as List?) ?? const <dynamic>[];
+    if (items.isEmpty) return null;
+    final first = items.first;
+    if (first is Map && first['id'] != null) {
+      final id = first['id'].toString().trim();
+      if (id.isNotEmpty) {
+        await _storage.saveSchoolId(id);
+        return id;
+      }
+    }
+    return null;
   }
 
   Future<void> logout() async {

@@ -5,6 +5,7 @@ import '../../../data/models/academics/academic_year_item.dart';
 import '../../../data/models/academics/section_item.dart';
 import '../../../data/models/academics/standard_item.dart';
 import '../../../data/models/academics/subject_item.dart';
+import '../../../domains/providers/active_year_provider.dart';
 import '../../../domains/providers/academic_provider.dart';
 import '../../../domains/providers/auth_provider.dart';
 import '../../common/layout/admin_scaffold.dart';
@@ -19,6 +20,7 @@ class AcademicYearsScreen extends ConsumerStatefulWidget {
 
 class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen> {
   int _reloadSeed = 0;
+  String? _previewYearId;
 
   Future<_Phase3Data> _loadAll() async {
     final auth = ref.read(authControllerProvider).valueOrNull;
@@ -32,7 +34,10 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen> {
           (y) => y != null,
           orElse: () => years.isNotEmpty ? years.first : null,
         );
-    final yearId = active?.id;
+    final yearId = (_previewYearId != null &&
+            years.any((y) => y.id == _previewYearId))
+        ? _previewYearId
+        : active?.id;
     final standards = await repo.listStandards(
       schoolId: schoolId,
       academicYearId: yearId,
@@ -55,7 +60,7 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen> {
   @override
   Widget build(BuildContext context) {
     return AdminScaffold(
-      title: 'Academic Structure Setup',
+      title: 'Academic Year & Structure',
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: FutureBuilder<_Phase3Data>(
@@ -69,31 +74,137 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen> {
               return Center(child: Text(snapshot.error.toString()));
             }
             final data = snapshot.data!;
+            final activeYear = data.activeYearId == null
+                ? null
+                : data.years.where((y) => y.id == data.activeYearId).firstOrNull;
+            final previewYear = (_previewYearId != null
+                    ? data.years.where((y) => y.id == _previewYearId).firstOrNull
+                    : null) ??
+                activeYear;
             return ListView(
               children: [
-                Row(
-                  children: [
-                    const Expanded(
-                      child: Text(
-                        'Phase 3 status',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Colors.indigo.shade50, Colors.blue.shade50],
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.indigo.shade100),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Expanded(
+                            child: Text(
+                              'Academic Setup Dashboard',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                          ElevatedButton.icon(
+                            onPressed: () => _createAcademicYear(data.schoolId),
+                            icon: const Icon(Icons.add),
+                            label: const Text('Create Academic Year'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        activeYear == null
+                            ? 'No active academic year. Create and activate one to continue setup.'
+                            : 'Active Year: ${activeYear.name} (${_fmt(activeYear.startDate)} to ${_fmt(activeYear.endDate)})',
+                        style: const TextStyle(
+                          color: Colors.black87,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
-                    ),
-                    ElevatedButton.icon(
-                      onPressed: () => _createAcademicYear(data.schoolId),
-                      icon: const Icon(Icons.add),
-                      label: const Text('New Year'),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  data.activeYearId == null
-                      ? 'No active academic year'
-                      : 'Active year: ${data.years.firstWhere((y) => y.id == data.activeYearId).name}',
+                      const SizedBox(height: 14),
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          const Text(
+                            'Preview Year:',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          SizedBox(
+                            width: 260,
+                            child: DropdownButtonFormField<String>(
+                              value: previewYear?.id,
+                              decoration: const InputDecoration(
+                                border: OutlineInputBorder(),
+                                contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
+                              ),
+                              items: data.years
+                                  .map(
+                                    (y) => DropdownMenuItem<String>(
+                                      value: y.id,
+                                      child: Text(
+                                        '${y.name}${y.isActive ? ' (Active)' : ''}',
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
+                              onChanged: (v) {
+                                if (v == null) return;
+                                setState(() {
+                                  _previewYearId = v;
+                                  _reloadSeed++;
+                                });
+                              },
+                            ),
+                          ),
+                          OutlinedButton(
+                            onPressed: activeYear == null
+                                ? null
+                                : () {
+                                    setState(() {
+                                      _previewYearId = activeYear.id;
+                                      _reloadSeed++;
+                                    });
+                                  },
+                            child: const Text('Use Active Year'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        children: [
+                          _StatBadge(
+                            label: 'Academic Years',
+                            value: data.years.length.toString(),
+                            icon: Icons.calendar_month,
+                          ),
+                          _StatBadge(
+                            label: 'Classes',
+                            value: data.standards.length.toString(),
+                            icon: Icons.class_,
+                          ),
+                          _StatBadge(
+                            label: 'Sections',
+                            value: data.sections.length.toString(),
+                            icon: Icons.grid_view_rounded,
+                          ),
+                          _StatBadge(
+                            label: 'Subjects',
+                            value: data.subjects.length.toString(),
+                            icon: Icons.menu_book_rounded,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 16),
                 _buildYears(data),
@@ -113,31 +224,77 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen> {
 
   Widget _buildYears(_Phase3Data data) {
     return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              '1) Academic Years',
-              style: TextStyle(fontWeight: FontWeight.w700),
+            Row(
+              children: [
+                const Icon(Icons.calendar_today, size: 18),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    '1. Academic Years',
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: () => _createAcademicYear(data.schoolId),
+                  icon: const Icon(Icons.add),
+                  label: const Text('New Year'),
+                ),
+              ],
             ),
             const SizedBox(height: 8),
             if (data.years.isEmpty) const Text('No years created yet.'),
             ...data.years.map(
-              (y) => ListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                title: Text(
-                  '${y.name} (${_fmt(y.startDate)} to ${_fmt(y.endDate)})',
+              (y) => Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: y.isActive ? Colors.green.shade200 : Colors.grey.shade300,
+                  ),
+                  borderRadius: BorderRadius.circular(10),
+                  color: y.isActive ? Colors.green.shade50 : Colors.white,
                 ),
-                subtitle: Text(y.isActive ? 'ACTIVE' : 'INACTIVE'),
-                trailing: y.isActive
-                    ? const Icon(Icons.check_circle, color: Colors.green)
-                    : TextButton(
-                        onPressed: () => _activateYear(data.schoolId, y.id),
-                        child: const Text('Activate'),
+                child: Row(
+                  children: [
+                    Icon(
+                      y.isActive ? Icons.check_circle : Icons.radio_button_unchecked,
+                      color: y.isActive ? Colors.green : Colors.grey,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            y.name,
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 2),
+                          Text('${_fmt(y.startDate)} to ${_fmt(y.endDate)}'),
+                        ],
                       ),
+                    ),
+                    y.isActive
+                        ? Chip(
+                            label: const Text('ACTIVE'),
+                            backgroundColor: Colors.green.shade100,
+                          )
+                        : OutlinedButton(
+                            onPressed: () => _activateYear(data.schoolId, y.id),
+                            child: const Text('Activate'),
+                          ),
+                  ],
+                ),
               ),
             ),
           ],
@@ -148,8 +305,13 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen> {
 
   Widget _buildStandards(_Phase3Data data) {
     return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -157,8 +319,8 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen> {
               children: [
                 const Expanded(
                   child: Text(
-                    '2) Class Setup (Standards)',
-                    style: TextStyle(fontWeight: FontWeight.w700),
+                    '2. Class Setup',
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
                   ),
                 ),
                 ElevatedButton(
@@ -173,13 +335,22 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen> {
             const SizedBox(height: 8),
             if (data.standards.isEmpty)
               const Text('No classes defined for active year.'),
-            ...data.standards.map(
-              (s) => ListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                title: Text(s.name),
-                subtitle: Text('Level ${s.level}'),
-              ),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: data.standards
+                  .map(
+                    (s) => Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(10),
+                        color: Colors.blue.shade50,
+                        border: Border.all(color: Colors.blue.shade100),
+                      ),
+                      child: Text('${s.name}  •  Level ${s.level}'),
+                    ),
+                  )
+                  .toList(),
             ),
           ],
         ),
@@ -189,8 +360,13 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen> {
 
   Widget _buildSections(_Phase3Data data) {
     return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -198,15 +374,15 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen> {
               children: [
                 const Expanded(
                   child: Text(
-                    '3) Sections',
-                    style: TextStyle(fontWeight: FontWeight.w700),
+                    '3. Sections',
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
                   ),
                 ),
                 ElevatedButton(
                   onPressed: data.activeYearId == null || data.standards.isEmpty
                       ? null
                       : () => _createSection(data),
-                  child: const Text('Add Section'),
+                child: const Text('Add Section'),
                 ),
               ],
             ),
@@ -225,11 +401,18 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen> {
                       schoolId: data.schoolId,
                     ),
                   );
-              return ListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                title: Text('${std.name} - ${sec.name}'),
-                subtitle: Text(sec.isActive ? 'ACTIVE' : 'INACTIVE'),
+              return Card(
+                margin: const EdgeInsets.only(bottom: 8),
+                color: Colors.orange.shade50,
+                child: ListTile(
+                  dense: true,
+                  title: Text('${std.name} • Section ${sec.name}'),
+                  subtitle: Text(sec.isActive ? 'ACTIVE' : 'INACTIVE'),
+                  trailing: Icon(
+                    sec.isActive ? Icons.check_circle : Icons.pause_circle,
+                    color: sec.isActive ? Colors.green : Colors.grey,
+                  ),
+                ),
               );
             }),
           ],
@@ -240,8 +423,13 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen> {
 
   Widget _buildSubjects(_Phase3Data data) {
     return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -249,8 +437,8 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen> {
               children: [
                 const Expanded(
                   child: Text(
-                    '4) Subject Master (Independent)',
-                    style: TextStyle(fontWeight: FontWeight.w700),
+                    '4. Subject Master',
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
                   ),
                 ),
                 ElevatedButton(
@@ -265,6 +453,14 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen> {
               (subj) => ListTile(
                 dense: true,
                 contentPadding: EdgeInsets.zero,
+                leading: CircleAvatar(
+                  radius: 14,
+                  backgroundColor: Colors.purple.shade100,
+                  child: Text(
+                    subj.code.isNotEmpty ? subj.code.characters.first : 'S',
+                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+                  ),
+                ),
                 title: Text('${subj.name} (${subj.code})'),
                 subtitle: Text(
                   subj.standardId == null || subj.standardId!.isEmpty
@@ -376,6 +572,7 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen> {
     await ref
         .read(academicRepositoryProvider)
         .activateYear(schoolId: schoolId, yearId: yearId);
+    ref.read(activeAcademicYearProvider.notifier).setYear(yearId);
     _refresh();
   }
 
@@ -601,6 +798,52 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen> {
     final m = value.month.toString().padLeft(2, '0');
     final d = value.day.toString().padLeft(2, '0');
     return '$y-$m-$d';
+  }
+}
+
+class _StatBadge extends StatelessWidget {
+  const _StatBadge({
+    required this.label,
+    required this.value,
+    required this.icon,
+  });
+
+  final String label;
+  final String value;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 160,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: Colors.indigo),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  value,
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                ),
+                Text(
+                  label,
+                  style: const TextStyle(fontSize: 12, color: Colors.black54),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

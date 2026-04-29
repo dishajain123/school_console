@@ -15,6 +15,24 @@ final approvalQueueProvider = FutureProvider<List<RegistrationRequest>>((
   return ref.watch(approvalRepositoryProvider).queue();
 });
 
+final approvalQueueFilteredProvider =
+    FutureProvider.family<List<RegistrationRequest>, ({
+  String? status,
+  String? role,
+  String? source,
+  String? q,
+})>((
+  ref,
+  query,
+) async {
+  return ref.watch(approvalRepositoryProvider).queueFiltered(
+        status: query.status,
+        role: query.role,
+        source: query.source,
+        q: query.q,
+      );
+});
+
 final approvalDetailProvider =
     FutureProvider.family<RegistrationRequest, String>((ref, userId) async {
       return ref.watch(approvalRepositoryProvider).detail(userId);

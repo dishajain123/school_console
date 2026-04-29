@@ -16,6 +16,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
 
 import '../../../core/network/dio_client.dart';
+import '../../../domains/providers/active_year_provider.dart';
 import '../../../domains/providers/auth_provider.dart';
 import '../../common/layout/admin_scaffold.dart';
 
@@ -85,16 +86,22 @@ class _DocRequirement {
     required this.documentType,
     required this.isMandatory,
     this.note,
+    this.academicYearId,
+    this.standardId,
   });
 
   final String documentType;
   final bool isMandatory;
   final String? note;
+  final String? academicYearId;
+  final String? standardId;
 
   factory _DocRequirement.fromJson(Map<String, dynamic> j) => _DocRequirement(
         documentType: j['document_type']?.toString() ?? '',
         isMandatory: j['is_mandatory'] == true,
         note: j['note'] as String?,
+        academicYearId: j['academic_year_id']?.toString(),
+        standardId: j['standard_id']?.toString(),
       );
 }
 
@@ -104,9 +111,36 @@ class _DocRepository {
   _DocRepository(this._dio);
   final DioClient _dio;
 
-  Future<List<_Document>> listAllDocuments() async {
+  Future<List<Map<String, dynamic>>> listYears() async {
+    final r = await _dio.dio.get<Map<String, dynamic>>('/academic-years');
+    return ((r.data?['items'] as List?) ?? [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+  }
+
+  Future<List<Map<String, dynamic>>> listStandards(String yearId) async {
+    final r = await _dio.dio.get<Map<String, dynamic>>(
+      '/masters/standards',
+      queryParameters: {'academic_year_id': yearId},
+    );
+    return ((r.data?['items'] as List?) ?? [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+  }
+
+  Future<List<_Document>> listAllDocuments({
+    String? academicYearId,
+    String? standardId,
+    String? section,
+  }) async {
+    final query = <String, dynamic>{
+      if (academicYearId != null && academicYearId.trim().isNotEmpty) 'academic_year_id': academicYearId,
+      if (standardId != null && standardId.trim().isNotEmpty) 'standard_id': standardId,
+      if (section != null && section.trim().isNotEmpty) 'section': section.trim(),
+    };
     final r = await _dio.dio.get<Map<String, dynamic>>(
       '/documents',
+      queryParameters: query.isEmpty ? null : query,
     );
     return ((r.data?['items'] as List?) ?? [])
         .map((e) => _Document.fromJson(Map<String, dynamic>.from(e as Map)))
@@ -161,10 +195,12 @@ class _DocRepository {
     required String fileName,
     required Uint8List fileBytes,
     required String contentType,
+    String? note,
   }) async {
     final formData = FormData.fromMap({
       'student_id': studentId,
       'document_type': documentType,
+      if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
       'file': MultipartFile.fromBytes(fileBytes,
           filename: fileName,
           contentType: DioMediaType.parse(contentType)),
@@ -195,6 +231,11 @@ class _DocumentManagementScreenState
 
   List<_Document> _documents = [];
   List<_DocRequirement> _requirements = [];
+  List<Map<String, dynamic>> _years = [];
+  List<Map<String, dynamic>> _standards = [];
+  String? _selectedYearId;
+  String? _selectedStandardId;
+  final TextEditingController _sectionCtrl = TextEditingController();
 
   String? _statusFilter;
   bool _loading = false;
@@ -206,13 +247,43 @@ class _DocumentManagementScreenState
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
     _repo = _DocRepository(ref.read(dioClientProvider));
+    _loadMeta();
     _loadDocuments();
     _loadRequirements();
+  }
+
+  Future<void> _loadMeta() async {
+    try {
+      final years = await _repo.listYears();
+      final preferredYearId = ref.read(activeAcademicYearProvider);
+      final preferred = years.firstWhere(
+        (y) => y['id']?.toString() == preferredYearId,
+        orElse: () => <String, dynamic>{},
+      );
+      final active = years.firstWhere(
+        (y) => y['is_active'] == true,
+        orElse: () => years.isNotEmpty ? years.first : <String, dynamic>{},
+      );
+      final selected = preferred.isNotEmpty ? preferred : active;
+      final yearId = selected['id']?.toString();
+      List<Map<String, dynamic>> standards = [];
+      if (yearId != null && yearId.isNotEmpty) {
+        standards = await _repo.listStandards(yearId);
+      }
+      if (!mounted) return;
+      setState(() {
+        _years = years;
+        _selectedYearId = yearId;
+        _standards = standards;
+      });
+      ref.read(activeAcademicYearProvider.notifier).setYear(yearId);
+    } catch (_) {}
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    _sectionCtrl.dispose();
     super.dispose();
   }
 
@@ -222,7 +293,11 @@ class _DocumentManagementScreenState
       _error = null;
     });
     try {
-      final docs = await _repo.listAllDocuments();
+      final docs = await _repo.listAllDocuments(
+        academicYearId: _selectedYearId,
+        standardId: _selectedStandardId,
+        section: _sectionCtrl.text,
+      );
       final filtered = _statusFilter == null
           ? docs
           : docs.where((d) => d.status.toUpperCase() == _statusFilter).toList();
@@ -311,7 +386,10 @@ class _DocumentManagementScreenState
   Future<void> _showUploadDialog() async {
     final studentIdCtrl = TextEditingController();
     String docType = 'BONAFIDE';
+    final otherNameCtrl = TextEditingController();
     String _fileNameInput = '';
+    Uint8List? _fileBytes;
+    String _contentType = 'application/pdf';
 
     await showDialog<void>(
       context: context,
@@ -331,35 +409,62 @@ class _DocumentManagementScreenState
                 DropdownButtonFormField<String>(
                   value: docType,
                   decoration: const InputDecoration(labelText: 'Document Type'),
-                  items: const ['ID_CARD', 'BONAFIDE', 'LEAVING_CERT', 'REPORT_CARD']
+                  items: const [
+                    'ID_CARD',
+                    'BONAFIDE',
+                    'LEAVING_CERT',
+                    'REPORT_CARD',
+                    'ID_PROOF',
+                    'ADDRESS_PROOF',
+                    'ACADEMIC_CERTIFICATE',
+                    'TRANSFER_CERTIFICATE',
+                    'MEDICAL',
+                    'OTHER',
+                  ]
                       .map((t) => DropdownMenuItem(value: t, child: Text(t)))
                       .toList(),
                   onChanged: (v) {
                     if (v != null) setDialog(() => docType = v);
                   },
                 ),
+                if (docType == 'OTHER') ...[
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: otherNameCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Other Document Name *',
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 8),
                 ElevatedButton.icon(
                   icon: const Icon(Icons.attach_file, size: 14),
-                  label: Text(_fileNameInput.isEmpty ? 'Enter File Name' : _fileNameInput),
+                  label: Text(_fileNameInput.isEmpty ? 'Choose File' : _fileNameInput),
                   onPressed: () {
-                    showDialog(
-                      context: context,
-                      builder: (ctx) => AlertDialog(
-                        title: const Text('Enter File Name'),
-                        content: TextField(
-                          onChanged: (v) => setDialog(() => _fileNameInput = v),
-                          decoration: const InputDecoration(hintText: 'e.g., aadhaar.pdf'),
-                        ),
-                        actions: [
-                          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-                          TextButton(
-                            onPressed: _fileNameInput.isNotEmpty ? () => Navigator.pop(ctx) : null,
-                            child: const Text('OK'),
-                          ),
-                        ],
-                      ),
-                    );
+                    final input = html.FileUploadInputElement()
+                      ..accept = '.pdf,.jpg,.jpeg,.png'
+                      ..click();
+                    input.onChange.listen((_) {
+                      final files = input.files;
+                      if (files == null || files.isEmpty) return;
+                      final file = files.first;
+                      final reader = html.FileReader();
+                      reader.readAsArrayBuffer(file);
+                      reader.onLoadEnd.listen((_) {
+                        final result = reader.result;
+                        if (result is ByteBuffer) {
+                          setDialog(() {
+                            _fileNameInput = file.name;
+                            _contentType = file.type.isNotEmpty
+                                ? file.type
+                                : (_fileNameInput.toLowerCase().endsWith('.pdf')
+                                    ? 'application/pdf'
+                                    : 'image/jpeg');
+                            _fileBytes = Uint8List.view(result);
+                          });
+                        }
+                      });
+                    });
                   },
                 ),
               ],
@@ -372,18 +477,28 @@ class _DocumentManagementScreenState
             ElevatedButton(
               onPressed: () async {
                 if (studentIdCtrl.text.trim().isEmpty ||
-                    _fileNameInput.isEmpty) return;
+                    _fileNameInput.isEmpty ||
+                    _fileBytes == null ||
+                    _fileBytes!.isEmpty) return;
                 Navigator.of(ctx).pop();
                 setState(() => _loading = true);
                 try {
+                  final note = docType == 'OTHER'
+                      ? otherNameCtrl.text.trim()
+                      : null;
+                  if (docType == 'OTHER' && (note == null || note.isEmpty)) {
+                    if (mounted) {
+                      setState(() => _error = 'Please enter Other document name.');
+                    }
+                    return;
+                  }
                   await _repo.uploadDocument(
                     studentId: studentIdCtrl.text.trim(),
                     documentType: docType,
+                    note: note,
                     fileName: _fileNameInput,
-                    fileBytes: Uint8List(0),
-                    contentType: _fileNameInput.toLowerCase().endsWith('pdf')
-                        ? 'application/pdf'
-                        : 'image/jpeg',
+                    fileBytes: _fileBytes!,
+                    contentType: _contentType,
                   );
                   await _loadDocuments();
                   if (mounted) {
@@ -401,34 +516,154 @@ class _DocumentManagementScreenState
         ),
       ),
     );
+    otherNameCtrl.dispose();
   }
 
   Future<void> _editRequirements() async {
-    final docTypes = ['ID_CARD', 'BONAFIDE', 'LEAVING_CERT', 'REPORT_CARD'];
-    final mandatoryMap = {
-      for (final req in _requirements) req.documentType: req.isMandatory
-    };
-    // Initialize non-set types to false
-    for (final t in docTypes) {
-      mandatoryMap.putIfAbsent(t, () => false);
-    }
-
+    final docTypes = <String>[
+      'ID_CARD',
+      'REPORT_CARD',
+      'LEAVING_CERT',
+      'BONAFIDE',
+      'ID_PROOF',
+      'ADDRESS_PROOF',
+      'ACADEMIC_CERTIFICATE',
+      'TRANSFER_CERTIFICATE',
+      'MEDICAL',
+      'OTHER',
+    ];
+    final editableItems = _requirements.isEmpty
+        ? <Map<String, dynamic>>[
+            {'document_type': 'ID_CARD', 'is_mandatory': true, 'note': ''},
+          ]
+        : _requirements
+            .map(
+              (r) => <String, dynamic>{
+                'document_type': r.documentType,
+                'is_mandatory': r.isMandatory,
+                'note': r.note ?? '',
+              },
+            )
+            .toList(growable: true);
+    String? scopeYearId = _selectedYearId;
+    String? scopeStandardId;
+    bool allClasses = true;
     await showDialog<void>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialog) => AlertDialog(
           title: const Text('Set Document Requirements'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: docTypes.map((type) {
-              return CheckboxListTile(
-                title: Text(type.replaceAll('_', ' ')),
-                subtitle: const Text('Mandatory for students'),
-                value: mandatoryMap[type] ?? false,
-                onChanged: (v) =>
-                    setDialog(() => mandatoryMap[type] = v ?? false),
-              );
-            }).toList(),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DropdownButtonFormField<String?>(
+                  value: scopeYearId,
+                  decoration: const InputDecoration(labelText: 'Academic Year'),
+                  items: _years
+                      .map((y) => DropdownMenuItem<String?>(
+                            value: y['id']?.toString(),
+                            child: Text(y['name']?.toString() ?? '-'),
+                          ))
+                      .toList(),
+                  onChanged: (v) => setDialog(() => scopeYearId = v),
+                ),
+                const SizedBox(height: 8),
+                SwitchListTile(
+                  title: const Text('Apply to all classes'),
+                  value: allClasses,
+                  onChanged: (v) => setDialog(() => allClasses = v),
+                ),
+                if (!allClasses)
+                  DropdownButtonFormField<String?>(
+                    value: scopeStandardId,
+                    decoration: const InputDecoration(labelText: 'Class'),
+                    items: _standards
+                        .map((s) => DropdownMenuItem<String?>(
+                              value: s['id']?.toString(),
+                              child: Text(s['name']?.toString() ?? '-'),
+                            ))
+                        .toList(),
+                    onChanged: (v) => setDialog(() => scopeStandardId = v),
+                  ),
+                const SizedBox(height: 8),
+                ...editableItems.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  final item = entry.value;
+                  final selectedType =
+                      (item['document_type']?.toString() ?? 'OTHER').toUpperCase();
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: Padding(
+                      padding: const EdgeInsets.all(10),
+                      child: Column(
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: DropdownButtonFormField<String>(
+                                  value: docTypes.contains(selectedType)
+                                      ? selectedType
+                                      : 'OTHER',
+                                  decoration: const InputDecoration(
+                                      labelText: 'Document Type'),
+                                  items: docTypes
+                                      .map((t) => DropdownMenuItem(
+                                            value: t,
+                                            child: Text(t.replaceAll('_', ' ')),
+                                          ))
+                                      .toList(),
+                                  onChanged: (v) {
+                                    if (v == null) return;
+                                    setDialog(() => editableItems[index]['document_type'] = v);
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              IconButton(
+                                onPressed: editableItems.length <= 1
+                                    ? null
+                                    : () => setDialog(() => editableItems.removeAt(index)),
+                                icon: const Icon(Icons.delete_outline, color: Colors.red),
+                              ),
+                            ],
+                          ),
+                          CheckboxListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: const Text('Mandatory'),
+                            value: item['is_mandatory'] == true,
+                            onChanged: (v) => setDialog(
+                                () => editableItems[index]['is_mandatory'] = v ?? true),
+                          ),
+                          TextFormField(
+                            initialValue: item['note']?.toString() ?? '',
+                            onChanged: (v) =>
+                                editableItems[index]['note'] = v,
+                            decoration: InputDecoration(
+                              labelText: selectedType == 'OTHER'
+                                  ? 'Custom Document Name *'
+                                  : 'Instruction (optional)',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: OutlinedButton.icon(
+                    onPressed: () => setDialog(() {
+                      editableItems.add(
+                        {'document_type': 'OTHER', 'is_mandatory': true, 'note': ''},
+                      );
+                    }),
+                    icon: const Icon(Icons.add, size: 16),
+                    label: const Text('Add Document'),
+                  ),
+                ),
+              ],
+            ),
           ),
           actions: [
             TextButton(
@@ -438,13 +673,33 @@ class _DocumentManagementScreenState
               onPressed: () async {
                 Navigator.of(ctx).pop();
                 try {
+                  final payload = <Map<String, dynamic>>[];
+                  for (final row in editableItems.where(
+                    (r) => r['is_mandatory'] == true,
+                  )) {
+                    final type =
+                        (row['document_type']?.toString() ?? 'OTHER').toUpperCase();
+                    final note = (row['note']?.toString() ?? '').trim();
+                    if (type == 'OTHER' && note.isEmpty) {
+                      if (mounted) {
+                        setState(() {
+                          _error =
+                              'Custom name is required for OTHER document type.';
+                        });
+                      }
+                      return;
+                    }
+                    payload.add({
+                      'document_type': type,
+                      'is_mandatory': true,
+                      if (note.isNotEmpty) 'note': note,
+                      if (scopeYearId != null) 'academic_year_id': scopeYearId,
+                      if (!allClasses && scopeStandardId != null)
+                        'standard_id': scopeStandardId,
+                    });
+                  }
                   await _repo.setRequirements(
-                    mandatoryMap.entries
-                        .map((e) => {
-                              'document_type': e.key,
-                              'is_mandatory': e.value,
-                            })
-                        .toList(),
+                    payload,
                   );
                   await _loadRequirements();
                   if (mounted) {
@@ -534,36 +789,102 @@ class _DocumentManagementScreenState
       children: [
         Padding(
           padding: const EdgeInsets.only(bottom: 8),
-          child: Row(
+          child: Column(
             children: [
-              DropdownButton<String?>(
-                value: _statusFilter,
-                hint: const Text('All Status'),
-                items: const [
-                  DropdownMenuItem<String?>(
-                      value: null, child: Text('All Status')),
-                  DropdownMenuItem(value: 'PENDING', child: Text('Pending')),
-                  DropdownMenuItem(
-                      value: 'PROCESSING', child: Text('Processing')),
-                  DropdownMenuItem(value: 'READY', child: Text('Ready')),
-                  DropdownMenuItem(value: 'FAILED', child: Text('Failed')),
+              Row(
+                children: [
+                  SizedBox(
+                    width: 220,
+                    child: DropdownButtonFormField<String?>(
+                      value: _selectedYearId,
+                      decoration: const InputDecoration(labelText: 'Academic Year'),
+                      items: [
+                        const DropdownMenuItem<String?>(value: null, child: Text('All Years')),
+                        ..._years.map((y) => DropdownMenuItem<String?>(
+                              value: y['id']?.toString(),
+                              child: Text(y['name']?.toString() ?? '-'),
+                            )),
+                      ],
+                      onChanged: (v) async {
+                        setState(() {
+                          _selectedYearId = v;
+                          _selectedStandardId = null;
+                          _standards = [];
+                        });
+                        ref.read(activeAcademicYearProvider.notifier).setYear(v);
+                        if (v != null && v.isNotEmpty) {
+                          final standards = await _repo.listStandards(v);
+                          if (!mounted) return;
+                          setState(() => _standards = standards);
+                        }
+                        _loadDocuments();
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 220,
+                    child: DropdownButtonFormField<String?>(
+                      value: _selectedStandardId,
+                      decoration: const InputDecoration(labelText: 'Class'),
+                      items: [
+                        const DropdownMenuItem<String?>(value: null, child: Text('All Classes')),
+                        ..._standards.map((s) => DropdownMenuItem<String?>(
+                              value: s['id']?.toString(),
+                              child: Text(s['name']?.toString() ?? '-'),
+                            )),
+                      ],
+                      onChanged: (v) {
+                        setState(() => _selectedStandardId = v);
+                        _loadDocuments();
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 140,
+                    child: TextField(
+                      controller: _sectionCtrl,
+                      decoration: const InputDecoration(labelText: 'Section'),
+                      onSubmitted: (_) => _loadDocuments(),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton(
+                    onPressed: _loadDocuments,
+                    child: const Text('Apply'),
+                  ),
+                  const SizedBox(width: 8),
+                  DropdownButton<String?>(
+                    value: _statusFilter,
+                    hint: const Text('All Status'),
+                    items: const [
+                      DropdownMenuItem<String?>(
+                          value: null, child: Text('All Status')),
+                      DropdownMenuItem(value: 'PENDING', child: Text('Pending')),
+                      DropdownMenuItem(
+                          value: 'PROCESSING', child: Text('Processing')),
+                      DropdownMenuItem(value: 'READY', child: Text('Ready')),
+                      DropdownMenuItem(value: 'FAILED', child: Text('Failed')),
+                    ],
+                    onChanged: (v) {
+                      setState(() => _statusFilter = v);
+                      _loadDocuments();
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.refresh, size: 14),
+                    label: const Text('Refresh'),
+                    onPressed: _loadDocuments,
+                  ),
+                  const Spacer(),
+                  ElevatedButton.icon(
+                    icon: const Icon(Icons.upload_file_outlined, size: 14),
+                    label: const Text('Upload Document'),
+                    onPressed: _showUploadDialog,
+                  ),
                 ],
-                onChanged: (v) {
-                  setState(() => _statusFilter = v);
-                  _loadDocuments();
-                },
-              ),
-              const SizedBox(width: 8),
-              OutlinedButton.icon(
-                icon: const Icon(Icons.refresh, size: 14),
-                label: const Text('Refresh'),
-                onPressed: _loadDocuments,
-              ),
-              const Spacer(),
-              ElevatedButton.icon(
-                icon: const Icon(Icons.upload_file_outlined, size: 14),
-                label: const Text('Upload Document'),
-                onPressed: _showUploadDialog,
               ),
             ],
           ),
@@ -718,6 +1039,8 @@ class _DocumentManagementScreenState
                     WidgetStateProperty.all(Colors.grey.shade100),
                 columns: const [
                   DataColumn(label: Text('Document Type')),
+                  DataColumn(label: Text('Year Scope')),
+                  DataColumn(label: Text('Class Scope')),
                   DataColumn(label: Text('Mandatory')),
                   DataColumn(label: Text('Note')),
                 ],
@@ -725,6 +1048,8 @@ class _DocumentManagementScreenState
                   return DataRow(cells: [
                     DataCell(Text(
                         req.documentType.replaceAll('_', ' '))),
+                    DataCell(Text(req.academicYearId ?? 'All Years')),
+                    DataCell(Text(req.standardId ?? 'All Classes')),
                     DataCell(Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [

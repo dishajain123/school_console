@@ -22,7 +22,6 @@ class AuditLogScreen extends ConsumerStatefulWidget {
 
 class _AuditLogScreenState extends ConsumerState<AuditLogScreen> {
   final _searchCtrl = TextEditingController();
-  final _actorCtrl = TextEditingController();
 
   String? _selectedAction;
   String? _selectedEntityType;
@@ -32,7 +31,6 @@ class _AuditLogScreenState extends ConsumerState<AuditLogScreen> {
   @override
   void dispose() {
     _searchCtrl.dispose();
-    _actorCtrl.dispose();
     super.dispose();
   }
 
@@ -41,9 +39,6 @@ class _AuditLogScreenState extends ConsumerState<AuditLogScreen> {
           AuditLogFilter(
             action: _selectedAction,
             entityType: _selectedEntityType,
-            actorId: _actorCtrl.text.trim().isEmpty
-                ? null
-                : _actorCtrl.text.trim(),
             q: _searchCtrl.text.trim().isEmpty
                 ? null
                 : _searchCtrl.text.trim(),
@@ -57,7 +52,6 @@ class _AuditLogScreenState extends ConsumerState<AuditLogScreen> {
 
   void _resetFilters() {
     _searchCtrl.clear();
-    _actorCtrl.clear();
     setState(() {
       _selectedAction = null;
       _selectedEntityType = null;
@@ -247,21 +241,6 @@ class _AuditLogScreenState extends ConsumerState<AuditLogScreen> {
                             controller: _searchCtrl,
                             decoration: const InputDecoration(
                               labelText: 'Search description',
-                              isDense: true,
-                              border: OutlineInputBorder(),
-                              contentPadding: EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 8),
-                            ),
-                            onSubmitted: (_) => _applyFilters(),
-                          ),
-                        ),
-                        // Actor ID
-                        SizedBox(
-                          width: 200,
-                          child: TextField(
-                            controller: _actorCtrl,
-                            decoration: const InputDecoration(
-                              labelText: 'Actor ID (UUID)',
                               isDense: true,
                               border: OutlineInputBorder(),
                               contentPadding: EdgeInsets.symmetric(

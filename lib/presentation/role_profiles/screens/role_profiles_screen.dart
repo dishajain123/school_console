@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
 
 import '../../../data/models/role_profiles/role_profile_item.dart';
+import '../../../domains/providers/active_year_provider.dart';
+import '../../../domains/providers/auth_provider.dart';
 import '../../../domains/providers/role_profile_provider.dart';
 import '../../common/layout/admin_scaffold.dart';
 import '../../common/widgets/data_table_widget.dart';
@@ -19,6 +21,8 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
   late final TabController _tabController;
   final _searchController = TextEditingController();
   int _page = 1;
+  List<Map<String, dynamic>> _years = const [];
+  String? _selectedYearId;
   List<Map<String, dynamic>> _standards = const [];
   List<String> _sections = const [];
   String? _selectedStandardId;
@@ -44,7 +48,7 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
         _page = 1;
       });
     });
-    _loadStandards();
+    _loadAcademicYears();
   }
 
   @override
@@ -57,10 +61,34 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
   String get _currentRole => ['STUDENT', 'TEACHER', 'PARENT'][_tabController.index];
   bool get _isStudentTab => _tabController.index == 0;
 
+  String? get _schoolId => ref.read(authControllerProvider).valueOrNull?.schoolId;
+
+  Future<void> _loadAcademicYears() async {
+    final repository = ref.read(roleProfileRepositoryProvider);
+    try {
+      final years = await repository.listAcademicYears(schoolId: _schoolId);
+      if (!mounted) return;
+      final preferredYearId = ref.read(activeAcademicYearProvider);
+      final preferred = years.where((y) => y['id']?.toString() == preferredYearId).toList();
+      final active = years.where((y) => y['is_active'] == true).toList();
+      setState(() {
+        _years = years;
+        _selectedYearId = preferred.isNotEmpty
+            ? preferred.first['id']?.toString()
+            : active.isNotEmpty
+            ? active.first['id']?.toString()
+            : (years.isNotEmpty ? years.first['id']?.toString() : null);
+      });
+      ref.read(activeAcademicYearProvider.notifier).setYear(_selectedYearId);
+      await _loadStandards();
+    } catch (_) {}
+  }
+
   Future<void> _loadStandards() async {
     final repository = ref.read(roleProfileRepositoryProvider);
     try {
-      final standards = await repository.listStandards();
+      final standards =
+          await repository.listStandards(academicYearId: _selectedYearId);
       if (!mounted) return;
       setState(() => _standards = standards);
     } catch (_) {}
@@ -69,7 +97,10 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
   Future<void> _loadSectionsForStandard(String standardId) async {
     final repository = ref.read(roleProfileRepositoryProvider);
     try {
-      final sections = await repository.listSections(standardId: standardId);
+      final sections = await repository.listSections(
+        standardId: standardId,
+        academicYearId: _selectedYearId,
+      );
       if (!mounted) return;
       setState(() => _sections = sections);
     } catch (_) {
@@ -104,6 +135,35 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
                 spacing: 12,
                 runSpacing: 12,
                 children: [
+                  SizedBox(
+                    width: 220,
+                    child: DropdownButtonFormField<String>(
+                      value: _selectedYearId,
+                      decoration: const InputDecoration(
+                        labelText: 'Academic Year',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: _years
+                          .map(
+                            (y) => DropdownMenuItem<String>(
+                              value: y['id']?.toString(),
+                              child: Text(y['name']?.toString() ?? '-'),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) async {
+                        setState(() {
+                          _selectedYearId = value;
+                          _selectedStandardId = null;
+                          _selectedSection = null;
+                          _sections = const [];
+                          _page = 1;
+                        });
+                        ref.read(activeAcademicYearProvider.notifier).setYear(value);
+                        await _loadStandards();
+                      },
+                    ),
+                  ),
                   SizedBox(
                     width: 320,
                     child: TextField(
@@ -179,6 +239,7 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
                 future: repository.listProfiles(
                   role: _currentRole,
                   search: _searchController.text,
+                  academicYearId: _selectedYearId,
                   standardId: _isStudentTab ? _selectedStandardId : null,
                   section: _isStudentTab ? _selectedSection : null,
                   page: _page,
@@ -236,11 +297,11 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
 
     return DataRow(
       cells: [
-        DataCell(Text(identifier)),
-        DataCell(Text(item.fullName?.trim().isNotEmpty == true ? item.fullName! : '-')),
-        DataCell(Text(item.email?.trim().isNotEmpty == true ? item.email! : '-')),
-        DataCell(Text(item.phone?.trim().isNotEmpty == true ? item.phone! : '-')),
-        DataCell(Text(details)),
+        DataCell(SelectableText(identifier)),
+        DataCell(SelectableText(item.fullName?.trim().isNotEmpty == true ? item.fullName! : '-')),
+        DataCell(SelectableText(item.email?.trim().isNotEmpty == true ? item.email! : '-')),
+        DataCell(SelectableText(item.phone?.trim().isNotEmpty == true ? item.phone! : '-')),
+        DataCell(SelectableText(details)),
       ],
     );
   }

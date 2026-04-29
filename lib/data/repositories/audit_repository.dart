@@ -1,7 +1,7 @@
 // lib/data/repositories/audit_repository.dart  [Admin Console]
 // Phase 14 — Audit & Traceability.
 // FIXED: endpoint changed from /approvals/audit/logs → /audit-logs.
-// FIXED: filter params added to match backend (action, entity_type, actor_id,
+// FIXED: filter params added to match backend (action, entity_type,
 //        target_user_id, date_from, date_to, q).
 // FIXED: model fields updated to match AuditLogResponse (occurredAt, entityType, etc.).
 
@@ -18,7 +18,6 @@ class AuditRepository {
     int pageSize = 50,
     String? action,
     String? entityType,
-    String? actorId,
     String? targetUserId,
     String? dateFrom,
     String? dateTo,
@@ -32,7 +31,6 @@ class AuditRepository {
     if (entityType != null && entityType.isNotEmpty) {
       params['entity_type'] = entityType;
     }
-    if (actorId != null && actorId.isNotEmpty) params['actor_id'] = actorId;
     if (targetUserId != null && targetUserId.isNotEmpty) {
       params['target_user_id'] = targetUserId;
     }

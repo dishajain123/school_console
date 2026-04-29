@@ -21,7 +21,6 @@ class AuditLogFilter {
   const AuditLogFilter({
     this.action,
     this.entityType,
-    this.actorId,
     this.targetUserId,
     this.dateFrom,
     this.dateTo,
@@ -32,7 +31,6 @@ class AuditLogFilter {
 
   final String? action;
   final String? entityType;
-  final String? actorId;
   final String? targetUserId;
   final String? dateFrom;
   final String? dateTo;
@@ -43,7 +41,6 @@ class AuditLogFilter {
   AuditLogFilter copyWith({
     String? action,
     String? entityType,
-    String? actorId,
     String? targetUserId,
     String? dateFrom,
     String? dateTo,
@@ -54,7 +51,6 @@ class AuditLogFilter {
       AuditLogFilter(
         action: action ?? this.action,
         entityType: entityType ?? this.entityType,
-        actorId: actorId ?? this.actorId,
         targetUserId: targetUserId ?? this.targetUserId,
         dateFrom: dateFrom ?? this.dateFrom,
         dateTo: dateTo ?? this.dateTo,
@@ -65,7 +61,6 @@ class AuditLogFilter {
 
   AuditLogFilter clearAction() => AuditLogFilter(
         entityType: entityType,
-        actorId: actorId,
         targetUserId: targetUserId,
         dateFrom: dateFrom,
         dateTo: dateTo,
@@ -76,7 +71,6 @@ class AuditLogFilter {
 
   AuditLogFilter clearEntityType() => AuditLogFilter(
         action: action,
-        actorId: actorId,
         targetUserId: targetUserId,
         dateFrom: dateFrom,
         dateTo: dateTo,
@@ -109,7 +103,6 @@ final auditLogProvider = FutureProvider<List<AuditLog>>((ref) async {
         pageSize: filter.pageSize,
         action: filter.action,
         entityType: filter.entityType,
-        actorId: filter.actorId,
         targetUserId: filter.targetUserId,
         dateFrom: filter.dateFrom,
         dateTo: filter.dateTo,

@@ -21,7 +21,6 @@ import '../../domains/providers/results/screens/exams_results_screen.dart';
 import '../../presentation/reports/screens/reports_screen.dart';
 import '../../presentation/communication/screens/communication_screen.dart';
 import '../../presentation/documents/screens/document_management_screen.dart';
-import '../../presentation/bulk/screens/bulk_operations_screen.dart';
 import '../../presentation/settings/screens/settings_screen.dart';
 
 final goRouterProvider = Provider<GoRouter>((ref) {
@@ -138,12 +137,6 @@ GoRouter buildRouter(Ref ref) {
       GoRoute(
         path: RouteNames.documents,
         builder: (context, state) => const DocumentManagementScreen(),
-      ),
-
-      // Phase 15 — Bulk Operations
-      GoRoute(
-        path: RouteNames.bulkOperations,
-        builder: (context, state) => const BulkOperationsScreen(),
       ),
 
       GoRoute(

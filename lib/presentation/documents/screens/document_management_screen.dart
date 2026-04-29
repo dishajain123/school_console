@@ -899,8 +899,9 @@ class _DocumentManagementScreenState
   Widget _buildPendingTab() {
     final pending = _documents
         .where((d) =>
-            d.status == 'PROCESSING' &&
-            d.hasFile)
+            d.hasFile &&
+            (d.reviewedAt == null || d.reviewedAt!.trim().isEmpty) &&
+            (d.status == 'PROCESSING' || d.status == 'PENDING' || d.status == 'READY'))
         .toList();
 
     if (pending.isEmpty) {
@@ -959,7 +960,7 @@ class _DocumentManagementScreenState
                 color: doc.statusColor.withOpacity(0.12),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Text(doc.status,
+              child: Text(doc.status.toUpperCase() == 'READY' ? 'VERIFIED' : (doc.status.toUpperCase() == 'FAILED' ? 'REJECTED' : doc.status),
                   style: TextStyle(
                       color: doc.statusColor,
                       fontSize: 11,
@@ -982,8 +983,10 @@ class _DocumentManagementScreenState
                       onPressed: () => _openDocument(doc),
                     ),
                   if (doc.hasFile &&
+                      (doc.reviewedAt == null || doc.reviewedAt!.trim().isEmpty) &&
                       (doc.status == 'PROCESSING' ||
-                          doc.status == 'PENDING')) ...[
+                          doc.status == 'PENDING' ||
+                          doc.status == 'READY')) ...[
                     IconButton(
                       icon: const Icon(Icons.check_circle_outline,
                           color: Colors.green, size: 18),

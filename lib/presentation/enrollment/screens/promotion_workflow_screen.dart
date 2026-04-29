@@ -117,6 +117,8 @@ class _PreviewItem {
 
   // Admin override — starts as suggested, can be changed before execute.
   _Decision decision = _Decision.promote;
+  // Row selection for bulk execution (selected by default).
+  bool selected = true;
   // Admin override for target standard (used when PROMOTE/REPEAT).
   String? targetStandardId;
 
@@ -244,6 +246,7 @@ class _PromotionWorkflowScreenState extends ConsumerState<PromotionWorkflowScree
   late final _PromotionRepository _repo;
 
   List<_AcademicYear> _years = [];
+  List<_Standard> _sourceStandards = [];
   List<_Standard> _targetStandards = [];
   List<_PreviewItem> _previewItems = [];
 
@@ -289,6 +292,16 @@ class _PromotionWorkflowScreenState extends ConsumerState<PromotionWorkflowScree
     }
   }
 
+  Future<void> _loadSourceStandards() async {
+    if (_schoolId == null || _sourceYearId == null) return;
+    try {
+      final stds = await _repo.listStandards(_schoolId!, _sourceYearId!);
+      setState(() => _sourceStandards = stds);
+    } catch (_) {
+      setState(() => _sourceStandards = []);
+    }
+  }
+
   Future<void> _runPreview() async {
     if (_sourceYearId == null || _targetYearId == null) {
       setState(() => _error = 'Please select both source and target academic years.');
@@ -306,6 +319,14 @@ class _PromotionWorkflowScreenState extends ConsumerState<PromotionWorkflowScree
         standardId: _filterStandardId,
       );
       await _loadTargetStandards();
+      items.sort((a, b) {
+        final byClass = a.currentStandardName.compareTo(b.currentStandardName);
+        if (byClass != 0) return byClass;
+        final bySection =
+            (a.currentSectionName ?? '').compareTo(b.currentSectionName ?? '');
+        if (bySection != 0) return bySection;
+        return (a.studentName ?? '').compareTo(b.studentName ?? '');
+      });
       setState(() => _previewItems = items);
     } catch (e) {
       setState(() => _error = e.toString());
@@ -315,13 +336,17 @@ class _PromotionWorkflowScreenState extends ConsumerState<PromotionWorkflowScree
   }
 
   Future<void> _executePromotion() async {
-    if (_previewItems.isEmpty) return;
+    final selectedItems = _previewItems.where((e) => e.selected).toList();
+    if (selectedItems.isEmpty) {
+      setState(() => _error = 'Please select at least one student to execute promotion.');
+      return;
+    }
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Confirm Promotion Execution'),
         content: Text(
-          'This will create new academic year mappings for ${_previewItems.length} student(s). '
+          'This will create new academic year mappings for ${selectedItems.length} student(s). '
           'Previous year mappings will become permanent read-only records.\n\n'
           'This action cannot be undone.',
         ),
@@ -345,7 +370,7 @@ class _PromotionWorkflowScreenState extends ConsumerState<PromotionWorkflowScree
       final result = await _repo.execute(
         sourceYearId: _sourceYearId!,
         targetYearId: _targetYearId!,
-        items: _previewItems,
+        items: selectedItems,
       );
       setState(() {
         _successMessage =
@@ -434,7 +459,15 @@ class _PromotionWorkflowScreenState extends ConsumerState<PromotionWorkflowScree
                                       child: Text(y.name + (y.isActive ? ' (Active)' : '')),
                                     ))
                                 .toList(),
-                            onChanged: (v) => setState(() => _sourceYearId = v),
+                            onChanged: (v) async {
+                              setState(() {
+                                _sourceYearId = v;
+                                _filterStandardId = null;
+                                _previewItems = [];
+                                _sourceStandards = [];
+                              });
+                              await _loadSourceStandards();
+                            },
                           ),
                         ),
                         SizedBox(
@@ -458,6 +491,34 @@ class _PromotionWorkflowScreenState extends ConsumerState<PromotionWorkflowScree
                                 _previewItems = [];
                               });
                             },
+                          ),
+                        ),
+                        SizedBox(
+                          width: 260,
+                          child: DropdownButtonFormField<String>(
+                            decoration: const InputDecoration(
+                              labelText: 'Class (optional filter)',
+                              border: OutlineInputBorder(),
+                              contentPadding:
+                                  EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            ),
+                            value: _filterStandardId,
+                            items: [
+                              const DropdownMenuItem<String>(
+                                value: null,
+                                child: Text('All Classes'),
+                              ),
+                              ..._sourceStandards.map(
+                                (s) => DropdownMenuItem<String>(
+                                  value: s.id,
+                                  child: Text(s.name),
+                                ),
+                              ),
+                            ],
+                            onChanged: (v) => setState(() {
+                              _filterStandardId = v;
+                              _previewItems = [];
+                            }),
                           ),
                         ),
                         ElevatedButton.icon(
@@ -512,7 +573,26 @@ class _PromotionWorkflowScreenState extends ConsumerState<PromotionWorkflowScree
                           // Bulk action row
                           Wrap(
                             spacing: 8,
+                            runSpacing: 8,
                             children: [
+                              OutlinedButton.icon(
+                                onPressed: () => setState(() {
+                                  for (final item in _previewItems) {
+                                    item.selected = true;
+                                  }
+                                }),
+                                icon: const Icon(Icons.select_all, size: 16),
+                                label: const Text('Select All'),
+                              ),
+                              OutlinedButton.icon(
+                                onPressed: () => setState(() {
+                                  for (final item in _previewItems) {
+                                    item.selected = false;
+                                  }
+                                }),
+                                icon: const Icon(Icons.deselect, size: 16),
+                                label: const Text('Clear Selection'),
+                              ),
                               const Text('Set all to:',
                                   style: TextStyle(fontWeight: FontWeight.w600)),
                               ..._Decision.values.map((d) => OutlinedButton(
@@ -538,6 +618,7 @@ class _PromotionWorkflowScreenState extends ConsumerState<PromotionWorkflowScree
                             child: DataTable(
                               headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
                               columns: const [
+                                DataColumn(label: Text('Select')),
                                 DataColumn(label: Text('Admission #')),
                                 DataColumn(label: Text('Student Name')),
                                 DataColumn(label: Text('Current Class')),
@@ -552,6 +633,14 @@ class _PromotionWorkflowScreenState extends ConsumerState<PromotionWorkflowScree
                                       ? WidgetStateProperty.all(Colors.amber.shade50)
                                       : null,
                                   cells: [
+                                    DataCell(
+                                      Checkbox(
+                                        value: item.selected,
+                                        onChanged: (v) => setState(() {
+                                          item.selected = v ?? false;
+                                        }),
+                                      ),
+                                    ),
                                     DataCell(Text(item.admissionNumber ?? '-')),
                                     DataCell(
                                       Row(
@@ -655,6 +744,14 @@ class _PromotionWorkflowScreenState extends ConsumerState<PromotionWorkflowScree
                                     foregroundColor: Colors.white,
                                   ),
                                   onPressed: _executing ? null : _executePromotion,
+                                ),
+                                const SizedBox(width: 12),
+                                Text(
+                                  '${_previewItems.where((e) => e.selected).length} selected',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.black54,
+                                  ),
                                 ),
                               ],
                             ),

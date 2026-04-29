@@ -1,22 +1,37 @@
 // lib/core/constants/api_constants.dart
 // Admin Console API constants — complete with Phase 6/7 additions.
+import 'package:flutter/foundation.dart';
 
 class ApiConstants {
   // ── Base ──────────────────────────────────────────────────────────────────
   // Override with:
   // flutter run -d chrome --dart-define=ADMIN_API_BASE_URL=http://127.0.0.1:8000/api/v1
   // flutter run -d android --dart-define=ADMIN_API_BASE_URL=http://10.0.2.2:8000/api/v1
-  static const String baseUrl = String.fromEnvironment(
+  static const String _baseUrlEnv = String.fromEnvironment(
     'ADMIN_API_BASE_URL',
     defaultValue: 'http://127.0.0.1:8000/api/v1',
   );
+  static String get baseUrl {
+    if (_baseUrlEnv.isNotEmpty) return _normalize(_baseUrlEnv);
+    if (kIsWeb) {
+      final host = Uri.base.host.isEmpty ? '127.0.0.1' : Uri.base.host;
+      final safeHost = (host == '0.0.0.0' || host == '::') ? '127.0.0.1' : host;
+      return 'http://$safeHost:8000/api/v1';
+    }
+    return 'http://127.0.0.1:8000/api/v1';
+  }
+
+  static String _normalize(String value) {
+    final trimmed = value.trim();
+    if (trimmed.endsWith('/')) return trimmed.substring(0, trimmed.length - 1);
+    return trimmed;
+  }
 
   // ── Auth ──────────────────────────────────────────────────────────────────
   static const String login = '/auth/login';
   static const String me = '/auth/me';
   static const String logout = '/auth/logout';
   static const String refresh = '/auth/refresh';
-  static const String register = '/auth/register';
 
   // ── Settings ──────────────────────────────────────────────────────────────
   static const String settings = '/settings';

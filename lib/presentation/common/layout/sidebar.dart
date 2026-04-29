@@ -25,28 +25,28 @@ class _NavItem {
 const _allItems = [
   // 0 — Approvals
   _NavItem(icon: Icons.verified_user_outlined, selectedIcon: Icons.verified_user, label: 'Approvals', route: RouteNames.approvals),
-  // 1 — Audit Log
-  _NavItem(icon: Icons.history_toggle_off, selectedIcon: Icons.history, label: 'Audit Log', route: RouteNames.audit),
-  // 2 — Academic Years
-  _NavItem(icon: Icons.account_tree_outlined, selectedIcon: Icons.account_tree, label: 'Acad. Years', route: RouteNames.academics),
-  // 3 — Classes/Sections
-  _NavItem(icon: Icons.class_outlined, selectedIcon: Icons.class_, label: 'Classes', route: RouteNames.academicStructure),
-  // 4 — Enrollment (roster view)
+  // 1 — Enrollment (roster view)
   _NavItem(icon: Icons.how_to_reg_outlined, selectedIcon: Icons.how_to_reg, label: 'Enrollment', route: RouteNames.enrollment),
-  // 5 — Student Lifecycle (Phase 14/15) — unified transfer/exit/re-enroll
+  // 2 — Student Lifecycle (Phase 14/15) — unified transfer/exit/re-enroll
   _NavItem(icon: Icons.manage_accounts_outlined, selectedIcon: Icons.manage_accounts, label: 'Lifecycle', route: RouteNames.lifecycleManagement),
-  // 6 — Promotion (Phase 7)
-  _NavItem(icon: Icons.trending_up_outlined, selectedIcon: Icons.trending_up, label: 'Promotion', route: RouteNames.promotion),
-  // 7 — Teacher Assignments (Phase 4)
+  // 3 — Teacher Assignments (Phase 4)
   _NavItem(icon: Icons.assignment_ind_outlined, selectedIcon: Icons.assignment_ind, label: 'Teacher Assign.', route: RouteNames.teacherAssignments),
-  // 8 — Role Profiles
+  // 4 — Promotion (Phase 7)
+  _NavItem(icon: Icons.trending_up_outlined, selectedIcon: Icons.trending_up, label: 'Promotion', route: RouteNames.promotion),
+  // 5 — Classes/Sections
+  _NavItem(icon: Icons.class_outlined, selectedIcon: Icons.class_, label: 'Classes', route: RouteNames.academicStructure),
+  // 6 — Academic Years
+  _NavItem(icon: Icons.account_tree_outlined, selectedIcon: Icons.account_tree, label: 'Acad. Years', route: RouteNames.academics),
+  // 7 — Role Profiles
   _NavItem(icon: Icons.badge_outlined, selectedIcon: Icons.badge, label: 'Profiles', route: RouteNames.roleProfiles),
-  // 9 — Fees (Phase 8)
+  // 8 — Fees (Phase 8)
   _NavItem(icon: Icons.payments_outlined, selectedIcon: Icons.payments, label: 'Fees', route: RouteNames.fees),
-  // 10 — Exams & Results (Phase 10)
+  // 9 — Exams & Results (Phase 10)
   _NavItem(icon: Icons.analytics_outlined, selectedIcon: Icons.analytics, label: 'Results', route: RouteNames.examsResults),
-  // 11 — Reports & Analytics (Phase 11)
+  // 10 — Reports & Analytics (Phase 11)
   _NavItem(icon: Icons.bar_chart_outlined, selectedIcon: Icons.bar_chart, label: 'Reports', route: RouteNames.reports),
+  // 11 — Audit Log
+  _NavItem(icon: Icons.history_toggle_off, selectedIcon: Icons.history, label: 'Audit Log', route: RouteNames.audit),
   // 12 — Communication (Phase 12)
   _NavItem(icon: Icons.campaign_outlined, selectedIcon: Icons.campaign, label: 'Communication', route: RouteNames.communication),
   // 13 — Documents (Phase 13)
@@ -79,16 +79,9 @@ List<_NavItem> _itemsForUser(AdminUser user) {
 
   final visible = <_NavItem>[];
 
-  // Approvals & Audit — PRINCIPAL or staff with approval:review
+  // Approvals
   if (role == 'PRINCIPAL' || user.canReview) {
     addRoute(visible, RouteNames.approvals);
-    addRoute(visible, RouteNames.audit);
-  }
-
-  // Academic structure — PRINCIPAL or settings:manage
-  if (role == 'PRINCIPAL' || perms.contains('settings:manage')) {
-    addRoute(visible, RouteNames.academics);
-    addRoute(visible, RouteNames.academicStructure);
   }
 
   // Enrollment & Lifecycle — PRINCIPAL or user:manage
@@ -97,18 +90,20 @@ List<_NavItem> _itemsForUser(AdminUser user) {
     addRoute(visible, RouteNames.lifecycleManagement); // Lifecycle management
   }
 
-  // Promotion (Phase 7) — PRINCIPAL or student:promote
-  if (role == 'PRINCIPAL' || perms.contains('student:promote')) {
-    addRoute(visible, RouteNames.promotion);
-  }
-
   // Teacher Assignments — PRINCIPAL or teacher_assignment:manage
   if (role == 'PRINCIPAL' || perms.contains('teacher_assignment:manage')) {
     addRoute(visible, RouteNames.teacherAssignments);
   }
 
-  // Role Profiles — PRINCIPAL or settings:manage
+  // Promotion — PRINCIPAL or student:promote
+  if (role == 'PRINCIPAL' || perms.contains('student:promote')) {
+    addRoute(visible, RouteNames.promotion);
+  }
+
+  // Classes + Academic Years + Profiles — PRINCIPAL or settings:manage
   if (role == 'PRINCIPAL' || perms.contains('settings:manage')) {
+    addRoute(visible, RouteNames.academicStructure);
+    addRoute(visible, RouteNames.academics);
     addRoute(visible, RouteNames.roleProfiles);
   }
 
@@ -125,6 +120,11 @@ List<_NavItem> _itemsForUser(AdminUser user) {
   // Reports — PRINCIPAL or reports:read
   if (role == 'PRINCIPAL' || perms.contains('reports:read')) {
     addRoute(visible, RouteNames.reports);
+  }
+
+  // Audit Log
+  if (role == 'PRINCIPAL' || user.canReview) {
+    addRoute(visible, RouteNames.audit);
   }
 
   // Communication — PRINCIPAL or announcement:create

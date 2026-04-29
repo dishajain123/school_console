@@ -7,6 +7,7 @@ class RegistrationRequest {
     required this.role,
     required this.status,
     required this.registrationSource,
+    this.requestedStudentAdmissionNumber,
     required this.createdAt,
     this.rejectionReason,
     this.holdReason,
@@ -22,6 +23,7 @@ class RegistrationRequest {
   final String role;
   final String status;
   final String registrationSource;
+  final String? requestedStudentAdmissionNumber;
   final DateTime createdAt;
   final String? rejectionReason;
   final String? holdReason;
@@ -38,6 +40,8 @@ class RegistrationRequest {
       role: json['role'] as String,
       status: json['status'] as String,
       registrationSource: json['registration_source'] as String,
+      requestedStudentAdmissionNumber:
+          json['requested_student_admission_number'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
       rejectionReason: json['rejection_reason'] as String?,
       holdReason: json['hold_reason'] as String?,
@@ -63,6 +67,8 @@ class RegistrationRequest {
       role: json['role'] as String,
       status: json['status'] as String,
       registrationSource: json['registration_source'] as String,
+      requestedStudentAdmissionNumber:
+          json['requested_student_admission_number'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
       rejectionReason: json['rejection_reason'] as String?,
       holdReason: json['hold_reason'] as String?,

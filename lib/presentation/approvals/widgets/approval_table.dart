@@ -16,6 +16,7 @@ class ApprovalTable extends StatelessWidget {
         columns: const [
           DataColumn(label: Text('Name')),
           DataColumn(label: Text('Role')),
+          DataColumn(label: Text('Student Adm. No')),
           DataColumn(label: Text('Contact')),
           DataColumn(label: Text('Source')),
           DataColumn(label: Text('Status')),
@@ -28,6 +29,7 @@ class ApprovalTable extends StatelessWidget {
                 cells: [
                   DataCell(Text(item.fullName ?? '-')),
                   DataCell(Text(item.role)),
+                  DataCell(Text(item.requestedStudentAdmissionNumber ?? '-')),
                   DataCell(Text(item.email ?? item.phone ?? '-')),
                   DataCell(Text(item.registrationSource)),
                   DataCell(Text(item.status)),

@@ -9,6 +9,12 @@ class UserDetailCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final requestedAdmission = item.requestedStudentAdmissionNumber;
+    final submittedEntries = (item.submittedData ?? const <String, dynamic>{})
+        .entries
+        .toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -25,6 +31,8 @@ class UserDetailCard extends StatelessWidget {
             Text('Phone: ${item.phone ?? '-'}'),
             Text('Status: ${item.status}'),
             Text('Source: ${item.registrationSource}'),
+            if (requestedAdmission != null)
+              Text('Requested Student Admission No: $requestedAdmission'),
             if (item.rejectionReason != null)
               Text('Rejection: ${item.rejectionReason}'),
             if (item.holdReason != null) Text('Hold: ${item.holdReason}'),
@@ -59,7 +67,12 @@ class UserDetailCard extends StatelessWidget {
               style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: 4),
-            SelectableText((item.submittedData ?? const {}).toString()),
+            if (submittedEntries.isEmpty)
+              const Text('-')
+            else
+              ...submittedEntries.map(
+                (entry) => SelectableText('${entry.key}: ${entry.value}'),
+              ),
           ],
         ),
       ),

@@ -47,8 +47,5 @@ class RouteNames {
   // Phase 13 — Document Management
   static const String documents = '/documents';
 
-  // Phase 15 — Bulk Operations
-  static const String bulkOperations = '/bulk-operations';
-
   static const String settings = '/settings';
 }

@@ -37,11 +37,13 @@ GoRouter buildRouter(Ref ref) {
     initialLocation: RouteNames.login,
     redirect: (context, state) {
       final authState = ref.read(authControllerProvider);
+      final isLoginPage = state.matchedLocation == RouteNames.login;
+
+      // Never block navigation on loading; keep login visible as safe fallback.
       if (authState.isLoading) {
-        return null;
+        return isLoginPage ? null : RouteNames.login;
       }
       final isLoggedIn = authState.valueOrNull != null;
-      final isLoginPage = state.matchedLocation == RouteNames.login;
 
       if (!isLoggedIn && !isLoginPage) return RouteNames.login;
       if (isLoggedIn && isLoginPage) return RouteNames.approvals;

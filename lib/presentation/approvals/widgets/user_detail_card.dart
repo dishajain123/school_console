@@ -21,24 +21,24 @@ class UserDetailCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
+            SelectableText(
               item.fullName ?? '-',
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 8),
-            Text('Role: ${item.role}'),
-            Text('Email: ${item.email ?? '-'}'),
-            Text('Phone: ${item.phone ?? '-'}'),
-            Text('Status: ${item.status}'),
-            Text('Source: ${item.registrationSource}'),
+            SelectableText('Role: ${item.role}'),
+            SelectableText('Email: ${item.email ?? '-'}'),
+            SelectableText('Phone: ${item.phone ?? '-'}'),
+            SelectableText('Status: ${item.status}'),
+            SelectableText('Source: ${item.registrationSource}'),
             if (requestedAdmission != null)
-              Text('Requested Student Admission No: $requestedAdmission'),
+              SelectableText('Requested Student Admission No: $requestedAdmission'),
             if (item.rejectionReason != null)
-              Text('Rejection: ${item.rejectionReason}'),
-            if (item.holdReason != null) Text('Hold: ${item.holdReason}'),
+              SelectableText('Rejection: ${item.rejectionReason}'),
+            if (item.holdReason != null) SelectableText('Hold: ${item.holdReason}'),
             const Divider(height: 24),
-            Text('Validation issues: ${item.validationIssues.length}'),
-            Text('Duplicate matches: ${item.duplicateMatches.length}'),
+            SelectableText('Validation issues: ${item.validationIssues.length}'),
+            SelectableText('Duplicate matches: ${item.duplicateMatches.length}'),
             if (item.validationIssues.isNotEmpty) ...[
               const SizedBox(height: 8),
               Text(
@@ -68,7 +68,7 @@ class UserDetailCard extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             if (submittedEntries.isEmpty)
-              const Text('-')
+              const SelectableText('-')
             else
               ...submittedEntries.map(
                 (entry) => SelectableText('${entry.key}: ${entry.value}'),

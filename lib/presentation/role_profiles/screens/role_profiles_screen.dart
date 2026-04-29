@@ -239,7 +239,9 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
                 future: repository.listProfiles(
                   role: _currentRole,
                   search: _searchController.text,
-                  academicYearId: _selectedYearId,
+                  // Keep students visible right after approval/profile creation,
+                  // even before academic-year enrollment is assigned.
+                  academicYearId: null,
                   standardId: _isStudentTab ? _selectedStandardId : null,
                   section: _isStudentTab ? _selectedSection : null,
                   page: _page,
@@ -265,14 +267,22 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
                   }
 
                   return AdminDataTable(
-                    columns: const [
+                    columns: [
                       'Identifier',
                       'Full Name',
                       'Email',
                       'Phone',
                       'Details',
+                      if (_currentRole == 'PARENT') 'Actions',
                     ],
-                    rows: items.map((item) => _buildRow(item)).toList(),
+                    rows: items
+                        .map(
+                          (item) => _buildRow(
+                            item,
+                            includeActions: _currentRole == 'PARENT',
+                          ),
+                        )
+                        .toList(),
                     totalItems: data?.total ?? items.length,
                     currentPage: data?.page ?? 1,
                     pageSize: data?.pageSize ?? 20,
@@ -291,18 +301,234 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
     );
   }
 
-  DataRow _buildRow(RoleProfileItem item) {
+  DataRow _buildRow(
+    RoleProfileItem item, {
+    bool includeActions = false,
+  }) {
     final identifier = item.identifier ?? item.admissionNumber ?? item.employeeId ?? item.parentCode ?? '-';
     final details = _detailsText(item);
+    final cells = <DataCell>[
+      DataCell(SelectableText(identifier)),
+      DataCell(SelectableText(item.fullName?.trim().isNotEmpty == true ? item.fullName! : '-')),
+      DataCell(SelectableText(item.email?.trim().isNotEmpty == true ? item.email! : '-')),
+      DataCell(SelectableText(item.phone?.trim().isNotEmpty == true ? item.phone! : '-')),
+      DataCell(SelectableText(details)),
+    ];
+    if (includeActions) {
+      cells.add(
+        DataCell(
+          OutlinedButton(
+            onPressed: () => _openParentLinkDialog(item),
+            child: const Text('Link Children'),
+          ),
+        ),
+      );
+    }
 
     return DataRow(
-      cells: [
-        DataCell(SelectableText(identifier)),
-        DataCell(SelectableText(item.fullName?.trim().isNotEmpty == true ? item.fullName! : '-')),
-        DataCell(SelectableText(item.email?.trim().isNotEmpty == true ? item.email! : '-')),
-        DataCell(SelectableText(item.phone?.trim().isNotEmpty == true ? item.phone! : '-')),
-        DataCell(SelectableText(details)),
-      ],
+      cells: cells,
+    );
+  }
+
+  Future<void> _openParentLinkDialog(RoleProfileItem parentItem) async {
+    final repository = ref.read(roleProfileRepositoryProvider);
+    final parentId = (parentItem.raw['parent_id'] ?? '').toString();
+    if (parentId.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Parent profile id is missing.')),
+      );
+      return;
+    }
+
+    final existingIds = await repository.getParentChildIds(parentId);
+    final selected = <String>{...existingIds};
+    final searchCtrl = TextEditingController();
+    List<RoleProfileItem> candidates = [];
+    bool loading = false;
+
+    Future<void> loadCandidates(StateSetter setLocal) async {
+      setLocal(() => loading = true);
+      try {
+        final result = await repository.listProfiles(
+          role: 'STUDENT',
+          search: searchCtrl.text,
+          page: 1,
+          pageSize: 300,
+        );
+        candidates = result.items;
+      } finally {
+        setLocal(() => loading = false);
+      }
+    }
+
+    // Load student candidates immediately so approved students are visible
+    // without requiring an initial search.
+    final initial = await repository.listProfiles(
+      role: 'STUDENT',
+      page: 1,
+      pageSize: 300,
+    );
+    candidates = initial.items;
+
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: Text('Link Children: ${parentItem.fullName ?? 'Parent'}'),
+          content: SizedBox(
+            width: 560,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: searchCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Search student by name or admission number',
+                          border: OutlineInputBorder(),
+                        ),
+                        onSubmitted: (_) => loadCandidates(setLocal),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      onPressed: () => loadCandidates(setLocal),
+                      icon: const Icon(Icons.search),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('Selected: ${selected.length}'),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    TextButton(
+                      onPressed: () {
+                        setLocal(() {
+                          for (final s in candidates) {
+                            final sid = (s.raw['student_id'] ?? '').toString();
+                            if (sid.isNotEmpty) {
+                              selected.add(sid);
+                            } else {
+                              final uid = (s.raw['user_id'] ?? '').toString();
+                              if (uid.isNotEmpty) selected.add('user:$uid');
+                            }
+                          }
+                        });
+                      },
+                      child: const Text('Select all shown'),
+                    ),
+                    TextButton(
+                      onPressed: () => setLocal(() => selected.clear()),
+                      child: const Text('Clear all'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 300,
+                  child: loading
+                      ? const Center(child: CircularProgressIndicator())
+                      : candidates.isEmpty
+                          ? const Center(
+                              child: Text(
+                                'No student profiles found yet. If user is only approved, create/confirm student profile first.',
+                                textAlign: TextAlign.center,
+                              ),
+                            )
+                          : ListView.builder(
+                              itemCount: candidates.length,
+                              itemBuilder: (context, index) {
+                                final s = candidates[index];
+                                final studentId = (s.raw['student_id'] ?? '').toString();
+                                final userId = (s.raw['user_id'] ?? '').toString();
+                                final selectionKey = studentId.isNotEmpty
+                                    ? studentId
+                                    : (userId.isNotEmpty ? 'user:$userId' : '');
+                                if (selectionKey.isEmpty) return const SizedBox.shrink();
+                                final checked = selected.contains(selectionKey);
+                                final sub = (s.admissionNumber ?? s.identifier ?? '-');
+                                final hasProfile = studentId.isNotEmpty;
+                                return CheckboxListTile(
+                                  value: checked,
+                                  title: Text(s.fullName?.isNotEmpty == true ? s.fullName! : '-'),
+                                  subtitle: Text(
+                                    hasProfile ? sub : '$sub • Profile will be created on save',
+                                  ),
+                                  onChanged: (v) {
+                                    setLocal(() {
+                                      if (v == true) {
+                                        selected.add(selectionKey);
+                                      } else {
+                                        selected.remove(selectionKey);
+                                      }
+                                    });
+                                  },
+                                );
+                              },
+                            ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final resolvedStudentIds = <String>[];
+                for (final id in selected) {
+                  if (!id.startsWith('user:')) {
+                    resolvedStudentIds.add(id);
+                    continue;
+                  }
+                  final userId = id.substring(5);
+                  if (userId.isEmpty) continue;
+                  RoleProfileItem? selectedUser;
+                  for (final c in candidates) {
+                    final uid = (c.raw['user_id'] ?? '').toString();
+                    if (uid == userId) {
+                      selectedUser = c;
+                      break;
+                    }
+                  }
+                  final suggestedIdentifier =
+                      selectedUser?.raw['identifier']?.toString() ??
+                      selectedUser?.raw['suggested_identifier']?.toString();
+                  final created = await repository.createStudentProfile(
+                    userId: userId,
+                    parentId: parentId,
+                    customAdmissionNumber: suggestedIdentifier,
+                  );
+                  final studentId = (created['student_id'] ?? '').toString();
+                  if (studentId.isNotEmpty) {
+                    resolvedStudentIds.add(studentId);
+                  }
+                }
+                await repository.assignParentChildren(
+                  parentId: parentId,
+                  studentIds: resolvedStudentIds,
+                );
+                if (!mounted || !ctx.mounted) return;
+                Navigator.of(ctx).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Children linked successfully.')),
+                );
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

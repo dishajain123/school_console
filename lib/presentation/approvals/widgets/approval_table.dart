@@ -3,17 +3,35 @@ import 'package:flutter/material.dart';
 import '../../../data/models/registration/registration_request.dart';
 
 class ApprovalTable extends StatelessWidget {
-  const ApprovalTable({super.key, required this.items, required this.onOpen});
+  const ApprovalTable({
+    super.key,
+    required this.items,
+    required this.onOpen,
+    required this.selectedUserIds,
+    required this.onToggleSelect,
+    required this.onToggleSelectAll,
+  });
 
   final List<RegistrationRequest> items;
   final void Function(RegistrationRequest item) onOpen;
+  final Set<String> selectedUserIds;
+  final void Function(String userId, bool selected) onToggleSelect;
+  final void Function(bool selected) onToggleSelectAll;
 
   @override
   Widget build(BuildContext context) {
+    final allSelected = items.isNotEmpty &&
+        items.every((item) => selectedUserIds.contains(item.userId));
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: DataTable(
-        columns: const [
+        columns: [
+          DataColumn(
+            label: Checkbox(
+              value: allSelected,
+              onChanged: (v) => onToggleSelectAll(v ?? false),
+            ),
+          ),
           DataColumn(label: Text('Name')),
           DataColumn(label: Text('Role')),
           DataColumn(label: Text('Student Adm. No')),
@@ -27,13 +45,22 @@ class ApprovalTable extends StatelessWidget {
             .map(
               (item) => DataRow(
                 cells: [
-                  DataCell(Text(item.fullName ?? '-')),
-                  DataCell(Text(item.role)),
-                  DataCell(Text(item.requestedStudentAdmissionNumber ?? '-')),
-                  DataCell(Text(item.email ?? item.phone ?? '-')),
-                  DataCell(Text(item.registrationSource)),
-                  DataCell(Text(item.status)),
-                  DataCell(Text(item.createdAt.toIso8601String())),
+                  DataCell(
+                    Checkbox(
+                      value: selectedUserIds.contains(item.userId),
+                      onChanged: (v) =>
+                          onToggleSelect(item.userId, v ?? false),
+                    ),
+                  ),
+                  DataCell(SelectableText(item.fullName ?? '-')),
+                  DataCell(SelectableText(item.role)),
+                  DataCell(
+                    SelectableText(item.requestedStudentAdmissionNumber ?? '-'),
+                  ),
+                  DataCell(SelectableText(item.email ?? item.phone ?? '-')),
+                  DataCell(SelectableText(item.registrationSource)),
+                  DataCell(SelectableText(item.status)),
+                  DataCell(SelectableText(item.createdAt.toIso8601String())),
                   DataCell(
                     TextButton(
                       onPressed: () => onOpen(item),

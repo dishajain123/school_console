@@ -1,4 +1,5 @@
 import '../../core/network/dio_client.dart';
+import '../../core/constants/api_constants.dart';
 import '../models/role_profiles/identifier_config_item.dart';
 import '../models/role_profiles/role_profile_item.dart';
 
@@ -6,6 +7,7 @@ class RoleProfileRepository {
   RoleProfileRepository(this._client);
 
   final DioClient _client;
+  static const int _maxPageSize = 100;
 
   Future<RoleProfileListData> listProfiles({
     required String role,
@@ -16,12 +18,15 @@ class RoleProfileRepository {
     int page = 1,
     int pageSize = 20,
   }) async {
+    final safePageSize = pageSize < 1
+        ? 1
+        : (pageSize > _maxPageSize ? _maxPageSize : pageSize);
     final resp = await _client.dio.get<Map<String, dynamic>>(
       '/role-profiles',
       queryParameters: {
         'role': role,
         'page': page,
-        'page_size': pageSize,
+        'page_size': safePageSize,
         if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
         if (academicYearId != null && academicYearId.isNotEmpty) 'academic_year_id': academicYearId,
         if (standardId != null && standardId.isNotEmpty) 'standard_id': standardId,
@@ -107,5 +112,46 @@ class RoleProfileRepository {
       },
     );
     return IdentifierConfigItem.fromJson(resp.data ?? const {});
+  }
+
+  Future<List<String>> getParentChildIds(String parentId) async {
+    final resp = await _client.dio.get<Map<String, dynamic>>(
+      '${ApiConstants.parentById(parentId)}/children',
+    );
+    final children = (resp.data?['children'] as List?) ?? const <dynamic>[];
+    return children
+        .whereType<Map>()
+        .map((e) => (e['id'] ?? '').toString())
+        .where((id) => id.isNotEmpty)
+        .toList();
+  }
+
+  Future<void> assignParentChildren({
+    required String parentId,
+    required List<String> studentIds,
+  }) async {
+    await _client.dio.patch<Map<String, dynamic>>(
+      '${ApiConstants.parentById(parentId)}/children',
+      data: {
+        'student_ids': studentIds,
+      },
+    );
+  }
+
+  Future<Map<String, dynamic>> createStudentProfile({
+    required String userId,
+    required String parentId,
+    String? customAdmissionNumber,
+  }) async {
+    final resp = await _client.dio.post<Map<String, dynamic>>(
+      '/role-profiles/student',
+      data: {
+        'user_id': userId,
+        'parent_id': parentId,
+        if (customAdmissionNumber != null && customAdmissionNumber.trim().isNotEmpty)
+          'custom_admission_number': customAdmissionNumber.trim(),
+      },
+    );
+    return resp.data ?? <String, dynamic>{};
   }
 }

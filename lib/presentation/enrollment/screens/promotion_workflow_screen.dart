@@ -612,102 +612,127 @@ class _PromotionWorkflowScreenState extends ConsumerState<PromotionWorkflowScree
                             ],
                           ),
                           const SizedBox(height: 8),
-                          // Table
-                          SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: DataTable(
-                              headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
-                              columns: const [
-                                DataColumn(label: Text('Select')),
-                                DataColumn(label: Text('Admission #')),
-                                DataColumn(label: Text('Student Name')),
-                                DataColumn(label: Text('Current Class')),
-                                DataColumn(label: Text('Section')),
-                                DataColumn(label: Text('Suggested Next')),
-                                DataColumn(label: Text('Decision')),
-                                DataColumn(label: Text('Target Class')),
-                              ],
-                              rows: _previewItems.map((item) {
-                                return DataRow(
-                                  color: item.hasWarning
-                                      ? WidgetStateProperty.all(Colors.amber.shade50)
-                                      : null,
-                                  cells: [
-                                    DataCell(
-                                      Checkbox(
-                                        value: item.selected,
-                                        onChanged: (v) => setState(() {
-                                          item.selected = v ?? false;
-                                        }),
+                          ...(() {
+                            final classGroups = <String, List<_PreviewItem>>{};
+                            for (final item in _previewItems) {
+                              classGroups.putIfAbsent(item.currentStandardName, () => []).add(item);
+                            }
+                            return classGroups.entries.map((entry) {
+                              final className = entry.key;
+                              final classItems = entry.value;
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '$className (${classItems.length} students)',
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
                                       ),
                                     ),
-                                    DataCell(Text(item.admissionNumber ?? '-')),
-                                    DataCell(
-                                      Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Text(item.studentName ?? '-'),
-                                          if (item.hasWarning) ...[
-                                            const SizedBox(width: 4),
-                                            Tooltip(
-                                              message: item.warningMessage ?? 'Warning',
-                                              child: Icon(Icons.warning_amber_rounded,
-                                                  size: 14, color: Colors.amber.shade700),
-                                            ),
-                                          ],
+                                    const SizedBox(height: 6),
+                                    SingleChildScrollView(
+                                      scrollDirection: Axis.horizontal,
+                                      child: DataTable(
+                                        headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
+                                        columns: const [
+                                          DataColumn(label: Text('Select')),
+                                          DataColumn(label: Text('Admission #')),
+                                          DataColumn(label: Text('Student Name')),
+                                          DataColumn(label: Text('Current Class')),
+                                          DataColumn(label: Text('Section')),
+                                          DataColumn(label: Text('Suggested Next')),
+                                          DataColumn(label: Text('Decision')),
+                                          DataColumn(label: Text('Target Class')),
                                         ],
+                                        rows: classItems.map((item) {
+                                          return DataRow(
+                                            color: item.hasWarning
+                                                ? WidgetStateProperty.all(Colors.amber.shade50)
+                                                : null,
+                                            cells: [
+                                              DataCell(
+                                                Checkbox(
+                                                  value: item.selected,
+                                                  onChanged: (v) => setState(() {
+                                                    item.selected = v ?? false;
+                                                  }),
+                                                ),
+                                              ),
+                                              DataCell(Text(item.admissionNumber ?? '-')),
+                                              DataCell(
+                                                Row(
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                    Text(item.studentName ?? '-'),
+                                                    if (item.hasWarning) ...[
+                                                      const SizedBox(width: 4),
+                                                      Tooltip(
+                                                        message: item.warningMessage ?? 'Warning',
+                                                        child: Icon(Icons.warning_amber_rounded,
+                                                            size: 14, color: Colors.amber.shade700),
+                                                      ),
+                                                    ],
+                                                  ],
+                                                ),
+                                              ),
+                                              DataCell(Text(item.currentStandardName)),
+                                              DataCell(Text(item.currentSectionName ?? '-')),
+                                              DataCell(Text(item.suggestedNextStandardName ?? '—')),
+                                              DataCell(
+                                                DropdownButton<_Decision>(
+                                                  value: item.decision,
+                                                  underline: const SizedBox.shrink(),
+                                                  style: TextStyle(
+                                                    color: item.decision.color,
+                                                    fontWeight: FontWeight.w600,
+                                                    fontSize: 13,
+                                                  ),
+                                                  items: _Decision.values
+                                                      .map((d) => DropdownMenuItem(
+                                                            value: d,
+                                                            child: Text(d.label,
+                                                                style: TextStyle(color: d.color)),
+                                                          ))
+                                                      .toList(),
+                                                  onChanged: (v) {
+                                                    if (v != null) {
+                                                      setState(() => item.decision = v);
+                                                    }
+                                                  },
+                                                ),
+                                              ),
+                                              DataCell(
+                                                (item.decision == _Decision.promote ||
+                                                        item.decision == _Decision.repeat)
+                                                    ? DropdownButton<String?>(
+                                                        value: item.targetStandardId,
+                                                        underline: const SizedBox.shrink(),
+                                                        hint: const Text('Select', style: TextStyle(fontSize: 12)),
+                                                        items: _targetStandards
+                                                            .map((s) => DropdownMenuItem<String?>(
+                                                                  value: s.id,
+                                                                  child: Text(s.name,
+                                                                      style: const TextStyle(fontSize: 12)),
+                                                                ))
+                                                            .toList(),
+                                                        onChanged: (v) =>
+                                                            setState(() => item.targetStandardId = v),
+                                                      )
+                                                    : const Text('—'),
+                                              ),
+                                            ],
+                                          );
+                                        }).toList(),
                                       ),
-                                    ),
-                                    DataCell(Text(item.currentStandardName)),
-                                    DataCell(Text(item.currentSectionName ?? '-')),
-                                    DataCell(Text(item.suggestedNextStandardName ?? '—')),
-                                    DataCell(
-                                      DropdownButton<_Decision>(
-                                        value: item.decision,
-                                        underline: const SizedBox.shrink(),
-                                        style: TextStyle(
-                                          color: item.decision.color,
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 13,
-                                        ),
-                                        items: _Decision.values
-                                            .map((d) => DropdownMenuItem(
-                                                  value: d,
-                                                  child: Text(d.label,
-                                                      style: TextStyle(color: d.color)),
-                                                ))
-                                            .toList(),
-                                        onChanged: (v) {
-                                          if (v != null) {
-                                            setState(() => item.decision = v);
-                                          }
-                                        },
-                                      ),
-                                    ),
-                                    DataCell(
-                                      (item.decision == _Decision.promote ||
-                                              item.decision == _Decision.repeat)
-                                          ? DropdownButton<String?>(
-                                              value: item.targetStandardId,
-                                              underline: const SizedBox.shrink(),
-                                              hint: const Text('Select', style: TextStyle(fontSize: 12)),
-                                              items: _targetStandards
-                                                  .map((s) => DropdownMenuItem<String?>(
-                                                        value: s.id,
-                                                        child: Text(s.name,
-                                                            style: const TextStyle(fontSize: 12)),
-                                                      ))
-                                                  .toList(),
-                                              onChanged: (v) =>
-                                                  setState(() => item.targetStandardId = v),
-                                            )
-                                          : const Text('—'),
                                     ),
                                   ],
-                                );
-                              }).toList(),
-                            ),
-                          ),
+                                ),
+                              );
+                            }).toList();
+                          })(),
                         ],
                       ),
                     ),

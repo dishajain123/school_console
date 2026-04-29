@@ -79,12 +79,20 @@ class _Assignment {
 class _Teacher {
   const _Teacher({
     required this.id,
+    required this.userId,
+    required this.hasProfile,
     required this.name,
     required this.employeeCode,
+    required this.email,
+    required this.phone,
   });
   final String id;
+  final String userId;
+  final bool hasProfile;
   final String name;
   final String employeeCode;
+  final String email;
+  final String phone;
 }
 
 class _DropdownItem {
@@ -241,14 +249,35 @@ class _TeacherAssignmentRepository {
     final items = (r.data?['items'] as List?) ?? [];
     return items.map((e) {
       final m = Map<String, dynamic>.from(e as Map);
-      final teacherId =
-          m['teacher_id']?.toString() ?? m['id']?.toString() ?? '';
+      final teacherId = m['teacher_id']?.toString() ?? '';
+      final userId = m['user_id']?.toString() ?? '';
+      final selectionId = teacherId.isNotEmpty ? teacherId : 'user:$userId';
+      final identifier = m['employee_id']?.toString() ?? m['identifier']?.toString() ?? '';
       return _Teacher(
-        id: teacherId,
+        id: selectionId,
+        userId: userId,
+        hasProfile: teacherId.isNotEmpty,
         name: m['full_name']?.toString() ?? '',
-        employeeCode: m['employee_id']?.toString() ?? '',
+        employeeCode: identifier,
+        email: m['email']?.toString() ?? '',
+        phone: m['phone']?.toString() ?? '',
       );
     }).where((t) => t.id.trim().isNotEmpty).toList();
+  }
+
+  Future<Map<String, dynamic>> createTeacherProfile({
+    required String userId,
+    String? customEmployeeId,
+  }) async {
+    final r = await _dio.dio.post<Map<String, dynamic>>(
+      '/role-profiles/teacher',
+      data: {
+        'user_id': userId,
+        if (customEmployeeId != null && customEmployeeId.trim().isNotEmpty)
+          'custom_employee_id': customEmployeeId.trim(),
+      },
+    );
+    return r.data ?? <String, dynamic>{};
   }
 
   Future<List<_DropdownItem>> listStandards(String yearId) async {
@@ -620,7 +649,11 @@ class _TeacherAssignmentScreenState
                         .map(
                           (t) => DropdownMenuItem<String>(
                             value: t.id,
-                            child: Text('${t.name} (${t.employeeCode})'),
+                            child: Text(
+                              t.hasProfile
+                                  ? '${t.name} (${t.employeeCode})'
+                                  : '${t.name} (${t.employeeCode.isNotEmpty ? t.employeeCode : 'pending id'}) • Profile pending',
+                            ),
                           ),
                         )
                         .toList(),
@@ -722,8 +755,25 @@ class _TeacherAssignmentScreenState
                 }
                 Navigator.of(ctx).pop();
                 try {
+                  var finalTeacherId = selTeacherId!;
+                  if (finalTeacherId.startsWith('user:')) {
+                    final selectedTeacher = _teachers.cast<_Teacher?>().firstWhere(
+                      (t) => t?.id == finalTeacherId,
+                      orElse: () => null,
+                    );
+                    final userId = finalTeacherId.substring(5);
+                    final created = await _repo.createTeacherProfile(
+                      userId: userId,
+                      customEmployeeId: selectedTeacher?.employeeCode,
+                    );
+                    final newTeacherId = (created['teacher_id'] ?? '').toString();
+                    if (newTeacherId.isEmpty) {
+                      throw Exception('Failed to create teacher profile before assignment.');
+                    }
+                    finalTeacherId = newTeacherId;
+                  }
                   await _repo.create(
-                    teacherId: selTeacherId!,
+                    teacherId: finalTeacherId,
                     standardId: selStandardId!,
                     section: selSection!,
                     subjectId: selSubjectId!,
@@ -1118,6 +1168,10 @@ class _TeacherAssignmentScreenState
   }
 
   Widget _buildTeacherFilter() {
+    final selectedTeacher = _teachers.cast<_Teacher?>().firstWhere(
+      (t) => t?.id == _selectedTeacherId,
+      orElse: () => null,
+    );
     return Row(
       children: [
         SizedBox(
@@ -1134,7 +1188,11 @@ class _TeacherAssignmentScreenState
                 .map(
                   (t) => DropdownMenuItem<String>(
                     value: t.id,
-                    child: Text('${t.name} (${t.employeeCode})'),
+                    child: Text(
+                      t.hasProfile
+                          ? '${t.name} (${t.employeeCode})'
+                          : '${t.name} (${t.employeeCode.isNotEmpty ? t.employeeCode : 'pending id'}) • Profile pending',
+                    ),
                   ),
                 )
                 .toList(),
@@ -1147,6 +1205,21 @@ class _TeacherAssignmentScreenState
           label: const Text('Search'),
           onPressed: _loadByTeacher,
         ),
+        const SizedBox(width: 12),
+        if (selectedTeacher != null)
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey.shade300),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                'Teacher: ${selectedTeacher.name.isNotEmpty ? selectedTeacher.name : selectedTeacher.employeeCode}  |  Emp: ${selectedTeacher.employeeCode.isNotEmpty ? selectedTeacher.employeeCode : '-'}  |  Email: ${selectedTeacher.email.isNotEmpty ? selectedTeacher.email : '-'}  |  Phone: ${selectedTeacher.phone.isNotEmpty ? selectedTeacher.phone : '-'}',
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
       ],
     );
   }

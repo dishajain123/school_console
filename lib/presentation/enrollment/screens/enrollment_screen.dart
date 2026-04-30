@@ -586,10 +586,15 @@ class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
     Future<void> loadCandidates(StateSetter setLocal) async {
       setLocal(() => loading = true);
       try {
-        candidates = await _repo.listStudentProfiles(
+        final all = await _repo.listStudentProfiles(
           search: searchCtrl.text,
           pageSize: 300,
         );
+        candidates = all.where((s) {
+          final sid = (s['student_id'] ?? '').toString();
+          final enrolled = s['enrollment_completed'] == true;
+          return sid.isNotEmpty && enrolled;
+        }).toList();
       } finally {
         setLocal(() => loading = false);
       }
@@ -598,7 +603,12 @@ class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
     try {
       final existingIds = await _repo.getParentChildIds(parentId);
       selected.addAll(existingIds);
-      candidates = await _repo.listStudentProfiles(pageSize: 300);
+      final all = await _repo.listStudentProfiles(pageSize: 300);
+      candidates = all.where((s) {
+        final sid = (s['student_id'] ?? '').toString();
+        final enrolled = s['enrollment_completed'] == true;
+        return sid.isNotEmpty && enrolled;
+      }).toList();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -651,12 +661,7 @@ class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
                         setLocal(() {
                           for (final s in candidates) {
                             final sid = (s['student_id'] ?? '').toString();
-                            if (sid.isNotEmpty) {
-                              selected.add(sid);
-                            } else {
-                              final uid = (s['user_id'] ?? '').toString();
-                              if (uid.isNotEmpty) selected.add('user:$uid');
-                            }
+                            if (sid.isNotEmpty) selected.add(sid);
                           }
                         });
                       },
@@ -675,17 +680,16 @@ class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
                       ? const Center(child: CircularProgressIndicator())
                       : candidates.isEmpty
                           ? const Center(
-                              child: Text('No students found.'),
+                              child: Text(
+                                'No enrolled students found. Complete student profile + enrollment first.',
+                              ),
                             )
                           : ListView.builder(
                               itemCount: candidates.length,
                               itemBuilder: (context, index) {
                                 final s = candidates[index];
                                 final studentId = (s['student_id'] ?? '').toString();
-                                final userId = (s['user_id'] ?? '').toString();
-                                final key = studentId.isNotEmpty
-                                    ? studentId
-                                    : (userId.isNotEmpty ? 'user:$userId' : '');
+                                final key = studentId;
                                 if (key.isEmpty) return const SizedBox.shrink();
                                 final checked = selected.contains(key);
                                 final name = (s['full_name'] ?? '-').toString();
@@ -693,15 +697,10 @@ class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
                                         s['identifier'] ??
                                         '-')
                                     .toString();
-                                final hasProfile = studentId.isNotEmpty;
                                 return CheckboxListTile(
                                   value: checked,
                                   title: Text(name),
-                                  subtitle: Text(
-                                    hasProfile
-                                        ? identifier
-                                        : '$identifier • Profile will be created on save',
-                                  ),
+                                  subtitle: Text(identifier),
                                   onChanged: (v) {
                                     setLocal(() {
                                       if (v == true) {
@@ -737,51 +736,7 @@ class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
                       }
                       setLocal(() => saving = true);
                       try {
-                        final resolvedStudentIds = <String>{};
-                        for (final id in selected) {
-                          if (!id.startsWith('user:')) {
-                            resolvedStudentIds.add(id);
-                            continue;
-                          }
-                          final userId = id.substring(5);
-                          if (userId.isEmpty) continue;
-                          Map<String, dynamic>? selectedUser;
-                          for (final c in candidates) {
-                            final uid = (c['user_id'] ?? '').toString();
-                            if (uid == userId) {
-                              selectedUser = c;
-                              break;
-                            }
-                          }
-                          final suggestedIdentifier =
-                              selectedUser?['identifier']?.toString() ??
-                                  selectedUser?['suggested_identifier']?.toString();
-                          try {
-                            final created = await _repo.createStudentProfile(
-                              userId: userId,
-                              parentId: parentId,
-                              customAdmissionNumber: suggestedIdentifier,
-                            );
-                            final studentId = (created['student_id'] ?? '').toString();
-                            if (studentId.isNotEmpty) {
-                              resolvedStudentIds.add(studentId);
-                            }
-                          } catch (createErr) {
-                            // If profile already exists, resolve and continue.
-                            try {
-                              final profile = await _repo.getRoleProfileByUserId(userId);
-                              final existingStudentId =
-                                  (profile['student_id'] ?? '').toString();
-                              if (existingStudentId.isNotEmpty) {
-                                resolvedStudentIds.add(existingStudentId);
-                                continue;
-                              }
-                            } catch (_) {
-                              // Ignore fallback lookup errors and preserve original create error.
-                            }
-                            throw Exception(_friendlyError(createErr));
-                          }
-                        }
+                        final resolvedStudentIds = selected;
                         if (resolvedStudentIds.isEmpty) {
                           throw Exception('No valid students could be resolved for linking.');
                         }

@@ -34,6 +34,8 @@ class _Assignment {
     required this.teacherId,
     required this.teacherName,
     required this.employeeCode,
+    required this.teacherEmail,
+    required this.teacherPhone,
     required this.standardId,
     required this.standardName,
     required this.section,
@@ -48,6 +50,8 @@ class _Assignment {
   final String teacherId;
   final String? teacherName;
   final String employeeCode;
+  final String teacherEmail;
+  final String teacherPhone;
   final String standardId;
   final String standardName;
   final String section;
@@ -65,6 +69,8 @@ class _Assignment {
         j['teacher']?['user']?['full_name'] as String? ??
         j['teacher_name'] as String?,
     employeeCode: j['teacher']?['employee_code']?.toString() ?? '',
+    teacherEmail: j['teacher']?['email']?.toString() ?? '',
+    teacherPhone: j['teacher']?['phone']?.toString() ?? '',
     standardId: j['standard']?['id']?.toString() ?? '',
     standardName: j['standard']?['name']?.toString() ?? '',
     section: j['section']?.toString() ?? '',
@@ -159,6 +165,24 @@ class _TeacherAssignmentRepository {
         queryParameters: {
           'standard_id': standardId,
           'section': section,
+          if (yearId != null) 'academic_year_id': yearId,
+        },
+      ),
+    );
+    return ((resp.data?['items'] as List?) ?? [])
+        .map((e) => _Assignment.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+  }
+
+  Future<List<_Assignment>> listByStandard(
+    String standardId,
+    String? yearId,
+  ) async {
+    final resp = await _withNetworkGuard(
+      () => _dio.dio.get<Map<String, dynamic>>(
+        '/teacher-assignments',
+        queryParameters: {
+          'standard_id': standardId,
           if (yearId != null) 'academic_year_id': yearId,
         },
       ),
@@ -265,6 +289,31 @@ class _TeacherAssignmentRepository {
     }).where((t) => t.id.trim().isNotEmpty).toList();
   }
 
+  Future<Map<String, Map<String, dynamic>>> teacherEnrollmentStatusByUser({
+    String? academicYearId,
+  }) async {
+    final r = await _withNetworkGuard(
+      () => _dio.dio.get<Map<String, dynamic>>(
+        '/enrollments/onboarding-queue',
+        queryParameters: {
+          'role': 'TEACHER',
+          'pending_only': false,
+          if (academicYearId != null) 'academic_year_id': academicYearId,
+        },
+      ),
+    );
+    final items = (r.data?['items'] as List?) ?? [];
+    final map = <String, Map<String, dynamic>>{};
+    for (final item in items.whereType<Map>()) {
+      final row = Map<String, dynamic>.from(item);
+      final userId = (row['user_id'] ?? '').toString();
+      if (userId.isNotEmpty) {
+        map[userId] = row;
+      }
+    }
+    return map;
+  }
+
   Future<Map<String, dynamic>> createTeacherProfile({
     required String userId,
     String? customEmployeeId,
@@ -349,12 +398,16 @@ class _TeacherAssignmentScreenState
   List<Map<String, dynamic>> _years = [];
   List<_Teacher> _teachers = [];
   List<_DropdownItem> _standards = [];
+  Map<String, bool> _teacherAssignedBySelectionId = {};
 
   String? _selectedYearId;
   String? _selectedTeacherId;
+  String _teacherStatusFilter = 'PENDING';
   String? _filterStandardId;
   String? _filterSection;
   List<_DropdownItem> _filterSections = [];
+  String? _tableStandardNameFilter;
+  String? _tableSectionFilter;
 
   List<_Assignment> _assignments = [];
   bool _loading = false;
@@ -384,6 +437,44 @@ class _TeacherAssignmentScreenState
         user.permissions.contains('teacher_assignment:manage');
   }
 
+  List<_Teacher> get _visibleTeachers {
+    if (_teacherStatusFilter == 'ALL') return _teachers;
+    return _teachers.where((t) {
+      final assigned = _teacherAssignedBySelectionId[t.id] == true;
+      return _teacherStatusFilter == 'ASSIGNED' ? assigned : !assigned;
+    }).toList();
+  }
+
+  List<_Assignment> get _visibleAssignments {
+    return _assignments.where((a) {
+      if (_tableStandardNameFilter != null &&
+          _tableStandardNameFilter!.trim().isNotEmpty &&
+          a.standardName != _tableStandardNameFilter) {
+        return false;
+      }
+      if (_tableSectionFilter != null &&
+          _tableSectionFilter!.trim().isNotEmpty &&
+          a.section != _tableSectionFilter) {
+        return false;
+      }
+      return true;
+    }).toList();
+  }
+
+  Future<void> _refreshTeacherAssignmentStatus() async {
+    final statusByUser = await _repo.teacherEnrollmentStatusByUser(
+      academicYearId: _selectedYearId,
+    );
+    final map = <String, bool>{};
+    for (final t in _teachers) {
+      final row = statusByUser[t.userId];
+      final assigned = row?['enrollment_completed'] == true;
+      map[t.id] = assigned;
+    }
+    if (!mounted) return;
+    setState(() => _teacherAssignedBySelectionId = map);
+  }
+
   Future<void> _loadMeta() async {
     setState(() => _loading = true);
     try {
@@ -409,6 +500,7 @@ class _TeacherAssignmentScreenState
         final stds = await _repo.listStandards(_selectedYearId!);
         setState(() => _standards = stds);
       }
+      await _refreshTeacherAssignmentStatus();
     } catch (e) {
       setState(() => _error = e.toString());
     } finally {
@@ -538,6 +630,13 @@ class _TeacherAssignmentScreenState
       setState(() => _error = 'Select a teacher first.');
       return;
     }
+    if (_selectedTeacherId!.startsWith('user:')) {
+      setState(
+        () => _error =
+            'Selected teacher profile is pending. Create teacher profile first, then search again.',
+      );
+      return;
+    }
     setState(() {
       _loading = true;
       _error = null;
@@ -556,10 +655,8 @@ class _TeacherAssignmentScreenState
   }
 
   Future<void> _loadByClass() async {
-    if (_filterStandardId == null || _filterSection == null) {
-      setState(
-        () => _error = 'Select both a class and section to filter by class.',
-      );
+    if (_filterStandardId == null) {
+      setState(() => _error = 'Select class to filter assignments.');
       return;
     }
     setState(() {
@@ -567,11 +664,13 @@ class _TeacherAssignmentScreenState
       _error = null;
     });
     try {
-      final list = await _repo.listByClass(
-        _filterStandardId!,
-        _filterSection!,
-        _selectedYearId,
-      );
+      final list = _filterSection == null || _filterSection!.trim().isEmpty
+          ? await _repo.listByStandard(_filterStandardId!, _selectedYearId)
+          : await _repo.listByClass(
+              _filterStandardId!,
+              _filterSection!,
+              _selectedYearId,
+            );
       setState(() => _assignments = list);
     } catch (e) {
       setState(() => _error = e.toString());
@@ -608,6 +707,7 @@ class _TeacherAssignmentScreenState
         _assignments.removeWhere((a) => a.id == id);
         _success = 'Assignment removed.';
       });
+      await _refreshTeacherAssignmentStatus();
     } catch (e) {
       setState(() => _error = e.toString());
     }
@@ -770,7 +870,21 @@ class _TeacherAssignmentScreenState
                     if (newTeacherId.isEmpty) {
                       throw Exception('Failed to create teacher profile before assignment.');
                     }
+                    final oldSelectionId = finalTeacherId;
                     finalTeacherId = newTeacherId;
+                    selTeacherId = newTeacherId;
+                    _teachers = _teachers.map((t) {
+                      if (t.id != oldSelectionId) return t;
+                      return _Teacher(
+                        id: newTeacherId,
+                        userId: t.userId,
+                        hasProfile: true,
+                        name: t.name,
+                        employeeCode: t.employeeCode,
+                        email: t.email,
+                        phone: t.phone,
+                      );
+                    }).toList();
                   }
                   await _repo.create(
                     teacherId: finalTeacherId,
@@ -779,11 +893,16 @@ class _TeacherAssignmentScreenState
                     subjectId: selSubjectId!,
                     academicYearId: _selectedYearId!,
                   );
-                  setState(() => _success = 'Assignment created.');
+                  setState(() {
+                    _selectedTeacherId = finalTeacherId;
+                    _error = null;
+                    _success = 'Assignment created.';
+                  });
                   // Reload based on current view
                   if (_selectedTeacherId != null) {
                     await _loadByTeacher();
                   }
+                  await _refreshTeacherAssignmentStatus();
                 } catch (e) {
                   setState(() => _error = e.toString());
                 }
@@ -943,6 +1062,7 @@ class _TeacherAssignmentScreenState
                   if (_selectedTeacherId != null) {
                     await _loadByTeacher();
                   }
+                  await _refreshTeacherAssignmentStatus();
                 } catch (e) {
                   setState(() => _error = e.toString());
                 }
@@ -1016,6 +1136,8 @@ class _TeacherAssignmentScreenState
                             _selectedYearId = v;
                             _standards = [];
                             _assignments = [];
+                            _tableStandardNameFilter = null;
+                            _tableSectionFilter = null;
                             _filterStandardId = null;
                             _filterSection = null;
                             _filterSections = [];
@@ -1025,6 +1147,7 @@ class _TeacherAssignmentScreenState
                             final stds = await _repo.listStandards(v);
                             setState(() => _standards = stds);
                           }
+                          await _refreshTeacherAssignmentStatus();
                         },
                       ),
                     ),
@@ -1086,9 +1209,96 @@ class _TeacherAssignmentScreenState
 
             const SizedBox(height: 12),
 
+            if (_assignments.isNotEmpty)
+              Wrap(
+                spacing: 12,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  SizedBox(
+                    width: 220,
+                    child: DropdownButtonFormField<String>(
+                      value: _tableStandardNameFilter,
+                      decoration: const InputDecoration(
+                        labelText: 'Table Filter: Class',
+                        isDense: true,
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 8,
+                        ),
+                      ),
+                      items: [
+                        const DropdownMenuItem<String>(
+                          value: null,
+                          child: Text('All Classes'),
+                        ),
+                        ...(() {
+                          final names = _assignments
+                              .map((a) => a.standardName)
+                              .toSet()
+                              .toList();
+                          names.sort();
+                          return names
+                              .map(
+                                (name) => DropdownMenuItem<String>(
+                                  value: name,
+                                  child: Text(name),
+                                ),
+                              )
+                              .toList();
+                        })(),
+                      ],
+                      onChanged: (v) =>
+                          setState(() => _tableStandardNameFilter = v),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 180,
+                    child: DropdownButtonFormField<String>(
+                      value: _tableSectionFilter,
+                      decoration: const InputDecoration(
+                        labelText: 'Table Filter: Section',
+                        isDense: true,
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 8,
+                        ),
+                      ),
+                      items: [
+                        const DropdownMenuItem<String>(
+                          value: null,
+                          child: Text('All Sections'),
+                        ),
+                        ...(() {
+                          final names =
+                              _assignments.map((a) => a.section).toSet().toList();
+                          names.sort();
+                          return names
+                              .map(
+                                (name) => DropdownMenuItem<String>(
+                                  value: name,
+                                  child: Text(name),
+                                ),
+                              )
+                              .toList();
+                        })(),
+                      ],
+                      onChanged: (v) => setState(() => _tableSectionFilter = v),
+                    ),
+                  ),
+                  Text(
+                    'Showing ${_visibleAssignments.length} of ${_assignments.length}',
+                    style: TextStyle(color: Colors.grey.shade700),
+                  ),
+                ],
+              ),
+            if (_assignments.isNotEmpty) const SizedBox(height: 10),
+
             // ── Assignments table ─────────────────────────────────────────
             Expanded(
-              child: _assignments.isEmpty
+              child: _visibleAssignments.isEmpty
                   ? const Center(
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
@@ -1112,6 +1322,8 @@ class _TeacherAssignmentScreenState
                           Colors.grey.shade100,
                         ),
                         columns: [
+                          const DataColumn(label: Text('Teacher')),
+                          const DataColumn(label: Text('Contact')),
                           const DataColumn(label: Text('Emp. Code')),
                           const DataColumn(label: Text('Class')),
                           const DataColumn(label: Text('Section')),
@@ -1120,9 +1332,19 @@ class _TeacherAssignmentScreenState
                           if (_canManage)
                             const DataColumn(label: Text('Actions')),
                         ],
-                        rows: _assignments.map((a) {
+                        rows: _visibleAssignments.map((a) {
                           return DataRow(
                             cells: [
+                              DataCell(Text(a.teacherName ?? '-')),
+                              DataCell(
+                                Text(
+                                  a.teacherEmail.isNotEmpty
+                                      ? a.teacherEmail
+                                      : (a.teacherPhone.isNotEmpty
+                                            ? a.teacherPhone
+                                            : '-'),
+                                ),
+                              ),
                               DataCell(Text(a.employeeCode)),
                               DataCell(Text(a.standardName)),
                               DataCell(Text(a.section)),
@@ -1168,10 +1390,13 @@ class _TeacherAssignmentScreenState
   }
 
   Widget _buildTeacherFilter() {
+    final teachers = _visibleTeachers;
     final selectedTeacher = _teachers.cast<_Teacher?>().firstWhere(
       (t) => t?.id == _selectedTeacherId,
       orElse: () => null,
     );
+    final pendingCount = _teachers.where((t) => _teacherAssignedBySelectionId[t.id] != true).length;
+    final assignedCount = _teachers.where((t) => _teacherAssignedBySelectionId[t.id] == true).length;
     return Row(
       children: [
         SizedBox(
@@ -1184,7 +1409,7 @@ class _TeacherAssignmentScreenState
               border: OutlineInputBorder(),
               contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             ),
-            items: _teachers
+            items: teachers
                 .map(
                   (t) => DropdownMenuItem<String>(
                     value: t.id,
@@ -1198,6 +1423,34 @@ class _TeacherAssignmentScreenState
                 .toList(),
             onChanged: (v) => setState(() => _selectedTeacherId = v),
           ),
+        ),
+        const SizedBox(width: 10),
+        ToggleButtons(
+          isSelected: [
+            _teacherStatusFilter == 'PENDING',
+            _teacherStatusFilter == 'ASSIGNED',
+            _teacherStatusFilter == 'ALL',
+          ],
+          onPressed: (index) {
+            setState(() {
+              _teacherStatusFilter = ['PENDING', 'ASSIGNED', 'ALL'][index];
+              _selectedTeacherId = null;
+            });
+          },
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Text('Pending ($pendingCount)'),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Text('Assigned ($assignedCount)'),
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 8),
+              child: Text('All'),
+            ),
+          ],
         ),
         const SizedBox(width: 10),
         ElevatedButton.icon(
@@ -1270,23 +1523,30 @@ class _TeacherAssignmentScreenState
               border: OutlineInputBorder(),
               contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             ),
-            items: _filterSections
-                .map(
-                  (s) => DropdownMenuItem<String>(
-                    value: s.id,
-                    child: Text(s.name),
-                  ),
-                )
-                .toList(),
+            items: [
+              const DropdownMenuItem<String>(
+                value: '',
+                child: Text('All Sections'),
+              ),
+              ..._filterSections.map(
+                (s) => DropdownMenuItem<String>(
+                  value: s.id,
+                  child: Text(s.name),
+                ),
+              ),
+            ],
             onChanged: _filterSections.isEmpty
                 ? null
-                : (v) => setState(() => _filterSection = v),
+                : (v) => setState(
+                      () => _filterSection =
+                          (v == null || v.isEmpty) ? null : v,
+                    ),
           ),
         ),
         const SizedBox(width: 10),
         ElevatedButton.icon(
           icon: const Icon(Icons.search, size: 16),
-          label: const Text('Search'),
+          label: const Text('Search Assigned'),
           onPressed: _loadByClass,
         ),
       ],

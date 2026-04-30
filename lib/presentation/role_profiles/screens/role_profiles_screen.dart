@@ -356,7 +356,11 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
           page: 1,
           pageSize: 300,
         );
-        candidates = result.items;
+        candidates = result.items.where((item) {
+          final sid = (item.raw['student_id'] ?? '').toString();
+          final enrolled = item.raw['enrollment_completed'] == true;
+          return sid.isNotEmpty && enrolled;
+        }).toList();
       } finally {
         setLocal(() => loading = false);
       }
@@ -369,7 +373,11 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
       page: 1,
       pageSize: 300,
     );
-    candidates = initial.items;
+    candidates = initial.items.where((item) {
+      final sid = (item.raw['student_id'] ?? '').toString();
+      final enrolled = item.raw['enrollment_completed'] == true;
+      return sid.isNotEmpty && enrolled;
+    }).toList();
 
     if (!mounted) return;
     await showDialog<void>(
@@ -414,12 +422,7 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
                         setLocal(() {
                           for (final s in candidates) {
                             final sid = (s.raw['student_id'] ?? '').toString();
-                            if (sid.isNotEmpty) {
-                              selected.add(sid);
-                            } else {
-                              final uid = (s.raw['user_id'] ?? '').toString();
-                              if (uid.isNotEmpty) selected.add('user:$uid');
-                            }
+                            if (sid.isNotEmpty) selected.add(sid);
                           }
                         });
                       },
@@ -439,7 +442,7 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
                       : candidates.isEmpty
                           ? const Center(
                               child: Text(
-                                'No student profiles found yet. If user is only approved, create/confirm student profile first.',
+                                'No enrolled students found yet. Create student profile and complete enrollment first.',
                                 textAlign: TextAlign.center,
                               ),
                             )
@@ -448,20 +451,14 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
                               itemBuilder: (context, index) {
                                 final s = candidates[index];
                                 final studentId = (s.raw['student_id'] ?? '').toString();
-                                final userId = (s.raw['user_id'] ?? '').toString();
-                                final selectionKey = studentId.isNotEmpty
-                                    ? studentId
-                                    : (userId.isNotEmpty ? 'user:$userId' : '');
+                                final selectionKey = studentId;
                                 if (selectionKey.isEmpty) return const SizedBox.shrink();
                                 final checked = selected.contains(selectionKey);
                                 final sub = (s.admissionNumber ?? s.identifier ?? '-');
-                                final hasProfile = studentId.isNotEmpty;
                                 return CheckboxListTile(
                                   value: checked,
                                   title: Text(s.fullName?.isNotEmpty == true ? s.fullName! : '-'),
-                                  subtitle: Text(
-                                    hasProfile ? sub : '$sub • Profile will be created on save',
-                                  ),
+                                  subtitle: Text(sub),
                                   onChanged: (v) {
                                     setLocal(() {
                                       if (v == true) {
@@ -485,35 +482,7 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
             ),
             ElevatedButton(
               onPressed: () async {
-                final resolvedStudentIds = <String>[];
-                for (final id in selected) {
-                  if (!id.startsWith('user:')) {
-                    resolvedStudentIds.add(id);
-                    continue;
-                  }
-                  final userId = id.substring(5);
-                  if (userId.isEmpty) continue;
-                  RoleProfileItem? selectedUser;
-                  for (final c in candidates) {
-                    final uid = (c.raw['user_id'] ?? '').toString();
-                    if (uid == userId) {
-                      selectedUser = c;
-                      break;
-                    }
-                  }
-                  final suggestedIdentifier =
-                      selectedUser?.raw['identifier']?.toString() ??
-                      selectedUser?.raw['suggested_identifier']?.toString();
-                  final created = await repository.createStudentProfile(
-                    userId: userId,
-                    parentId: parentId,
-                    customAdmissionNumber: suggestedIdentifier,
-                  );
-                  final studentId = (created['student_id'] ?? '').toString();
-                  if (studentId.isNotEmpty) {
-                    resolvedStudentIds.add(studentId);
-                  }
-                }
+                final resolvedStudentIds = selected.toList();
                 await repository.assignParentChildren(
                   parentId: parentId,
                   studentIds: resolvedStudentIds,

@@ -6,7 +6,9 @@ class EnrollmentRepository {
   final DioClient _client;
   static const int _roleProfilesMaxPageSize = 100;
 
-  Future<List<Map<String, dynamic>>> listAcademicYears({String? schoolId}) async {
+  Future<List<Map<String, dynamic>>> listAcademicYears({
+    String? schoolId,
+  }) async {
     final resp = await _client.dio.get<Map<String, dynamic>>(
       '/academic-years',
       queryParameters: {
@@ -44,7 +46,8 @@ class EnrollmentRepository {
       '/masters/sections',
       queryParameters: {
         if (schoolId != null && schoolId.isNotEmpty) 'school_id': schoolId,
-        if (standardId != null && standardId.isNotEmpty) 'standard_id': standardId,
+        if (standardId != null && standardId.isNotEmpty)
+          'standard_id': standardId,
         if (academicYearId != null && academicYearId.isNotEmpty)
           'academic_year_id': academicYearId,
       },
@@ -84,7 +87,8 @@ class EnrollmentRepository {
         'standard_id': standardId,
         'academic_year_id': academicYearId,
         if (sectionId != null && sectionId.isNotEmpty) 'section_id': sectionId,
-        if (rollNumber != null && rollNumber.isNotEmpty) 'roll_number': rollNumber,
+        if (rollNumber != null && rollNumber.isNotEmpty)
+          'roll_number': rollNumber,
       },
     );
   }
@@ -107,6 +111,13 @@ class EnrollmentRepository {
   Future<Map<String, dynamic>> getStudentHistory(String studentId) async {
     final resp = await _client.dio.get<Map<String, dynamic>>(
       '/enrollments/history/$studentId',
+    );
+    return resp.data ?? <String, dynamic>{};
+  }
+
+  Future<Map<String, dynamic>> getStudentById(String studentId) async {
+    final resp = await _client.dio.get<Map<String, dynamic>>(
+      '/students/$studentId',
     );
     return resp.data ?? <String, dynamic>{};
   }
@@ -142,11 +153,7 @@ class EnrollmentRepository {
   }) async {
     await _client.dio.post<dynamic>(
       '/enrollments/mappings/$mappingId/exit',
-      data: {
-        'status': status,
-        'left_on': leftOn,
-        'exit_reason': exitReason,
-      },
+      data: {'status': status, 'left_on': leftOn, 'exit_reason': exitReason},
     );
   }
 
@@ -170,7 +177,8 @@ class EnrollmentRepository {
       queryParameters: {
         'source_year_id': sourceYearId,
         'target_year_id': targetYearId,
-        if (standardId != null && standardId.isNotEmpty) 'standard_id': standardId,
+        if (standardId != null && standardId.isNotEmpty)
+          'standard_id': standardId,
       },
     );
     return resp.data ?? <String, dynamic>{};
@@ -222,7 +230,8 @@ class EnrollmentRepository {
         'target_year_id': targetYearId,
         'standard_id': standardId,
         if (sectionId != null && sectionId.isNotEmpty) 'section_id': sectionId,
-        if (rollNumber != null && rollNumber.isNotEmpty) 'roll_number': rollNumber,
+        if (rollNumber != null && rollNumber.isNotEmpty)
+          'roll_number': rollNumber,
         'admission_type': admissionType,
       },
     );
@@ -253,7 +262,8 @@ class EnrollmentRepository {
           'role': 'PARENT',
           'page': page,
           'page_size': perPage,
-          if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
+          if (search != null && search.trim().isNotEmpty)
+            'search': search.trim(),
         },
       );
       final batch = ((resp.data?['items'] as List?) ?? [])
@@ -277,7 +287,8 @@ class EnrollmentRepository {
       data: {
         'user_id': userId,
         'parent_id': parentId,
-        if (customAdmissionNumber != null && customAdmissionNumber.trim().isNotEmpty)
+        if (customAdmissionNumber != null &&
+            customAdmissionNumber.trim().isNotEmpty)
           'custom_admission_number': customAdmissionNumber.trim(),
       },
     );
@@ -318,7 +329,8 @@ class EnrollmentRepository {
           'role': 'STUDENT',
           'page': page,
           'page_size': perPage,
-          if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
+          if (search != null && search.trim().isNotEmpty)
+            'search': search.trim(),
         },
       );
       final batch = ((resp.data?['items'] as List?) ?? [])
@@ -350,9 +362,7 @@ class EnrollmentRepository {
   }) async {
     await _client.dio.patch<Map<String, dynamic>>(
       '/parents/$parentId/children',
-      data: {
-        'student_ids': studentIds,
-      },
+      data: {'student_ids': studentIds},
     );
   }
 

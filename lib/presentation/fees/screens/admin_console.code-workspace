@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"path": "../../../.."
+		},
+		{
+			"path": "../../../../../school_backend"
+		},
+		{
+			"path": "../../../../../school_frontend"
+		}
+	]
+}

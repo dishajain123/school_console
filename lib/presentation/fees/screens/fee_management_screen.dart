@@ -1,8 +1,6 @@
 // lib/presentation/fees/screens/fee_management_screen.dart  [Admin Console]
-// Phase 8 — Fee Management Screen (Production-complete rewrite).
-// Tabs: Fee Structures | Generate Ledger | Student Ledger | Record Payment | Analytics & Defaulters
-// Fixes: dropdown state management, proper API binding, loading states, edit/delete structures,
-//        individual student ledger generation, defaulters list, receipt viewing.
+// Rewritten: class-wise student fee view, one row per student, parent info,
+// payment cycle selection, mark-as-paid, auto-overdue, mode of payment.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -11,7 +9,9 @@ import '../../../domains/providers/active_year_provider.dart';
 import '../../../domains/providers/auth_provider.dart';
 import '../../common/layout/admin_scaffold.dart';
 
-// ── Local models ──────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Local models
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _FeeStructure {
   const _FeeStructure({
@@ -35,76 +35,46 @@ class _FeeStructure {
   final List<dynamic>? installmentPlan;
 
   factory _FeeStructure.fromJson(Map<String, dynamic> json) => _FeeStructure(
-        id: json['id'].toString(),
-        feeCategory: json['fee_category']?.toString() ?? '',
-        customFeeHead: json['custom_fee_head']?.toString() ?? '',
-        amount: (json['amount'] as num?)?.toDouble() ?? 0,
-        dueDate: json['due_date']?.toString() ?? '',
-        standardName: json['standard']?['name'] as String?,
-        description: json['description'] as String?,
-        installmentPlan: json['installment_plan'] as List<dynamic>?,
-      );
+    id: json['id'].toString(),
+    feeCategory: json['fee_category']?.toString() ?? '',
+    customFeeHead: json['custom_fee_head']?.toString() ?? '',
+    amount: (json['amount'] as num?)?.toDouble() ?? 0,
+    dueDate: json['due_date']?.toString() ?? '',
+    standardName: json['standard']?['name'] as String?,
+    description: json['description'] as String?,
+    installmentPlan: json['installment_plan'] as List<dynamic>?,
+  );
 
   String get displayLabel =>
       customFeeHead.trim().isNotEmpty ? customFeeHead : feeCategory;
 }
 
-class _FeeLedger {
-  const _FeeLedger({
-    required this.id,
-    required this.studentName,
-    required this.admissionNumber,
+class _InstallmentRow {
+  const _InstallmentRow({
+    required this.ledgerId,
+    required this.feeHead,
+    required this.installmentName,
+    required this.dueDate,
     required this.totalAmount,
     required this.paidAmount,
     required this.outstandingAmount,
     required this.status,
-    required this.dueDate,
-    required this.installmentName,
-    required this.studentId,
-    required this.feeCategoryLabel,
-    this.standardName,
-    this.customFeeHead,
     this.lastPaymentDate,
   });
 
-  final String id;
-  final String? studentName;
-  final String? admissionNumber;
+  final String ledgerId;
+  final String feeHead;
+  final String installmentName;
+  final String? dueDate;
   final double totalAmount;
   final double paidAmount;
   final double outstandingAmount;
   final String status;
-  final String dueDate;
-  final String installmentName;
-  final String studentId;
-  final String feeCategoryLabel;
-  final String? standardName;
-  final String? customFeeHead;
   final String? lastPaymentDate;
 
-  factory _FeeLedger.fromJson(Map<String, dynamic> json) {
-    final total = (json['total_amount'] as num?)?.toDouble() ?? 0;
-    final paid = (json['paid_amount'] as num?)?.toDouble() ?? 0;
-    final outstanding = (json['outstanding_amount'] as num?)?.toDouble() ?? (total - paid);
-    return _FeeLedger(
-      id: json['id'].toString(),
-      studentName: json['student']?['user']?['full_name'] as String? ??
-          json['student_name'] as String?,
-      admissionNumber: json['student']?['admission_number'] as String? ??
-          json['admission_number'] as String?,
-      totalAmount: total,
-      paidAmount: paid,
-      outstandingAmount: outstanding,
-      status: json['status']?.toString() ?? '',
-      dueDate: json['due_date']?.toString() ?? '',
-      installmentName: json['installment_name']?.toString() ?? '',
-      studentId: json['student_id']?.toString() ?? '',
-      feeCategoryLabel: json['fee_category']?.toString() ?? '',
-      standardName: json['standard_name'] as String?,
-      customFeeHead: json['custom_fee_head'] as String?,
-      lastPaymentDate: json['last_payment_date'] as String?,
-    );
-  }
+  String get displayLabel => installmentName.trim().isNotEmpty
+      ? '$feeHead — $installmentName'
+      : feeHead;
 
   bool get hasOutstanding => outstandingAmount > 0.01;
 
@@ -117,19 +87,84 @@ class _FeeLedger {
       case 'OVERDUE':
         return Colors.red;
       default:
-        return Colors.grey;
+        return Colors.blueGrey;
     }
   }
 
-  String get displayLabel {
-    final base = customFeeHead?.trim().isNotEmpty == true
-        ? customFeeHead!
-        : feeCategoryLabel;
-    return installmentName.trim().isNotEmpty ? '$base — $installmentName' : base;
+  factory _InstallmentRow.fromJson(Map<String, dynamic> json) =>
+      _InstallmentRow(
+        ledgerId: json['ledger_id']?.toString() ?? '',
+        feeHead: json['fee_head']?.toString() ?? '',
+        installmentName: json['installment_name']?.toString() ?? '',
+        dueDate: json['due_date']?.toString(),
+        totalAmount: (json['total_amount'] as num?)?.toDouble() ?? 0,
+        paidAmount: (json['paid_amount'] as num?)?.toDouble() ?? 0,
+        outstandingAmount:
+            (json['outstanding_amount'] as num?)?.toDouble() ?? 0,
+        status: json['status']?.toString() ?? 'PENDING',
+        lastPaymentDate: json['last_payment_date']?.toString(),
+      );
+}
+
+class _StudentFeeRow {
+  const _StudentFeeRow({
+    required this.studentId,
+    required this.studentName,
+    required this.admissionNumber,
+    required this.standardName,
+    required this.section,
+    required this.parentName,
+    required this.parentPhone,
+    required this.parentEmail,
+    required this.totalBilled,
+    required this.totalPaid,
+    required this.totalOutstanding,
+    required this.hasOverdue,
+    required this.installments,
+  });
+
+  final String studentId;
+  final String? studentName;
+  final String? admissionNumber;
+  final String? standardName;
+  final String? section;
+  final String? parentName;
+  final String? parentPhone;
+  final String? parentEmail;
+  final double totalBilled;
+  final double totalPaid;
+  final double totalOutstanding;
+  final bool hasOverdue;
+  final List<_InstallmentRow> installments;
+
+  factory _StudentFeeRow.fromJson(Map<String, dynamic> json) {
+    final rawInst = json['installments'] as List<dynamic>? ?? [];
+    return _StudentFeeRow(
+      studentId: json['student_id']?.toString() ?? '',
+      studentName: json['student_name'] as String?,
+      admissionNumber: json['admission_number'] as String?,
+      standardName: json['standard_name'] as String?,
+      section: json['section'] as String?,
+      parentName: json['parent_name'] as String?,
+      parentPhone: json['parent_phone'] as String?,
+      parentEmail: json['parent_email'] as String?,
+      totalBilled: (json['total_billed'] as num?)?.toDouble() ?? 0,
+      totalPaid: (json['total_paid'] as num?)?.toDouble() ?? 0,
+      totalOutstanding: (json['total_outstanding'] as num?)?.toDouble() ?? 0,
+      hasOverdue: json['has_overdue'] as bool? ?? false,
+      installments: rawInst
+          .map(
+            (e) =>
+                _InstallmentRow.fromJson(Map<String, dynamic>.from(e as Map)),
+          )
+          .toList(),
+    );
   }
 }
 
-// ── Repository ────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Repository
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _FeeRepository {
   _FeeRepository(this._dio);
@@ -154,7 +189,10 @@ class _FeeRepository {
         .toList();
   }
 
-  Future<List<Map<String, dynamic>>> listStandards(String schoolId, String academicYearId) async {
+  Future<List<Map<String, dynamic>>> listStandards(
+    String schoolId,
+    String academicYearId,
+  ) async {
     final resp = await _dio.dio.get<Map<String, dynamic>>(
       '/masters/standards',
       queryParameters: {
@@ -167,7 +205,10 @@ class _FeeRepository {
         .toList();
   }
 
-  Future<List<_FeeStructure>> listStructures(String standardId, {String? academicYearId}) async {
+  Future<List<_FeeStructure>> listStructures(
+    String standardId, {
+    String? academicYearId,
+  }) async {
     final resp = await _dio.dio.get<dynamic>(
       '/fees/structures',
       queryParameters: {
@@ -209,7 +250,7 @@ class _FeeRepository {
               'description': description,
             if (installmentPlan != null && installmentPlan.isNotEmpty)
               'installment_plan': installmentPlan,
-          }
+          },
         ],
       },
     );
@@ -235,7 +276,10 @@ class _FeeRepository {
     await _dio.dio.delete<dynamic>('/fees/structures/$structureId');
   }
 
-  Future<Map<String, dynamic>> generateLedger(String standardId, {String? academicYearId}) async {
+  Future<Map<String, dynamic>> generateLedger(
+    String standardId, {
+    String? academicYearId,
+  }) async {
     final resp = await _dio.dio.post<Map<String, dynamic>>(
       '/fees/ledger/generate',
       data: {
@@ -262,31 +306,21 @@ class _FeeRepository {
     return resp.data ?? {};
   }
 
-  Future<List<_FeeLedger>> listLedgers({
-    String? standardId,
+  /// New: class-wise student fee summary — one row per student
+  Future<Map<String, dynamic>> listClassFeeStudents({
+    required String standardId,
     String? academicYearId,
-    String? studentId,
     String? status,
-    int page = 1,
-    int pageSize = 100,
   }) async {
-    final params = <String, dynamic>{
-      if (standardId != null && _isUuid(standardId)) 'standard_id': standardId,
-      if (academicYearId != null && _isUuid(academicYearId))
-        'academic_year_id': academicYearId,
-      if (studentId != null && studentId.isNotEmpty) 'student_id': studentId,
-      if (status != null && status.isNotEmpty) 'status': status,
-      'page': page,
-      'page_size': pageSize,
-    };
     final resp = await _dio.dio.get<Map<String, dynamic>>(
-      '/fees/ledger',
-      queryParameters: params,
+      '/fees/ledger/class-students',
+      queryParameters: {
+        'standard_id': standardId,
+        if (_isUuid(academicYearId)) 'academic_year_id': academicYearId,
+        if (status != null && status.isNotEmpty) 'status': status,
+      },
     );
-    final items = (resp.data?['items'] as List?) ?? [];
-    return items
-        .map((e) => _FeeLedger.fromJson(Map<String, dynamic>.from(e as Map)))
-        .toList();
+    return resp.data ?? {};
   }
 
   Future<Map<String, dynamic>> recordPayment({
@@ -346,13 +380,16 @@ class _FeeRepository {
   }
 }
 
-// ── Screen ────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// FeeManagementScreen — Main screen widget
+// ─────────────────────────────────────────────────────────────────────────────
 
 class FeeManagementScreen extends ConsumerStatefulWidget {
   const FeeManagementScreen({super.key});
 
   @override
-  ConsumerState<FeeManagementScreen> createState() => _FeeManagementScreenState();
+  ConsumerState<FeeManagementScreen> createState() =>
+      _FeeManagementScreenState();
 }
 
 class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
@@ -360,61 +397,29 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
   late final TabController _tabController;
   late final _FeeRepository _repo;
 
-  // Shared state
   List<Map<String, dynamic>> _years = [];
   List<Map<String, dynamic>> _standards = [];
   String? _selectedYearId;
   String? _selectedStandardId;
-  bool _loadingMeta = false;
-  String? _error;
-  String? _success;
+  String? _statusFilter;
 
-  // Tab 0 — Structures
-  List<_FeeStructure> _structures = [];
-  bool _loadingStructures = false;
-
-  // Tab 1 — Ledger
-  bool _loadingLedger = false;
-
-  // Tab 2 — Student Ledger (admin list)
-  List<_FeeLedger> _ledgers = [];
-  bool _loadingLedgers = false;
-  String? _ledgerStatusFilter;
-  String? _ledgerStudentSearch;
-
-  // Tab 3 — Analytics & Defaulters
+  // Tab data
+  List<_StudentFeeRow> _students = [];
   Map<String, dynamic> _analytics = {};
   List<Map<String, dynamic>> _defaulters = [];
-  bool _analyticsLoading = false;
 
-  static const _feeCats = [
-    'TUITION', 'TRANSPORT', 'LIBRARY', 'LABORATORY',
-    'SPORTS', 'EXAMINATION', 'MISCELLANEOUS',
-  ];
-
-  static const _payModes = [
-    'CASH',
-    'UPI',
-    'ONLINE',
-    'CHEQUE',
-    'DD',
-    'NEFT',
-    'RTGS',
-    'OTHER',
-  ];
-  static const _paymentCycles = [
-    'ONE_TIME',
-    'MONTHLY',
-    'QUARTERLY',
-    'YEARLY',
-  ];
+  bool _loading = false;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _repo = _FeeRepository(ref.read(dioClientProvider));
-    _loadMeta();
+    _tabController.addListener(() {
+      if (!_tabController.indexIsChanging) _onTabChanged(_tabController.index);
+    });
+    _loadInit();
   }
 
   @override
@@ -423,75 +428,12 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
     super.dispose();
   }
 
-  String? get _schoolId => ref.read(authControllerProvider).valueOrNull?.schoolId;
+  String? get _schoolId =>
+      ref.read(authControllerProvider).valueOrNull?.schoolId;
 
-  bool get _canEdit {
-    final user = ref.read(authControllerProvider).valueOrNull;
-    if (user == null) return false;
-    final role = user.role.toUpperCase();
-    return role == 'PRINCIPAL' || role == 'SUPERADMIN' || user.permissions.contains('fee:create');
-  }
-
-  String _fmt(double v) =>
-      '₹${v.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}';
-
-  DateTime _parseDateSafe(String? v, DateTime fallback) {
-    if (v == null || v.trim().isEmpty) return fallback;
-    return DateTime.tryParse(v) ?? fallback;
-  }
-
-  String _toIsoDate(DateTime d) =>
-      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-
-  List<Map<String, dynamic>> _buildInstallmentPlan({
-    required String cycle,
-    required double totalAmount,
-    required DateTime firstDueDate,
-  }) {
-    if (cycle == 'ONE_TIME' || cycle == 'YEARLY') {
-      return [
-        {
-          'name': cycle == 'YEARLY' ? 'Yearly' : 'One Time',
-          'due_date': _toIsoDate(firstDueDate),
-          'amount': double.parse(totalAmount.toStringAsFixed(2)),
-        }
-      ];
-    }
-
-    final count = cycle == 'QUARTERLY' ? 4 : 12;
-    final monthsStep = cycle == 'QUARTERLY' ? 3 : 1;
-    final base = totalAmount / count;
-    final roundedBase = double.parse(base.toStringAsFixed(2));
-    var assigned = 0.0;
-    final out = <Map<String, dynamic>>[];
-    for (var i = 0; i < count; i++) {
-      final dueDate = DateTime(
-        firstDueDate.year,
-        firstDueDate.month + (i * monthsStep),
-        firstDueDate.day,
-      );
-      final isLast = i == count - 1;
-      final installmentAmount = isLast
-          ? double.parse((totalAmount - assigned).toStringAsFixed(2))
-          : roundedBase;
-      assigned += installmentAmount;
-      out.add({
-        'name': cycle == 'QUARTERLY' ? 'Quarter ${i + 1}' : 'Month ${i + 1}',
-        'due_date': _toIsoDate(dueDate),
-        'amount': installmentAmount,
-      });
-    }
-    return out;
-  }
-
-  void _setError(String? e) => setState(() { _error = e; _success = null; });
-  void _setSuccess(String s) => setState(() { _success = s; _error = null; });
-
-  // ── Meta loading ────────────────────────────────────────────────────────────
-
-  Future<void> _loadMeta() async {
+  Future<void> _loadInit() async {
     if (_schoolId == null) return;
-    setState(() { _loadingMeta = true; _error = null; });
+    setState(() => _loading = true);
     try {
       final years = await _repo.listYears(_schoolId!);
       setState(() => _years = years);
@@ -508,930 +450,828 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
       if (selected.isNotEmpty) {
         _selectedYearId = selected['id']?.toString();
         ref.read(activeAcademicYearProvider.notifier).setYear(_selectedYearId);
-        await _loadStandards(_selectedYearId!);
+        await _loadStandards();
       }
     } catch (e) {
-      _setError(e.toString());
+      setState(() => _error = e.toString());
     } finally {
-      setState(() => _loadingMeta = false);
+      setState(() => _loading = false);
     }
   }
 
-  Future<void> _loadStandards(String yearId) async {
-    if (_schoolId == null) return;
-    setState(() { _loadingMeta = true; _standards = []; _selectedStandardId = null; });
+  Future<void> _loadStandards() async {
+    if (_schoolId == null || _selectedYearId == null) return;
     try {
-      final stds = await _repo.listStandards(_schoolId!, yearId);
-      setState(() => _standards = stds);
-    } catch (e) {
-      _setError(e.toString());
-    } finally {
-      setState(() => _loadingMeta = false);
+      final stds = await _repo.listStandards(_schoolId!, _selectedYearId!);
+      setState(() {
+        _standards = stds;
+        if (_selectedStandardId == null && stds.isNotEmpty) {
+          _selectedStandardId = stds.first['id']?.toString();
+        }
+      });
+      await _onTabChanged(_tabController.index);
+    } catch (_) {}
+  }
+
+  Future<void> _onTabChanged(int i) async {
+    switch (i) {
+      case 0:
+        await _loadStudents();
+        break;
+      case 1:
+        await _loadAnalytics();
+        break;
+      case 2:
+        await _loadDefaulters();
+        break;
     }
   }
 
-  // ── Tab 0 — Structures ──────────────────────────────────────────────────────
-
-  Future<void> _loadStructures(String standardId) async {
+  Future<void> _loadStudents() async {
+    if (_selectedStandardId == null) return;
     setState(() {
-      _selectedStandardId = standardId;
-      _loadingStructures = true;
-      _structures = [];
+      _loading = true;
       _error = null;
     });
     try {
-      final structs = await _repo.listStructures(standardId, academicYearId: _selectedYearId);
-      setState(() => _structures = structs);
-    } catch (e) {
-      _setError(e.toString());
-    } finally {
-      setState(() => _loadingStructures = false);
-    }
-    await _loadLedgers();
-  }
-
-  // ── Tab 2 — Admin Ledger List ───────────────────────────────────────────────
-
-  Future<void> _loadLedgers() async {
-    setState(() { _loadingLedgers = true; _error = null; });
-    try {
-      final ledgers = await _repo.listLedgers(
-        standardId: _selectedStandardId,
+      final data = await _repo.listClassFeeStudents(
+        standardId: _selectedStandardId!,
         academicYearId: _selectedYearId,
-        status: _ledgerStatusFilter?.isEmpty == true ? null : _ledgerStatusFilter,
-        pageSize: 200,
+        status: _statusFilter,
       );
-      setState(() => _ledgers = ledgers);
-    } catch (e) {
-      _setError(e.toString());
-    } finally {
-      setState(() => _loadingLedgers = false);
-    }
-  }
-
-  // ── Tab 3 — Analytics ──────────────────────────────────────────────────────
-
-  Future<void> _loadAnalytics() async {
-    setState(() { _analyticsLoading = true; _error = null; });
-    try {
-      final analytics = await _repo.getFeeAnalytics(
-        academicYearId: _selectedYearId,
-        standardId: _selectedStandardId,
-      );
-      final defaulters = await _repo.getDefaulters(
-        academicYearId: _selectedYearId,
-        standardId: _selectedStandardId,
-      );
+      final rawStudents = data['items'] as List<dynamic>? ?? [];
       setState(() {
-        _analytics = analytics;
-        _defaulters = defaulters;
+        _students = rawStudents
+            .map(
+              (e) =>
+                  _StudentFeeRow.fromJson(Map<String, dynamic>.from(e as Map)),
+            )
+            .toList();
       });
     } catch (e) {
-      _setError(e.toString());
+      setState(() => _error = e.toString());
     } finally {
-      setState(() => _analyticsLoading = false);
+      setState(() => _loading = false);
     }
   }
 
-  // ── Dialogs ─────────────────────────────────────────────────────────────────
+  Future<void> _loadAnalytics() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final data = await _repo.getFeeAnalytics(
+        academicYearId: _selectedYearId,
+        standardId: _selectedStandardId,
+      );
+      setState(() => _analytics = data);
+    } catch (e) {
+      setState(() => _error = e.toString());
+    } finally {
+      setState(() => _loading = false);
+    }
+  }
 
-  Future<void> _showCreateStructureDialog() async {
-    if (_selectedStandardId == null || _selectedYearId == null) {
-      _setError('Please select an academic year and class first.');
+  Future<void> _loadDefaulters() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final data = await _repo.getDefaulters(
+        academicYearId: _selectedYearId,
+        standardId: _selectedStandardId,
+      );
+      setState(() => _defaulters = data);
+    } catch (e) {
+      setState(() => _error = e.toString());
+    } finally {
+      setState(() => _loading = false);
+    }
+  }
+
+  String _fmt(dynamic v) {
+    final d = (v is num) ? v.toDouble() : double.tryParse('$v') ?? 0.0;
+    return '₹${d.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}';
+  }
+
+  Future<void> _recordPaymentForStudent(_StudentFeeRow student) async {
+    final payableInstallments = student.installments
+        .where((i) => i.hasOutstanding && i.ledgerId.isNotEmpty)
+        .toList();
+    if (payableInstallments.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No outstanding installments for this student.'),
+        ),
+      );
       return;
     }
-    final amountCtrl = TextEditingController();
-    final customHeadCtrl = TextEditingController();
-    final descCtrl = TextEditingController();
-    String? dueDate;
-    String selectedCat = _feeCats.first;
-    String paymentCycle = _paymentCycles.first;
 
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDlg) => AlertDialog(
-          title: const Text('Add Fee Structure'),
-          content: SizedBox(
-            width: 480,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  DropdownButtonFormField<String>(
-                    decoration: const InputDecoration(labelText: 'Fee Category *', border: OutlineInputBorder()),
-                    value: selectedCat,
-                    items: _feeCats
-                        .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                        .toList(),
-                    onChanged: (v) { if (v != null) setDlg(() => selectedCat = v); },
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    decoration: const InputDecoration(
-                      labelText: 'Payment Cycle *',
-                      border: OutlineInputBorder(),
-                    ),
-                    value: paymentCycle,
-                    items: _paymentCycles
-                        .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                        .toList(),
-                    onChanged: (v) {
-                      if (v != null) {
-                        setDlg(() => paymentCycle = v);
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: customHeadCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Custom Label (optional)',
-                      border: OutlineInputBorder(),
-                      hintText: 'e.g. Term 1 Tuition',
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: amountCtrl,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Amount (₹) *', border: OutlineInputBorder()),
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: descCtrl,
-                    decoration: const InputDecoration(labelText: 'Description', border: OutlineInputBorder()),
-                  ),
-                  const SizedBox(height: 12),
-                  OutlinedButton.icon(
-                    icon: const Icon(Icons.calendar_today, size: 16),
-                    label: Text(dueDate ?? 'Select Due Date *'),
-                    onPressed: () async {
-                      final picked = await showDatePicker(
-                        context: ctx,
-                        initialDate: DateTime.now(),
-                        firstDate: DateTime(2020),
-                        lastDate: DateTime(2035),
-                      );
-                      if (picked != null) {
-                        setDlg(() {
-                          dueDate =
-                              '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
-                        });
-                      }
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo, foregroundColor: Colors.white),
-              onPressed: () async {
-                final amount = double.tryParse(amountCtrl.text.trim());
-                if (amount == null || amount <= 0) {
-                  _setError('Enter a valid amount.');
-                  Navigator.pop(ctx);
-                  return;
-                }
-                if (dueDate == null) {
-                  _setError('Select a due date.');
-                  Navigator.pop(ctx);
-                  return;
-                }
-                Navigator.pop(ctx);
-                try {
-                  final selectedYear = _years.firstWhere(
-                    (y) => y['id']?.toString() == _selectedYearId,
-                    orElse: () => <String, dynamic>{},
-                  );
-                  final defaultStart = DateTime.now();
-                  final yearStart = _parseDateSafe(
-                    selectedYear['start_date']?.toString(),
-                    defaultStart,
-                  );
-                  final firstDue = dueDate != null
-                      ? _parseDateSafe(dueDate, yearStart)
-                      : yearStart;
-                  final installmentPlan = _buildInstallmentPlan(
-                    cycle: paymentCycle,
-                    totalAmount: amount,
-                    firstDueDate: firstDue,
-                  );
-                  await _repo.createStructure(
-                    standardId: _selectedStandardId!,
-                    academicYearId: _selectedYearId!,
-                    feeCategory: selectedCat,
-                    amount: amount,
-                    dueDate: dueDate!,
-                    customFeeHead: customHeadCtrl.text.trim().isEmpty
-                        ? null
-                        : customHeadCtrl.text.trim(),
-                    description: descCtrl.text.trim().isEmpty ? null : descCtrl.text.trim(),
-                    installmentPlan: installmentPlan,
-                  );
-                  await _loadStructures(_selectedStandardId!);
-                  _setSuccess('Fee structure created successfully.');
-                } catch (e) {
-                  _setError(e.toString());
-                }
-              },
-              child: const Text('Create'),
-            ),
-          ],
-        ),
-      ),
+    _InstallmentRow selected = payableInstallments.first;
+    final amountCtrl = TextEditingController(
+      text: selected.outstandingAmount.toStringAsFixed(2),
     );
-  }
-
-  Future<void> _showEditStructureDialog(_FeeStructure structure) async {
-    final amountCtrl = TextEditingController(text: structure.amount.toStringAsFixed(2));
-    final descCtrl = TextEditingController(text: structure.description ?? '');
-    String? dueDate = structure.dueDate;
-
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDlg) => AlertDialog(
-          title: Text('Edit — ${structure.displayLabel}'),
-          content: SizedBox(
-            width: 400,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextFormField(
-                  controller: amountCtrl,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Amount (₹)', border: OutlineInputBorder()),
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: descCtrl,
-                  decoration: const InputDecoration(labelText: 'Description', border: OutlineInputBorder()),
-                ),
-                const SizedBox(height: 12),
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.calendar_today, size: 16),
-                  label: Text(dueDate ?? 'Select Due Date'),
-                  onPressed: () async {
-                    final initial = dueDate != null ? DateTime.tryParse(dueDate!) ?? DateTime.now() : DateTime.now();
-                    final picked = await showDatePicker(
-                      context: ctx,
-                      initialDate: initial,
-                      firstDate: DateTime(2020),
-                      lastDate: DateTime(2035),
-                    );
-                    if (picked != null) {
-                      setDlg(() {
-                        dueDate =
-                            '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
-                      });
-                    }
-                  },
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo, foregroundColor: Colors.white),
-              onPressed: () async {
-                Navigator.pop(ctx);
-                try {
-                  await _repo.updateStructure(
-                    structureId: structure.id,
-                    amount: double.tryParse(amountCtrl.text.trim()),
-                    dueDate: dueDate,
-                    description: descCtrl.text.trim().isEmpty ? null : descCtrl.text.trim(),
-                  );
-                  await _loadStructures(_selectedStandardId!);
-                  _setSuccess('Fee structure updated.');
-                } catch (e) {
-                  _setError(e.toString());
-                }
-              },
-              child: const Text('Save'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _confirmDeleteStructure(_FeeStructure structure) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete Fee Structure'),
-        content: Text(
-          'Delete "${structure.displayLabel}" (${_fmt(structure.amount)})?\n\n'
-          'This will fail if ledger entries already exist for this fee head.',
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-    try {
-      await _repo.deleteStructure(structure.id);
-      await _loadStructures(_selectedStandardId!);
-      _setSuccess('Fee structure deleted.');
-    } catch (e) {
-      _setError(e.toString());
-    }
-  }
-
-  Future<void> _showRecordPaymentDialog(_FeeLedger ledger) async {
-    final amountCtrl = TextEditingController(text: ledger.outstandingAmount.toStringAsFixed(2));
-    final refCtrl = TextEditingController();
-    final txnCtrl = TextEditingController();
+    final referenceCtrl = TextEditingController();
     final notesCtrl = TextEditingController();
     String paymentMode = 'CASH';
-    String paymentDate = DateTime.now().toIso8601String().substring(0, 10);
-    bool verified = true;
 
-    await showDialog<void>(
+    final shouldSubmit = await showDialog<bool>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDlg) => AlertDialog(
-          title: const Text('Record Payment'),
-          content: SizedBox(
-            width: 440,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '${ledger.studentName ?? 'Student'} (${ledger.admissionNumber ?? '-'})',
-                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
-                  ),
-                  Text(
-                    ledger.displayLabel,
-                    style: const TextStyle(color: Colors.grey, fontSize: 13),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Outstanding: ${_fmt(ledger.outstandingAmount)}  |  Due: ${ledger.dueDate}',
-                    style: TextStyle(
-                      color: ledger.status.toUpperCase() == 'OVERDUE' ? Colors.red : Colors.blueGrey,
-                      fontSize: 12,
-                    ),
-                  ),
-                  const Divider(height: 20),
-                  TextFormField(
-                    controller: amountCtrl,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Amount (₹) *', border: OutlineInputBorder()),
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    decoration: const InputDecoration(labelText: 'Payment Mode *', border: OutlineInputBorder()),
-                    value: paymentMode,
-                    items: _payModes
-                        .map((m) => DropdownMenuItem(value: m, child: Text(m)))
-                        .toList(),
-                    onChanged: (v) { if (v != null) setDlg(() => paymentMode = v); },
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: refCtrl,
-                    decoration: const InputDecoration(labelText: 'Reference Number', border: OutlineInputBorder()),
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: txnCtrl,
-                    decoration: const InputDecoration(labelText: 'Transaction ID (UPI/Bank)', border: OutlineInputBorder()),
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: notesCtrl,
-                    minLines: 2,
-                    maxLines: 3,
-                    decoration: const InputDecoration(
-                      labelText: 'Verification Notes (optional)',
-                      border: OutlineInputBorder(),
-                      hintText: 'Any verification note by admin',
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  CheckboxListTile(
-                    value: verified,
-                    contentPadding: EdgeInsets.zero,
-                    onChanged: (v) => setDlg(() => verified = v ?? false),
-                    title: const Text('I have verified this payment entry'),
-                    controlAffinity: ListTileControlAffinity.leading,
-                  ),
-                  const SizedBox(height: 6),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.blue.shade50,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.blue.shade200),
-                    ),
-                    child: Text(
-                      amountCtrl.text.trim().isEmpty
-                          ? 'Final status will be auto-computed from amount.'
-                          : 'Expected status: ${(() {
-                              final entered = double.tryParse(amountCtrl.text.trim()) ?? 0;
-                              final remaining = (ledger.outstandingAmount - entered);
-                              if (remaining <= 0.01) return 'PAID';
-                              if (entered > 0) return 'PARTIAL';
-                              return 'PENDING';
-                            })()}',
-                      style: const TextStyle(fontSize: 12, color: Colors.blueGrey),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  OutlinedButton.icon(
-                    icon: const Icon(Icons.calendar_today, size: 16),
-                    label: Text('Payment Date: $paymentDate'),
-                    onPressed: () async {
-                      final picked = await showDatePicker(
-                        context: ctx,
-                        initialDate: DateTime.now(),
-                        firstDate: DateTime(2020),
-                        lastDate: DateTime.now(),
-                      );
-                      if (picked != null) {
-                        setDlg(() {
-                          paymentDate =
-                              '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
-                        });
-                      }
-                    },
-                  ),
-                ],
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              title: Text(
+                'Record Payment • ${student.studentName ?? student.admissionNumber ?? 'Student'}',
               ),
-            ),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
-              onPressed: () async {
-                final amount = double.tryParse(amountCtrl.text.trim());
-                if (amount == null || amount <= 0) {
-                  _setError('Enter a valid amount.');
-                  Navigator.pop(ctx);
-                  return;
-                }
-                if (!verified) {
-                  _setError('Please verify payment details before recording.');
-                  Navigator.pop(ctx);
-                  return;
-                }
-                Navigator.pop(ctx);
-                try {
-                  final note = notesCtrl.text.trim();
-                  final txn = txnCtrl.text.trim();
-                  final mergedTxn = note.isEmpty
-                      ? (txn.isEmpty ? null : txn)
-                      : (txn.isEmpty ? 'NOTE:$note' : '$txn | NOTE:$note');
-                  await _repo.recordPayment(
-                    studentId: ledger.studentId,
-                    feeLedgerId: ledger.id,
-                    amount: amount,
-                    paymentMode: paymentMode,
-                    paymentDate: paymentDate,
-                    referenceNumber: refCtrl.text.trim().isEmpty ? null : refCtrl.text.trim(),
-                    transactionRef: mergedTxn,
-                  );
-                  await _loadLedgers();
-                  _setSuccess('Payment of ${_fmt(amount)} recorded for ${ledger.studentName ?? 'student'}.');
-                } catch (e) {
-                  _setError(e.toString());
-                }
-              },
-              child: const Text('Record Payment'),
-            ),
-          ],
-        ),
-      ),
+              content: SizedBox(
+                width: 420,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      DropdownButtonFormField<String>(
+                        value: selected.ledgerId,
+                        decoration: const InputDecoration(
+                          labelText: 'Installment',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: payableInstallments
+                            .map(
+                              (i) => DropdownMenuItem<String>(
+                                value: i.ledgerId,
+                                child: Text(
+                                  '${i.displayLabel} • Due ${_fmt(i.outstandingAmount)}',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (v) {
+                          if (v == null) return;
+                          final match = payableInstallments.firstWhere(
+                            (i) => i.ledgerId == v,
+                          );
+                          setDialogState(() {
+                            selected = match;
+                            amountCtrl.text = selected.outstandingAmount
+                                .toStringAsFixed(2);
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: amountCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'Amount',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        value: paymentMode,
+                        decoration: const InputDecoration(
+                          labelText: 'Payment Mode',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: 'CASH', child: Text('Cash')),
+                          DropdownMenuItem(
+                            value: 'CHEQUE',
+                            child: Text('Cheque'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'ONLINE',
+                            child: Text('Online'),
+                          ),
+                          DropdownMenuItem(value: 'UPI', child: Text('UPI')),
+                          DropdownMenuItem(value: 'NEFT', child: Text('NEFT')),
+                          DropdownMenuItem(value: 'RTGS', child: Text('RTGS')),
+                          DropdownMenuItem(
+                            value: 'DD',
+                            child: Text('Demand Draft'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'OTHER',
+                            child: Text('Other'),
+                          ),
+                        ],
+                        onChanged: (v) =>
+                            setDialogState(() => paymentMode = v ?? 'CASH'),
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: referenceCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Reference No. (optional)',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: notesCtrl,
+                        maxLines: 3,
+                        decoration: const InputDecoration(
+                          labelText: 'Notes (optional)',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(false),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.of(ctx).pop(true),
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
-  }
 
-  Future<void> _showStudentLedgerGenerateDialog() async {
-    if (_selectedStandardId == null || _selectedYearId == null) {
-      _setError('Select a class first.');
+    if (shouldSubmit != true) return;
+
+    final amount = double.tryParse(amountCtrl.text.trim());
+    if (amount == null || amount <= 0) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a valid positive amount.')),
+      );
       return;
     }
-    final studentIdCtrl = TextEditingController();
-
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Generate Ledger for Individual Student'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Enter the student UUID to generate fee ledger entries from the current class fee structure. '
-              'Use this for mid-year admissions or overrides.',
-              style: TextStyle(fontSize: 13, color: Colors.grey),
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: studentIdCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Student UUID *',
-                border: OutlineInputBorder(),
-                hintText: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo, foregroundColor: Colors.white),
-            onPressed: () async {
-              final sid = studentIdCtrl.text.trim();
-              if (sid.isEmpty) return;
-              Navigator.pop(ctx);
-              try {
-                final result = await _repo.generateStudentLedger(
-                  studentId: sid,
-                  standardId: _selectedStandardId!,
-                  academicYearId: _selectedYearId,
-                );
-                final c = result['created'] ?? 0;
-                final s = result['skipped'] ?? 0;
-                _setSuccess('Student ledger: $c created, $s skipped.');
-              } catch (e) {
-                _setError(e.toString());
-              }
-            },
-            child: const Text('Generate'),
+    if (amount > selected.outstandingAmount + 0.01) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Amount cannot exceed outstanding ${_fmt(selected.outstandingAmount)}.',
           ),
-        ],
-      ),
-    );
-  }
+        ),
+      );
+      return;
+    }
 
-  // ── Build ───────────────────────────────────────────────────────────────────
+    try {
+      setState(() => _loading = true);
+      final today = DateTime.now();
+      final paymentDate =
+          '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+      await _repo.recordPayment(
+        studentId: student.studentId,
+        feeLedgerId: selected.ledgerId,
+        amount: amount,
+        paymentMode: paymentMode,
+        paymentDate: paymentDate,
+        referenceNumber: referenceCtrl.text.trim().isEmpty
+            ? null
+            : referenceCtrl.text.trim(),
+        transactionRef: notesCtrl.text.trim().isEmpty
+            ? null
+            : notesCtrl.text.trim(),
+      );
+      await _loadStudents();
+      await _loadAnalytics();
+      await _loadDefaulters();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Payment updated successfully.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Unable to update payment: $e')));
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return AdminScaffold(
       title: 'Fee Management',
-      child: _loadingMeta && _years.isEmpty
-          ? const Center(child: CircularProgressIndicator())
-          : Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // ── Year + Class selectors ─────────────────────────────────
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 8,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      SizedBox(
-                        width: 220,
-                        child: DropdownButtonFormField<String>(
-                          decoration: const InputDecoration(
-                            labelText: 'Academic Year',
-                            border: OutlineInputBorder(),
-                            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          ),
-                          value: _selectedYearId,
-                          isExpanded: true,
-                          items: _years.map((y) => DropdownMenuItem<String>(
-                                value: y['id']?.toString(),
-                                child: Text(y['name']?.toString() ?? ''),
-                              )).toList(),
-                          onChanged: _loadingMeta
-                              ? null
-                              : (v) {
-                                  if (v == null || v == _selectedYearId) return;
-                                  setState(() { _selectedYearId = v; _structures = []; _ledgers = []; });
-                                  ref.read(activeAcademicYearProvider.notifier).setYear(v);
-                                  _loadStandards(v);
-                                },
-                        ),
-                      ),
-                      SizedBox(
-                        width: 180,
-                        child: DropdownButtonFormField<String>(
-                          decoration: const InputDecoration(
-                            labelText: 'Class',
-                            border: OutlineInputBorder(),
-                            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          ),
-                          value: _selectedStandardId,
-                          isExpanded: true,
-                          hint: const Text('Select class'),
-                          items: _standards.map((s) => DropdownMenuItem<String>(
-                                value: s['id']?.toString(),
-                                child: Text(s['name']?.toString() ?? ''),
-                              )).toList(),
-                          onChanged: _loadingMeta
-                              ? null
-                              : (v) {
-                                  if (v == null) return;
-                                  _loadStructures(v);
-                                },
-                        ),
-                      ),
-                      if (_loadingMeta)
-                        const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-
-                  // ── Status messages ──────────────────────────────────────────
-                  if (_error != null)
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(10),
-                      margin: const EdgeInsets.only(bottom: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.red.shade50,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.red.shade200),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(Icons.error_outline, color: Colors.red.shade700, size: 18),
-                          const SizedBox(width: 8),
-                          Expanded(child: Text(_error!, style: TextStyle(color: Colors.red.shade700))),
-                          IconButton(
-                            icon: const Icon(Icons.close, size: 16),
-                            onPressed: () => setState(() => _error = null),
-                          ),
-                        ],
-                      ),
-                    ),
-                  if (_success != null)
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(10),
-                      margin: const EdgeInsets.only(bottom: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.green.shade50,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.green.shade200),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(Icons.check_circle_outline, color: Colors.green.shade700, size: 18),
-                          const SizedBox(width: 8),
-                          Expanded(child: Text(_success!, style: TextStyle(color: Colors.green.shade700))),
-                          IconButton(
-                            icon: const Icon(Icons.close, size: 16),
-                            onPressed: () => setState(() => _success = null),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                  // ── Tabs ───────────────────────────────────────────────────
-                  TabBar(
-                    controller: _tabController,
-                    isScrollable: true,
-                    tabs: const [
-                      Tab(text: 'Fee Structures'),
-                      Tab(text: 'Generate Ledger'),
-                      Tab(text: 'Student Ledger'),
-                      Tab(text: 'Record Payment'),
-                      Tab(text: 'Analytics & Defaulters'),
-                    ],
-                    onTap: (i) {
-                      if (i == 2 && _ledgers.isEmpty) {
-                        _loadLedgers();
-                      }
-                      if (i == 4 && _analytics.isEmpty) _loadAnalytics();
-                    },
-                  ),
-                  const SizedBox(height: 12),
-
-                  Expanded(
-                    child: TabBarView(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildFilterRow(),
+            const SizedBox(height: 10),
+            if (_error != null)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                margin: const EdgeInsets.only(bottom: 8),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red.shade200),
+                ),
+                child: Text(
+                  _error!,
+                  style: TextStyle(color: Colors.red.shade700),
+                ),
+              ),
+            TabBar(
+              controller: _tabController,
+              isScrollable: true,
+              tabs: const [
+                Tab(text: 'Students'),
+                Tab(text: 'Analytics'),
+                Tab(text: 'Defaulters'),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : TabBarView(
                       controller: _tabController,
                       children: [
-                        _buildStructuresTab(),
-                        _buildGenerateLedgerTab(),
-                        _buildStudentLedgerTab(),
-                        _buildPaymentTab(),
+                        _buildStudentsTab(),
                         _buildAnalyticsTab(),
+                        _buildDefaultersTab(),
                       ],
                     ),
-                  ),
-                ],
-              ),
             ),
+          ],
+        ),
+      ),
     );
   }
 
-  // ── Tab 0: Structures ───────────────────────────────────────────────────────
-
-  Widget _buildStructuresTab() {
-    final total = _structures.fold<double>(0, (s, e) => s + e.amount);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildFilterRow() {
+    return Wrap(
+      spacing: 12,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        Row(
-          children: [
-            Text(
-              '${_structures.length} structure(s)${total > 0 ? '  |  Total: ${_fmt(total)}' : ''}',
-              style: const TextStyle(color: Colors.grey),
+        SizedBox(
+          width: 180,
+          child: DropdownButtonFormField<String>(
+            decoration: const InputDecoration(
+              labelText: 'Academic Year',
+              border: OutlineInputBorder(),
+              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             ),
-            const Spacer(),
-            if (_canEdit && _selectedStandardId != null)
-              ElevatedButton.icon(
-                icon: const Icon(Icons.add, size: 16),
-                label: const Text('Add Fee Head'),
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo, foregroundColor: Colors.white),
-                onPressed: _showCreateStructureDialog,
-              ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        if (_loadingStructures)
-          const Expanded(child: Center(child: CircularProgressIndicator()))
-        else if (_structures.isEmpty)
-          const Expanded(
-            child: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.receipt_long_outlined, size: 48, color: Colors.grey),
-                  SizedBox(height: 12),
-                  Text('No fee structures. Select a class and add fee heads.',
-                      style: TextStyle(color: Colors.grey)),
-                ],
-              ),
-            ),
-          )
-        else
-          Expanded(
-            child: ListView.separated(
-              itemCount: _structures.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
-              itemBuilder: (ctx, i) {
-                final s = _structures[i];
-                final hasInstallments = s.installmentPlan != null && s.installmentPlan!.isNotEmpty;
-                return ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: Colors.indigo.shade50,
-                    child: Icon(Icons.receipt_rounded, color: Colors.indigo.shade700, size: 18),
+            value: _selectedYearId,
+            items: _years
+                .map(
+                  (y) => DropdownMenuItem<String>(
+                    value: y['id']?.toString(),
+                    child: Text(y['name']?.toString() ?? ''),
                   ),
-                  title: Text(s.displayLabel, style: const TextStyle(fontWeight: FontWeight.w600)),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('${s.feeCategory}  •  Due: ${s.dueDate}'),
-                      if (s.description != null && s.description!.isNotEmpty)
-                        Text(s.description!, style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                      if (hasInstallments)
-                        Text(
-                          '${s.installmentPlan!.length} installments',
-                          style: TextStyle(fontSize: 11, color: Colors.blue.shade700),
-                        ),
-                    ],
-                  ),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        _fmt(s.amount),
-                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
-                      ),
-                      if (_canEdit) ...[
-                        const SizedBox(width: 4),
-                        IconButton(
-                          icon: const Icon(Icons.edit_outlined, size: 18, color: Colors.blue),
-                          tooltip: 'Edit',
-                          onPressed: () => _showEditStructureDialog(s),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
-                          tooltip: 'Delete',
-                          onPressed: () => _confirmDeleteStructure(s),
-                        ),
-                      ],
-                    ],
-                  ),
-                );
-              },
-            ),
+                )
+                .toList(),
+            onChanged: (v) {
+              setState(() {
+                _selectedYearId = v;
+                _students = [];
+                _analytics = {};
+                _defaulters = [];
+              });
+              ref.read(activeAcademicYearProvider.notifier).setYear(v);
+              _loadStandards();
+            },
           ),
+        ),
+        SizedBox(
+          width: 150,
+          child: DropdownButtonFormField<String?>(
+            decoration: const InputDecoration(
+              labelText: 'Class',
+              border: OutlineInputBorder(),
+              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            ),
+            value: _selectedStandardId,
+            items: [
+              const DropdownMenuItem<String?>(
+                value: null,
+                child: Text('All Classes'),
+              ),
+              ..._standards.map(
+                (s) => DropdownMenuItem<String?>(
+                  value: s['id']?.toString(),
+                  child: Text(s['name']?.toString() ?? ''),
+                ),
+              ),
+            ],
+            onChanged: (v) => setState(() => _selectedStandardId = v),
+          ),
+        ),
+        SizedBox(
+          width: 130,
+          child: DropdownButtonFormField<String?>(
+            decoration: const InputDecoration(
+              labelText: 'Status',
+              border: OutlineInputBorder(),
+              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            ),
+            value: _statusFilter,
+            items: const [
+              DropdownMenuItem<String?>(value: null, child: Text('All')),
+              DropdownMenuItem<String?>(
+                value: 'PENDING',
+                child: Text('Pending'),
+              ),
+              DropdownMenuItem<String?>(
+                value: 'PARTIAL',
+                child: Text('Partial'),
+              ),
+              DropdownMenuItem<String?>(value: 'PAID', child: Text('Paid')),
+              DropdownMenuItem<String?>(
+                value: 'OVERDUE',
+                child: Text('Overdue'),
+              ),
+            ],
+            onChanged: (v) => setState(() => _statusFilter = v),
+          ),
+        ),
+        ElevatedButton.icon(
+          icon: const Icon(Icons.refresh, size: 14),
+          label: const Text('Apply'),
+          onPressed: () {
+            final i = _tabController.index;
+            setState(() {
+              _students = [];
+              _analytics = {};
+              _defaulters = [];
+            });
+            _onTabChanged(i);
+          },
+        ),
       ],
     );
   }
 
-  // ── Tab 1: Generate Ledger ──────────────────────────────────────────────────
+  // ── Tab 0: Students ─────────────────────────────────────────────────────────
 
-  Widget _buildGenerateLedgerTab() {
+  Widget _buildStudentsTab() {
+    if (_students.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Select a class and click Apply to load students.'),
+            const SizedBox(height: 12),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.refresh),
+              label: const Text('Load Students'),
+              onPressed: _loadStudents,
+            ),
+          ],
+        ),
+      );
+    }
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: DataTable(
+        headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
+        columns: const [
+          DataColumn(label: Text('Student')),
+          DataColumn(label: Text('Adm. No.')),
+          DataColumn(label: Text('Class')),
+          DataColumn(label: Text('Parent')),
+          DataColumn(label: Text('Phone')),
+          DataColumn(label: Text('Billed')),
+          DataColumn(label: Text('Paid')),
+          DataColumn(label: Text('Outstanding')),
+          DataColumn(label: Text('Status')),
+          DataColumn(label: Text('Action')),
+        ],
+        rows: _students.map((s) {
+          final statusColor = s.hasOverdue
+              ? Colors.red
+              : s.totalOutstanding > 0
+              ? Colors.orange
+              : Colors.green;
+          final statusLabel = s.hasOverdue
+              ? 'Overdue'
+              : s.totalOutstanding > 0
+              ? 'Partial'
+              : 'Paid';
+          return DataRow(
+            cells: [
+              DataCell(Text(s.studentName ?? s.admissionNumber ?? '-')),
+              DataCell(Text(s.admissionNumber ?? '-')),
+              DataCell(
+                Text(
+                  '${s.standardName ?? ''} ${s.section != null ? '(${s.section})' : ''}'
+                      .trim(),
+                ),
+              ),
+              DataCell(Text(s.parentName ?? '-')),
+              DataCell(Text(s.parentPhone ?? '-')),
+              DataCell(Text(_fmt(s.totalBilled))),
+              DataCell(Text(_fmt(s.totalPaid))),
+              DataCell(Text(_fmt(s.totalOutstanding))),
+              DataCell(
+                Text(
+                  statusLabel,
+                  style: TextStyle(
+                    color: statusColor,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              DataCell(
+                ElevatedButton.icon(
+                  onPressed: s.installments.any((i) => i.hasOutstanding)
+                      ? () => _recordPaymentForStudent(s)
+                      : null,
+                  icon: const Icon(Icons.edit_note, size: 16),
+                  label: const Text('Update'),
+                ),
+              ),
+            ],
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  // ── Tab 1: Analytics ────────────────────────────────────────────────────────
+
+  Widget _buildAnalyticsTab() {
+    if (_analytics.isEmpty) {
+      return Center(
+        child: ElevatedButton.icon(
+          icon: const Icon(Icons.refresh),
+          label: const Text('Load Analytics'),
+          onPressed: _loadAnalytics,
+        ),
+      );
+    }
+
+    final summary = _analytics['summary'] as Map<String, dynamic>? ?? {};
+    final byClass = (_analytics['by_class'] as List<dynamic>? ?? [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+    final byStatus = (_analytics['by_status'] as List<dynamic>? ?? [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+    final byMode = (_analytics['by_payment_mode'] as List<dynamic>? ?? [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+
+    final totalPaid = (summary['total_paid_amount'] as num?)?.toDouble() ?? 0;
+    final totalOut =
+        (summary['total_outstanding_amount'] as num?)?.toDouble() ?? 0;
+    final pct = (summary['collection_percentage'] as num?)?.toDouble() ?? 0;
+    final def = summary['defaulters_count'] ?? 0;
+
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Card(
-            elevation: 0,
-            color: Colors.blue.shade50,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-              side: BorderSide(color: Colors.blue.shade200),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(children: [
-                    Icon(Icons.info_outline, color: Colors.blue.shade700, size: 18),
-                    const SizedBox(width: 6),
-                    Text('How Ledger Generation Works',
-                        style: TextStyle(fontWeight: FontWeight.w700, color: Colors.blue.shade800)),
-                  ]),
-                  const SizedBox(height: 8),
-                  const Text(
-                    '• Select a class and click "Generate Class Ledger" to create fee entries for ALL students in that class.\n'
-                    '• Already-existing entries are skipped (idempotent).\n'
-                    '• For individual students (mid-year admissions), use "Generate for Individual Student".\n'
-                    '• Fee structures must be created first in the "Fee Structures" tab.',
-                    style: TextStyle(fontSize: 13),
-                  ),
-                ],
+          // KPI cards
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              _KpiCard(
+                'Collected',
+                _fmt(totalPaid),
+                Icons.check_circle_outline,
+                Colors.green,
               ),
+              _KpiCard(
+                'Outstanding',
+                _fmt(totalOut),
+                Icons.pending_outlined,
+                Colors.orange,
+              ),
+              _KpiCard(
+                'Collection %',
+                '${pct.toStringAsFixed(1)}%',
+                Icons.bar_chart_outlined,
+                pct >= 80
+                    ? Colors.green
+                    : pct >= 50
+                    ? Colors.orange
+                    : Colors.red,
+              ),
+              _KpiCard(
+                'Defaulters',
+                '$def',
+                Icons.warning_amber_outlined,
+                Colors.red,
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+
+          // Collection progress
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.grey.shade200),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Collection Rate',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                      ),
+                    ),
+                    Text(
+                      '${pct.toStringAsFixed(1)}%',
+                      style: TextStyle(
+                        color: pct >= 80
+                            ? Colors.green
+                            : pct >= 50
+                            ? Colors.orange
+                            : Colors.red,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                LinearProgressIndicator(
+                  value: (pct / 100).clamp(0.0, 1.0),
+                  minHeight: 10,
+                  backgroundColor: Colors.grey.shade200,
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    pct >= 80
+                        ? Colors.green
+                        : pct >= 50
+                        ? Colors.orange
+                        : Colors.red,
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
 
-          if (_selectedStandardId == null)
-            const Text('Select a class from the dropdown above to proceed.',
-                style: TextStyle(color: Colors.grey))
-          else ...[
-            Text('Selected Class: ${_standards.firstWhere(
-              (s) => s['id']?.toString() == _selectedStandardId,
-              orElse: () => {'name': _selectedStandardId},
-            )['name']}',
-                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
-            const SizedBox(height: 16),
-            ElevatedButton.icon(
-              icon: _loadingLedger
-                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : const Icon(Icons.group_add_outlined),
-              label: const Text('Generate Class Ledger (All Students)'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.indigo,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-              ),
-              onPressed: _loadingLedger
-                  ? null
-                  : () async {
-                      setState(() => _loadingLedger = true);
-                      try {
-                        final result = await _repo.generateLedger(
-                          _selectedStandardId!,
-                          academicYearId: _selectedYearId,
-                        );
-                        final created = result['created'] ?? 0;
-                        final skipped = result['skipped'] ?? 0;
-                        _setSuccess('Ledger generated: $created created, $skipped skipped.');
-                      } catch (e) {
-                        _setError(e.toString());
-                      } finally {
-                        setState(() => _loadingLedger = false);
-                      }
-                    },
-            ),
-            const SizedBox(height: 24),
-            const Divider(),
-            const SizedBox(height: 16),
-            const Text('Individual Student Assignment',
-                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-            const SizedBox(height: 8),
+          // Class-wise breakdown
+          if (byClass.isNotEmpty) ...[
             const Text(
-              'Use this for mid-year admissions, class transfers, or individual overrides.',
-              style: TextStyle(color: Colors.grey, fontSize: 13),
+              'Class-wise Collection',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
             ),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              icon: const Icon(Icons.person_add_outlined),
-              label: const Text('Generate for Individual Student'),
-              onPressed: _showStudentLedgerGenerateDialog,
+            const SizedBox(height: 8),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
+                headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
+                columns: const [
+                  DataColumn(label: Text('Class')),
+                  DataColumn(label: Text('Students')),
+                  DataColumn(label: Text('Billed')),
+                  DataColumn(label: Text('Collected')),
+                  DataColumn(label: Text('Outstanding')),
+                  DataColumn(label: Text('Defaulters')),
+                  DataColumn(label: Text('Collection %')),
+                ],
+                rows: byClass.map((c) {
+                  final cpct =
+                      (c['collection_percentage'] as num?)?.toDouble() ?? 0;
+                  return DataRow(
+                    cells: [
+                      DataCell(Text(c['standard_name']?.toString() ?? '-')),
+                      DataCell(
+                        Text(
+                          '${c['total_students'] ?? c['student_count'] ?? 0}',
+                        ),
+                      ),
+                      DataCell(
+                        Text(
+                          _fmt(c['total_billed'] ?? c['total_billed_amount']),
+                        ),
+                      ),
+                      DataCell(
+                        Text(_fmt(c['total_paid'] ?? c['total_paid_amount'])),
+                      ),
+                      DataCell(
+                        Text(
+                          _fmt(
+                            c['total_outstanding'] ??
+                                c['total_outstanding_amount'],
+                          ),
+                        ),
+                      ),
+                      DataCell(Text('${c['defaulters_count'] ?? 0}')),
+                      DataCell(
+                        Text(
+                          '${cpct.toStringAsFixed(1)}%',
+                          style: TextStyle(
+                            color: cpct >= 80
+                                ? Colors.green
+                                : cpct >= 50
+                                ? Colors.orange
+                                : Colors.red,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                }).toList(),
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+
+          // Status breakdown
+          if (byStatus.isNotEmpty) ...[
+            const Text(
+              'By Status',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+            ),
+            const SizedBox(height: 8),
+            ...byStatus.map((s) {
+              final st = (s['status'] as String? ?? '').toUpperCase();
+              final color = st == 'PAID'
+                  ? Colors.green
+                  : st == 'PARTIAL'
+                  ? Colors.orange
+                  : st == 'OVERDUE'
+                  ? Colors.red
+                  : Colors.blueGrey;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        color: color,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      st,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const Spacer(),
+                    Text('${s['ledgers'] ?? 0} ledgers'),
+                    const SizedBox(width: 16),
+                    Text(_fmt(s['paid_amount'])),
+                  ],
+                ),
+              );
+            }),
+            const SizedBox(height: 16),
+          ],
+
+          // Payment mode breakdown
+          if (byMode.isNotEmpty) ...[
+            const Text(
+              'By Payment Mode',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+            ),
+            const SizedBox(height: 8),
+            ...byMode.map(
+              (m) => Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.payment_outlined,
+                      size: 16,
+                      color: Colors.blueGrey,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      (m['payment_mode'] as String? ?? '').toUpperCase(),
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const Spacer(),
+                    Text('${m['transactions'] ?? 0} txns'),
+                    const SizedBox(width: 16),
+                    Text(_fmt(m['amount'])),
+                  ],
+                ),
+              ),
             ),
           ],
         ],
@@ -1439,475 +1279,56 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
     );
   }
 
-  // ── Tab 2: Student Ledger ───────────────────────────────────────────────────
+  // ── Tab 2: Defaulters ───────────────────────────────────────────────────────
 
-  Widget _buildStudentLedgerTab() {
-    final search = (_ledgerStudentSearch ?? '').trim().toLowerCase();
-    final filteredLedgers = search.isEmpty
-        ? _ledgers
-        : _ledgers.where((l) {
-            final name = (l.studentName ?? '').toLowerCase();
-            final adm = (l.admissionNumber ?? '').toLowerCase();
-            final feeHead = l.displayLabel.toLowerCase();
-            return name.contains(search) ||
-                adm.contains(search) ||
-                feeHead.contains(search);
-          }).toList();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Text(
-              '${filteredLedgers.length} ledger entries',
-              style: const TextStyle(color: Colors.grey),
-            ),
-            if (_selectedStandardId != null) ...[
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.indigo.shade50,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.indigo.shade200),
-                ),
-                child: Text(
-                  'Class filtered',
-                  style: TextStyle(
-                    color: Colors.indigo.shade700,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-            const SizedBox(width: 12),
-            DropdownButton<String?>(
-              value: _ledgerStatusFilter,
-              hint: const Text('All Statuses'),
-              items: [
-                const DropdownMenuItem<String?>(value: null, child: Text('All Statuses')),
-                ...['PENDING', 'PARTIAL', 'PAID', 'OVERDUE']
-                    .map((s) => DropdownMenuItem<String?>(value: s, child: Text(s))),
-              ],
-              onChanged: (v) {
-                setState(() => _ledgerStatusFilter = v);
-                if (_selectedStandardId != null) _loadLedgers();
-              },
-            ),
-            const Spacer(),
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              tooltip: 'Refresh',
-              onPressed: _loadLedgers,
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        TextFormField(
-          initialValue: _ledgerStudentSearch,
-          decoration: const InputDecoration(
-            hintText: 'Search student name, admission no., fee head',
-            prefixIcon: Icon(Icons.search),
-            border: OutlineInputBorder(),
-            isDense: true,
-          ),
-          onChanged: (v) => setState(() => _ledgerStudentSearch = v),
-        ),
-        const SizedBox(height: 8),
-
-        if (_loadingLedgers)
-          const Expanded(child: Center(child: CircularProgressIndicator()))
-        else if (filteredLedgers.isEmpty)
-          Expanded(
-            child: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.account_balance_wallet_outlined, size: 48, color: Colors.grey),
-                  const SizedBox(height: 12),
-                  const Text('No matching ledger entries found.',
-                      style: TextStyle(color: Colors.grey)),
-                  const SizedBox(height: 16),
-                  ElevatedButton.icon(
-                    icon: const Icon(Icons.add),
-                    label: const Text('Load Ledger'),
-                    onPressed: _loadLedgers,
-                  ),
-                ],
-              ),
-            ),
-          )
-        else
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                columnSpacing: 16,
-                columns: const [
-                  DataColumn(label: Text('Student')),
-                  DataColumn(label: Text('Adm. No.')),
-                  DataColumn(label: Text('Fee Head')),
-                  DataColumn(label: Text('Total'), numeric: true),
-                  DataColumn(label: Text('Paid'), numeric: true),
-                  DataColumn(label: Text('Outstanding'), numeric: true),
-                  DataColumn(label: Text('Due Date')),
-                  DataColumn(label: Text('Status')),
-                  DataColumn(label: Text('Action')),
-                ],
-                rows: filteredLedgers.map((l) {
-                  return DataRow(cells: [
-                    DataCell(Text(l.studentName ?? '-', style: const TextStyle(fontSize: 13))),
-                    DataCell(Text(l.admissionNumber ?? '-')),
-                    DataCell(
-                      Tooltip(
-                        message: l.feeCategoryLabel,
-                        child: Text(
-                          l.displayLabel,
-                          style: const TextStyle(fontSize: 13),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ),
-                    DataCell(Text(_fmt(l.totalAmount))),
-                    DataCell(Text(_fmt(l.paidAmount), style: const TextStyle(color: Colors.green))),
-                    DataCell(Text(
-                      _fmt(l.outstandingAmount),
-                      style: TextStyle(color: l.outstandingAmount > 0 ? Colors.orange.shade700 : Colors.grey),
-                    )),
-                    DataCell(Text(l.dueDate, style: TextStyle(
-                      color: l.status.toUpperCase() == 'OVERDUE' ? Colors.red : null,
-                      fontSize: 12,
-                    ))),
-                    DataCell(Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: l.statusColor.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: l.statusColor.withOpacity(0.4)),
-                      ),
-                      child: Text(l.status, style: TextStyle(color: l.statusColor, fontSize: 11, fontWeight: FontWeight.w600)),
-                    )),
-                    DataCell(
-                      l.hasOutstanding && _canEdit
-                          ? ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.green,
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                                textStyle: const TextStyle(fontSize: 12),
-                              ),
-                              onPressed: () => _showRecordPaymentDialog(l),
-                              child: const Text('Pay'),
-                            )
-                          : const Text('—', style: TextStyle(color: Colors.grey)),
-                    ),
-                  ]);
-                }).toList(),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-
-  // ── Tab 3: Record Payment (quick payment search) ────────────────────────────
-
-  Widget _buildPaymentTab() {
-    final search = (_ledgerStudentSearch ?? '').trim().toLowerCase();
-    final unpaid = _ledgers.where((l) => l.hasOutstanding).where((l) {
-      if (search.isEmpty) return true;
-      final name = (l.studentName ?? '').toLowerCase();
-      final adm = (l.admissionNumber ?? '').toLowerCase();
-      final feeHead = l.displayLabel.toLowerCase();
-      return name.contains(search) || adm.contains(search) || feeHead.contains(search);
-    }).toList();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Card(
-          elevation: 0,
-          color: Colors.orange.shade50,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-            side: BorderSide(color: Colors.orange.shade200),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Row(
-              children: [
-                Icon(Icons.info_outline, color: Colors.orange.shade700, size: 16),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Showing ${unpaid.length} outstanding entries for the selected class. '
-                    'Switch to the "Student Ledger" tab for full list with filters.',
-                    style: TextStyle(fontSize: 12, color: Colors.orange.shade800),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-
-        if (unpaid.isEmpty)
-          Expanded(
-            child: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.check_circle_outline, size: 48, color: Colors.green),
-                  const SizedBox(height: 12),
-                  const Text('All fees collected! No outstanding entries.'),
-                  const SizedBox(height: 16),
-                  OutlinedButton.icon(
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('Refresh'),
-                    onPressed: _loadLedgers,
-                  ),
-                ],
-              ),
-            ),
-          )
-        else
-          Expanded(
-            child: ListView.separated(
-              itemCount: unpaid.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
-              itemBuilder: (ctx, i) {
-                final l = unpaid[i];
-                return ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: l.statusColor.withOpacity(0.15),
-                    child: Icon(Icons.person_outline, color: l.statusColor),
-                  ),
-                  title: Text(
-                    '${l.studentName ?? 'Unknown'} (${l.admissionNumber ?? '-'})',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  subtitle: Text('${l.displayLabel}  •  Due: ${l.dueDate}'),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Text(
-                            _fmt(l.outstandingAmount),
-                            style: const TextStyle(fontWeight: FontWeight.w700, color: Colors.orange),
-                          ),
-                          Text(l.status, style: TextStyle(color: l.statusColor, fontSize: 11)),
-                        ],
-                      ),
-                      const SizedBox(width: 8),
-                      if (_canEdit)
-                        ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green,
-                            foregroundColor: Colors.white,
-                          ),
-                          onPressed: () => _showRecordPaymentDialog(l),
-                          child: const Text('Pay'),
-                        ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ),
-      ],
-    );
-  }
-
-  // ── Tab 4: Analytics & Defaulters ──────────────────────────────────────────
-
-  Widget _buildAnalyticsTab() {
-    if (_analyticsLoading) return const Center(child: CircularProgressIndicator());
-
-    if (_analytics.isEmpty) {
+  Widget _buildDefaultersTab() {
+    if (_defaulters.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.bar_chart_outlined, size: 56, color: Colors.grey),
-            const SizedBox(height: 16),
+            const Icon(
+              Icons.check_circle_outline,
+              size: 48,
+              color: Colors.green,
+            ),
+            const SizedBox(height: 12),
+            const Text('No defaulters found.', style: TextStyle(fontSize: 16)),
+            const SizedBox(height: 12),
             ElevatedButton.icon(
               icon: const Icon(Icons.refresh),
-              label: const Text('Load Analytics'),
-              onPressed: _loadAnalytics,
+              label: const Text('Refresh'),
+              onPressed: _loadDefaulters,
             ),
           ],
         ),
       );
     }
 
-    final summary = _analytics['summary'] as Map<String, dynamic>? ?? {};
-    final byClass = _analytics['by_class'] as List<dynamic>? ?? [];
-    final totalBilled = (summary['total_billed_amount'] as num?)?.toDouble() ?? 0;
-    final totalPaid = (summary['total_paid_amount'] as num?)?.toDouble() ?? 0;
-    final totalOutstanding = (summary['total_outstanding_amount'] as num?)?.toDouble() ?? 0;
-    final defaultersCount = summary['defaulters_count'] ?? 0;
-    final pct = (summary['collection_percentage'] as num?)?.toDouble() ?? 0;
-
     return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ── KPI Cards ────────────────────────────────────────────────────
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              _KpiCard(label: 'Total Billed', value: _fmt(totalBilled), color: Colors.indigo),
-              _KpiCard(label: 'Collected', value: _fmt(totalPaid), color: Colors.green),
-              _KpiCard(label: 'Outstanding', value: _fmt(totalOutstanding), color: Colors.orange),
-              _KpiCard(label: 'Defaulters', value: '$defaultersCount', color: Colors.red),
-              _KpiCard(
-                label: 'Collection %',
-                value: '${pct.toStringAsFixed(1)}%',
-                color: pct >= 80 ? Colors.green : pct >= 50 ? Colors.orange : Colors.red,
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-
-          // ── Class-wise Breakdown ─────────────────────────────────────────
-          if (byClass.isNotEmpty) ...[
-            const Text('Class-wise Breakdown',
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-            const SizedBox(height: 12),
-            ...byClass.map((c) {
-              final cls = c as Map<String, dynamic>;
-              final billed = (cls['total_billed'] as num?)?.toDouble() ?? 0;
-              final paid = (cls['total_paid'] as num?)?.toDouble() ?? 0;
-              final p = billed > 0 ? (paid / billed).clamp(0.0, 1.0) : 0.0;
-              return Card(
-                elevation: 0,
-                margin: const EdgeInsets.only(bottom: 8),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  side: BorderSide(color: Colors.grey.shade200),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Text(cls['standard_name']?.toString() ?? '',
-                              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                          if (cls['section'] != null && cls['section'].toString().isNotEmpty)
-                            Text(' – ${cls['section']}', style: const TextStyle(color: Colors.grey)),
-                          const Spacer(),
-                          Text('${(p * 100).toStringAsFixed(0)}%',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w700,
-                                color: p >= 0.8 ? Colors.green : p >= 0.5 ? Colors.orange : Colors.red,
-                              )),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Row(children: [
-                        Text('Billed: ${_fmt(billed)}  ', style: const TextStyle(fontSize: 12)),
-                        Text('Paid: ${_fmt(paid)}  ', style: const TextStyle(fontSize: 12, color: Colors.green)),
-                        Text(
-                          'Defaulters: ${cls['defaulters_count'] ?? 0}',
-                          style: const TextStyle(fontSize: 12, color: Colors.red),
-                        ),
-                      ]),
-                      const SizedBox(height: 6),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(4),
-                        child: LinearProgressIndicator(
-                          value: p,
-                          minHeight: 6,
-                          backgroundColor: Colors.grey.shade200,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            p >= 0.8 ? Colors.green : p >= 0.5 ? Colors.orange : Colors.red,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }),
-          ],
-
-          // ── Defaulters List ───────────────────────────────────────────────
-          if (_defaulters.isNotEmpty) ...[
-            const SizedBox(height: 24),
-            Row(children: [
-              const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 20),
-              const SizedBox(width: 6),
-              Text(
-                'Defaulters (${_defaulters.length})',
-                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: Colors.red),
-              ),
-            ]),
-            const SizedBox(height: 12),
-            ...(_defaulters.map((d) => Card(
-                  elevation: 0,
-                  margin: const EdgeInsets.only(bottom: 8),
-                  color: Colors.red.shade50,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    side: BorderSide(color: Colors.red.shade200),
-                  ),
-                  child: ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: Colors.red.shade100,
-                      child: const Icon(Icons.person_outline, color: Colors.red),
-                    ),
-                    title: Text(
-                      d['student_name']?.toString() ?? 'Unknown Student',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    subtitle: Text(
-                      'Adm: ${d['admission_number'] ?? '-'}  |  Overdue Entries: ${d['overdue_ledgers']}',
-                    ),
-                    trailing: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(
-                          _fmt((d['total_overdue_amount'] as num?)?.toDouble() ?? 0),
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w700, color: Colors.red, fontSize: 15),
-                        ),
-                        if (d['oldest_due_date'] != null)
-                          Text('Since ${d['oldest_due_date']}',
-                              style: const TextStyle(fontSize: 11, color: Colors.red)),
-                      ],
-                    ),
-                  ),
-                ))),
-          ] else if (!_analyticsLoading && _analytics.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.green.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.green.shade200),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.check_circle, color: Colors.green.shade700),
-                  const SizedBox(width: 8),
-                  const Text('No defaulters! All students are within their payment schedule.'),
+      scrollDirection: Axis.horizontal,
+      child: DataTable(
+        headingRowColor: WidgetStateProperty.all(Colors.red.shade50),
+        columns: const [
+          DataColumn(label: Text('Adm. No.')),
+          DataColumn(label: Text('Name')),
+          DataColumn(label: Text('Overdue Entries')),
+          DataColumn(label: Text('Total Due')),
+          DataColumn(label: Text('Oldest Due Date')),
+        ],
+        rows: _defaulters
+            .map(
+              (d) => DataRow(
+                cells: [
+                  DataCell(Text(d['admission_number']?.toString() ?? '-')),
+                  DataCell(Text(d['student_name']?.toString() ?? '-')),
+                  DataCell(Text('${d['overdue_ledgers'] ?? 0}')),
+                  DataCell(Text(_fmt(d['total_overdue_amount']))),
+                  DataCell(Text(d['oldest_due_date']?.toString() ?? '-')),
                 ],
               ),
-            ),
-          ],
-
-          const SizedBox(height: 80),
-        ],
+            )
+            .toList(),
       ),
     );
   }
@@ -1916,27 +1337,45 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
 // ── KPI Card ──────────────────────────────────────────────────────────────────
 
 class _KpiCard extends StatelessWidget {
-  const _KpiCard({required this.label, required this.value, required this.color});
+  const _KpiCard(this.label, this.value, this.icon, this.color);
   final String label;
   final String value;
+  final IconData icon;
   final Color color;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 150,
+      width: 170,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: color.withOpacity(0.08),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withOpacity(0.3)),
+        border: Border.all(color: color.withOpacity(0.25)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Text(label, style: TextStyle(color: color.withOpacity(0.8), fontSize: 12)),
-          const SizedBox(height: 4),
-          Text(value, style: TextStyle(color: color, fontWeight: FontWeight.w800, fontSize: 16)),
+          Icon(icon, color: color, size: 22),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: color,
+                  ),
+                ),
+                Text(
+                  label,
+                  style: TextStyle(fontSize: 11, color: color.withOpacity(0.7)),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );

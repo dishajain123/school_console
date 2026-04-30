@@ -21,6 +21,9 @@ class _RosterStudent {
     required this.sectionName,
     required this.status,
     required this.joinedOn,
+    this.parentName,
+    this.parentPhone,
+    this.latestBehaviour,
   });
 
   final String mappingId;
@@ -31,6 +34,9 @@ class _RosterStudent {
   final String? sectionName;
   final String status;
   final String? joinedOn;
+  final String? parentName;
+  final String? parentPhone;
+  final String? latestBehaviour;
 
   factory _RosterStudent.fromJson(Map<String, dynamic> json) {
     return _RosterStudent(
@@ -42,6 +48,14 @@ class _RosterStudent {
       sectionName: json['section_name'] as String?,
       status: json['status']?.toString() ?? 'ACTIVE',
       joinedOn: json['joined_on'] as String?,
+      parentName:
+          (json['parent'] as Map<String, dynamic>?)?['full_name'] as String?,
+      parentPhone:
+          (json['parent'] as Map<String, dynamic>?)?['phone'] as String?,
+      latestBehaviour:
+          (json['behaviour_summary']
+                  as Map<String, dynamic>?)?['latest_incident_type']
+              ?.toString(),
     );
   }
 }
@@ -57,7 +71,9 @@ class _RosterRepository {
   }
 
   Future<List<Map<String, dynamic>>> listStandards(
-      String schoolId, String academicYearId) async {
+    String schoolId,
+    String academicYearId,
+  ) async {
     return _api.listStandards(
       schoolId: schoolId,
       academicYearId: academicYearId,
@@ -65,7 +81,10 @@ class _RosterRepository {
   }
 
   Future<List<Map<String, dynamic>>> listSections(
-      String schoolId, String standardId, String academicYearId) async {
+    String schoolId,
+    String standardId,
+    String academicYearId,
+  ) async {
     return _api.listSections(
       schoolId: schoolId,
       standardId: standardId,
@@ -83,6 +102,10 @@ class _RosterRepository {
       academicYearId: academicYearId,
       sectionId: sectionId,
     );
+  }
+
+  Future<Map<String, dynamic>> getStudentById(String studentId) async {
+    return _api.getStudentById(studentId);
   }
 }
 
@@ -120,11 +143,15 @@ class _ClassRosterScreenState extends ConsumerState<ClassRosterScreen> {
     _loadYears();
   }
 
-  String? get _schoolId => ref.read(authControllerProvider).valueOrNull?.schoolId;
+  String? get _schoolId =>
+      ref.read(authControllerProvider).valueOrNull?.schoolId;
 
   Future<void> _loadYears() async {
     if (_schoolId == null) return;
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final years = await _repo.listYears(_schoolId!);
       setState(() => _years = years);
@@ -158,7 +185,8 @@ class _ClassRosterScreenState extends ConsumerState<ClassRosterScreen> {
   }
 
   Future<void> _onStandardChanged(String? standardId) async {
-    if (_schoolId == null || _selectedYearId == null || standardId == null) return;
+    if (_schoolId == null || _selectedYearId == null || standardId == null)
+      return;
     setState(() {
       _selectedStandardId = standardId;
       _selectedSectionId = null;
@@ -168,7 +196,11 @@ class _ClassRosterScreenState extends ConsumerState<ClassRosterScreen> {
       _error = null;
     });
     try {
-      final secs = await _repo.listSections(_schoolId!, standardId, _selectedYearId!);
+      final secs = await _repo.listSections(
+        _schoolId!,
+        standardId,
+        _selectedYearId!,
+      );
       setState(() => _sections = secs);
     } catch (e) {
       setState(() => _error = e.toString());
@@ -179,7 +211,10 @@ class _ClassRosterScreenState extends ConsumerState<ClassRosterScreen> {
 
   Future<void> _loadRoster() async {
     if (_selectedStandardId == null || _selectedYearId == null) return;
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final data = await _repo.getRoster(
         standardId: _selectedStandardId!,
@@ -187,10 +222,39 @@ class _ClassRosterScreenState extends ConsumerState<ClassRosterScreen> {
         sectionId: _selectedSectionId,
       );
       final mappings = (data['mappings'] as List?) ?? [];
+      final baseRoster = mappings
+          .map(
+            (e) => _RosterStudent.fromJson(Map<String, dynamic>.from(e as Map)),
+          )
+          .toList();
+
+      final enriched = <_RosterStudent>[];
+      for (final row in baseRoster) {
+        if (row.studentId.isEmpty) {
+          enriched.add(row);
+          continue;
+        }
+        try {
+          final detail = await _repo.getStudentById(row.studentId);
+          final merged = <String, dynamic>{
+            ...detail,
+            'id': row.mappingId,
+            'student_id': row.studentId,
+            'student_name': row.studentName,
+            'admission_number': row.admissionNumber,
+            'roll_number': row.rollNumber,
+            'section_name': row.sectionName,
+            'status': row.status,
+            'joined_on': row.joinedOn,
+          };
+          enriched.add(_RosterStudent.fromJson(merged));
+        } catch (_) {
+          enriched.add(row);
+        }
+      }
+
       setState(() {
-        _roster = mappings
-            .map((e) => _RosterStudent.fromJson(Map<String, dynamic>.from(e as Map)))
-            .toList();
+        _roster = enriched;
         _activeCount = (data['active_count'] as num?)?.toInt() ?? 0;
         _leftCount = (data['left_count'] as num?)?.toInt() ?? 0;
         _totalEnrolled = (data['total_enrolled'] as num?)?.toInt() ?? 0;
@@ -223,14 +287,19 @@ class _ClassRosterScreenState extends ConsumerState<ClassRosterScreen> {
                     decoration: const InputDecoration(
                       labelText: 'Academic Year',
                       border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
                     ),
                     value: _selectedYearId,
                     items: _years
-                        .map((y) => DropdownMenuItem<String>(
-                              value: y['id']?.toString(),
-                              child: Text(y['name']?.toString() ?? ''),
-                            ))
+                        .map(
+                          (y) => DropdownMenuItem<String>(
+                            value: y['id']?.toString(),
+                            child: Text(y['name']?.toString() ?? ''),
+                          ),
+                        )
                         .toList(),
                     onChanged: _onYearChanged,
                   ),
@@ -241,14 +310,19 @@ class _ClassRosterScreenState extends ConsumerState<ClassRosterScreen> {
                     decoration: const InputDecoration(
                       labelText: 'Class',
                       border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
                     ),
                     value: _selectedStandardId,
                     items: _standards
-                        .map((s) => DropdownMenuItem<String>(
-                              value: s['id']?.toString(),
-                              child: Text(s['name']?.toString() ?? ''),
-                            ))
+                        .map(
+                          (s) => DropdownMenuItem<String>(
+                            value: s['id']?.toString(),
+                            child: Text(s['name']?.toString() ?? ''),
+                          ),
+                        )
                         .toList(),
                     onChanged: _onStandardChanged,
                   ),
@@ -259,16 +333,23 @@ class _ClassRosterScreenState extends ConsumerState<ClassRosterScreen> {
                     decoration: const InputDecoration(
                       labelText: 'Section',
                       border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
                     ),
                     value: _selectedSectionId,
                     items: [
                       const DropdownMenuItem<String?>(
-                          value: null, child: Text('All Sections')),
-                      ..._sections.map((s) => DropdownMenuItem<String?>(
-                            value: s['id']?.toString(),
-                            child: Text('Section ${s['name']?.toString() ?? ''}'),
-                          )),
+                        value: null,
+                        child: Text('All Sections'),
+                      ),
+                      ..._sections.map(
+                        (s) => DropdownMenuItem<String?>(
+                          value: s['id']?.toString(),
+                          child: Text('Section ${s['name']?.toString() ?? ''}'),
+                        ),
+                      ),
                     ],
                     onChanged: (v) => setState(() => _selectedSectionId = v),
                   ),
@@ -278,11 +359,16 @@ class _ClassRosterScreenState extends ConsumerState<ClassRosterScreen> {
                       ? const SizedBox(
                           width: 14,
                           height: 14,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
                         )
                       : const Icon(Icons.search),
                   label: const Text('Load Roster'),
-                  onPressed: (_loading || _selectedStandardId == null) ? null : _loadRoster,
+                  onPressed: (_loading || _selectedStandardId == null)
+                      ? null
+                      : _loadRoster,
                 ),
               ],
             ),
@@ -321,15 +407,21 @@ class _ClassRosterScreenState extends ConsumerState<ClassRosterScreen> {
             // ── Roster Table ─────────────────────────────────────────────
             Expanded(
               child: _roster.isEmpty && !_loading
-                  ? const Center(child: Text('Select a class and click Load Roster.'))
+                  ? const Center(
+                      child: Text('Select a class and click Load Roster.'),
+                    )
                   : SingleChildScrollView(
                       child: DataTable(
-                        headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
+                        headingRowColor: WidgetStateProperty.all(
+                          Colors.grey.shade100,
+                        ),
                         columns: const [
                           DataColumn(label: Text('Admission #')),
                           DataColumn(label: Text('Name')),
                           DataColumn(label: Text('Roll No.')),
                           DataColumn(label: Text('Section')),
+                          DataColumn(label: Text('Parent')),
+                          DataColumn(label: Text('Behaviour')),
                           DataColumn(label: Text('Status')),
                           DataColumn(label: Text('Joined On')),
                         ],
@@ -337,32 +429,43 @@ class _ClassRosterScreenState extends ConsumerState<ClassRosterScreen> {
                           final statusColor = s.status == 'ACTIVE'
                               ? Colors.green
                               : s.status == 'LEFT' || s.status == 'TRANSFERRED'
-                                  ? Colors.red
-                                  : Colors.orange;
-                          return DataRow(cells: [
-                            DataCell(Text(s.admissionNumber ?? '-')),
-                            DataCell(Text(s.studentName ?? '-')),
-                            DataCell(Text(s.rollNumber ?? '-')),
-                            DataCell(Text(s.sectionName ?? '-')),
-                            DataCell(
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: statusColor.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Text(
-                                  s.status,
-                                  style: TextStyle(
+                              ? Colors.red
+                              : Colors.orange;
+                          return DataRow(
+                            cells: [
+                              DataCell(Text(s.admissionNumber ?? '-')),
+                              DataCell(Text(s.studentName ?? '-')),
+                              DataCell(Text(s.rollNumber ?? '-')),
+                              DataCell(Text(s.sectionName ?? '-')),
+                              DataCell(
+                                Text(s.parentName ?? s.parentPhone ?? '-'),
+                              ),
+                              DataCell(
+                                Text(_formatBehaviour(s.latestBehaviour)),
+                              ),
+                              DataCell(
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: statusColor.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    s.status,
+                                    style: TextStyle(
                                       color: statusColor,
                                       fontSize: 11,
-                                      fontWeight: FontWeight.w600),
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
-                            DataCell(Text(s.joinedOn ?? '-')),
-                          ]);
+                              DataCell(Text(s.joinedOn ?? '-')),
+                            ],
+                          );
                         }).toList(),
                       ),
                     ),
@@ -371,5 +474,12 @@ class _ClassRosterScreenState extends ConsumerState<ClassRosterScreen> {
         ),
       ),
     );
+  }
+
+  String _formatBehaviour(String? value) {
+    if (value == null || value.isEmpty) return '-';
+    if (value == 'POSITIVE') return 'Positive';
+    if (value == 'NEGATIVE') return 'Negative';
+    return 'Neutral';
   }
 }

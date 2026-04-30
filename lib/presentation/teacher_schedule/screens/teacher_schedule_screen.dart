@@ -20,6 +20,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/api_constants.dart';
 import '../../../core/network/dio_client.dart';
@@ -142,11 +143,13 @@ class _TeacherScheduleScreenState
         (y) => y['is_active'] == true,
         orElse: () => years.isNotEmpty ? years.first : {},
       );
+      final resolvedYearId = active.isNotEmpty ? active['id']?.toString() : null;
+      final validYearId = years.any((y) => y['id']?.toString() == resolvedYearId)
+          ? resolvedYearId
+          : null;
       setState(() {
         _years = years;
-        _selectedYearId = active.isNotEmpty
-            ? active['id']?.toString()
-            : null;
+        _selectedYearId = validYearId;
         _selectedYearName = active.isNotEmpty
             ? active['name']?.toString()
             : null;
@@ -196,11 +199,22 @@ class _TeacherScheduleScreenState
 
   @override
   Widget build(BuildContext context) {
+    final dropdownYearValue = _years.any((y) => y['id']?.toString() == _selectedYearId)
+        ? _selectedYearId
+        : null;
     final grouped = _grouped;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('My Class Schedule'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded),
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            }
+          },
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -223,7 +237,7 @@ class _TeacherScheduleScreenState
                   const SizedBox(width: 8),
                   Expanded(
                     child: DropdownButton<String>(
-                      value: _selectedYearId,
+                      value: dropdownYearValue,
                       isExpanded: true,
                       underline: const SizedBox.shrink(),
                       items: _years

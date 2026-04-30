@@ -191,6 +191,7 @@ class _FeeRepository {
     required String dueDate,
     String? customFeeHead,
     String? description,
+    List<Map<String, dynamic>>? installmentPlan,
   }) async {
     await _dio.dio.post<dynamic>(
       '/fees/structures/batch',
@@ -206,6 +207,8 @@ class _FeeRepository {
               'custom_fee_head': customFeeHead,
             if (description != null && description.isNotEmpty)
               'description': description,
+            if (installmentPlan != null && installmentPlan.isNotEmpty)
+              'installment_plan': installmentPlan,
           }
         ],
       },
@@ -399,6 +402,12 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
     'RTGS',
     'OTHER',
   ];
+  static const _paymentCycles = [
+    'ONE_TIME',
+    'MONTHLY',
+    'QUARTERLY',
+    'YEARLY',
+  ];
 
   @override
   void initState() {
@@ -425,6 +434,55 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
 
   String _fmt(double v) =>
       '₹${v.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}';
+
+  DateTime _parseDateSafe(String? v, DateTime fallback) {
+    if (v == null || v.trim().isEmpty) return fallback;
+    return DateTime.tryParse(v) ?? fallback;
+  }
+
+  String _toIsoDate(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  List<Map<String, dynamic>> _buildInstallmentPlan({
+    required String cycle,
+    required double totalAmount,
+    required DateTime firstDueDate,
+  }) {
+    if (cycle == 'ONE_TIME' || cycle == 'YEARLY') {
+      return [
+        {
+          'name': cycle == 'YEARLY' ? 'Yearly' : 'One Time',
+          'due_date': _toIsoDate(firstDueDate),
+          'amount': double.parse(totalAmount.toStringAsFixed(2)),
+        }
+      ];
+    }
+
+    final count = cycle == 'QUARTERLY' ? 4 : 12;
+    final monthsStep = cycle == 'QUARTERLY' ? 3 : 1;
+    final base = totalAmount / count;
+    final roundedBase = double.parse(base.toStringAsFixed(2));
+    var assigned = 0.0;
+    final out = <Map<String, dynamic>>[];
+    for (var i = 0; i < count; i++) {
+      final dueDate = DateTime(
+        firstDueDate.year,
+        firstDueDate.month + (i * monthsStep),
+        firstDueDate.day,
+      );
+      final isLast = i == count - 1;
+      final installmentAmount = isLast
+          ? double.parse((totalAmount - assigned).toStringAsFixed(2))
+          : roundedBase;
+      assigned += installmentAmount;
+      out.add({
+        'name': cycle == 'QUARTERLY' ? 'Quarter ${i + 1}' : 'Month ${i + 1}',
+        'due_date': _toIsoDate(dueDate),
+        'amount': installmentAmount,
+      });
+    }
+    return out;
+  }
 
   void _setError(String? e) => setState(() { _error = e; _success = null; });
   void _setSuccess(String s) => setState(() { _success = s; _error = null; });
@@ -489,6 +547,7 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
     } finally {
       setState(() => _loadingStructures = false);
     }
+    await _loadLedgers();
   }
 
   // ── Tab 2 — Admin Ledger List ───────────────────────────────────────────────
@@ -546,6 +605,7 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
     final descCtrl = TextEditingController();
     String? dueDate;
     String selectedCat = _feeCats.first;
+    String paymentCycle = _paymentCycles.first;
 
     await showDialog<void>(
       context: context,
@@ -566,6 +626,22 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                         .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                         .toList(),
                     onChanged: (v) { if (v != null) setDlg(() => selectedCat = v); },
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    decoration: const InputDecoration(
+                      labelText: 'Payment Cycle *',
+                      border: OutlineInputBorder(),
+                    ),
+                    value: paymentCycle,
+                    items: _paymentCycles
+                        .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                        .toList(),
+                    onChanged: (v) {
+                      if (v != null) {
+                        setDlg(() => paymentCycle = v);
+                      }
+                    },
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
@@ -628,6 +704,23 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                 }
                 Navigator.pop(ctx);
                 try {
+                  final selectedYear = _years.firstWhere(
+                    (y) => y['id']?.toString() == _selectedYearId,
+                    orElse: () => <String, dynamic>{},
+                  );
+                  final defaultStart = DateTime.now();
+                  final yearStart = _parseDateSafe(
+                    selectedYear['start_date']?.toString(),
+                    defaultStart,
+                  );
+                  final firstDue = dueDate != null
+                      ? _parseDateSafe(dueDate, yearStart)
+                      : yearStart;
+                  final installmentPlan = _buildInstallmentPlan(
+                    cycle: paymentCycle,
+                    totalAmount: amount,
+                    firstDueDate: firstDue,
+                  );
                   await _repo.createStructure(
                     standardId: _selectedStandardId!,
                     academicYearId: _selectedYearId!,
@@ -638,6 +731,7 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                         ? null
                         : customHeadCtrl.text.trim(),
                     description: descCtrl.text.trim().isEmpty ? null : descCtrl.text.trim(),
+                    installmentPlan: installmentPlan,
                   );
                   await _loadStructures(_selectedStandardId!);
                   _setSuccess('Fee structure created successfully.');
@@ -761,8 +855,10 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
     final amountCtrl = TextEditingController(text: ledger.outstandingAmount.toStringAsFixed(2));
     final refCtrl = TextEditingController();
     final txnCtrl = TextEditingController();
+    final notesCtrl = TextEditingController();
     String paymentMode = 'CASH';
     String paymentDate = DateTime.now().toIso8601String().substring(0, 10);
+    bool verified = true;
 
     await showDialog<void>(
       context: context,
@@ -818,6 +914,47 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                     decoration: const InputDecoration(labelText: 'Transaction ID (UPI/Bank)', border: OutlineInputBorder()),
                   ),
                   const SizedBox(height: 12),
+                  TextFormField(
+                    controller: notesCtrl,
+                    minLines: 2,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                      labelText: 'Verification Notes (optional)',
+                      border: OutlineInputBorder(),
+                      hintText: 'Any verification note by admin',
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  CheckboxListTile(
+                    value: verified,
+                    contentPadding: EdgeInsets.zero,
+                    onChanged: (v) => setDlg(() => verified = v ?? false),
+                    title: const Text('I have verified this payment entry'),
+                    controlAffinity: ListTileControlAffinity.leading,
+                  ),
+                  const SizedBox(height: 6),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.blue.shade200),
+                    ),
+                    child: Text(
+                      amountCtrl.text.trim().isEmpty
+                          ? 'Final status will be auto-computed from amount.'
+                          : 'Expected status: ${(() {
+                              final entered = double.tryParse(amountCtrl.text.trim()) ?? 0;
+                              final remaining = (ledger.outstandingAmount - entered);
+                              if (remaining <= 0.01) return 'PAID';
+                              if (entered > 0) return 'PARTIAL';
+                              return 'PENDING';
+                            })()}',
+                      style: const TextStyle(fontSize: 12, color: Colors.blueGrey),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   OutlinedButton.icon(
                     icon: const Icon(Icons.calendar_today, size: 16),
                     label: Text('Payment Date: $paymentDate'),
@@ -851,8 +988,18 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                   Navigator.pop(ctx);
                   return;
                 }
+                if (!verified) {
+                  _setError('Please verify payment details before recording.');
+                  Navigator.pop(ctx);
+                  return;
+                }
                 Navigator.pop(ctx);
                 try {
+                  final note = notesCtrl.text.trim();
+                  final txn = txnCtrl.text.trim();
+                  final mergedTxn = note.isEmpty
+                      ? (txn.isEmpty ? null : txn)
+                      : (txn.isEmpty ? 'NOTE:$note' : '$txn | NOTE:$note');
                   await _repo.recordPayment(
                     studentId: ledger.studentId,
                     feeLedgerId: ledger.id,
@@ -860,7 +1007,7 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                     paymentMode: paymentMode,
                     paymentDate: paymentDate,
                     referenceNumber: refCtrl.text.trim().isEmpty ? null : refCtrl.text.trim(),
-                    transactionRef: txnCtrl.text.trim().isEmpty ? null : txnCtrl.text.trim(),
+                    transactionRef: mergedTxn,
                   );
                   await _loadLedgers();
                   _setSuccess('Payment of ${_fmt(amount)} recorded for ${ledger.studentName ?? 'student'}.');
@@ -1068,7 +1215,7 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                       Tab(text: 'Analytics & Defaulters'),
                     ],
                     onTap: (i) {
-                      if (i == 2 && _ledgers.isEmpty && _selectedStandardId != null) {
+                      if (i == 2 && _ledgers.isEmpty) {
                         _loadLedgers();
                       }
                       if (i == 4 && _analytics.isEmpty) _loadAnalytics();
@@ -1295,15 +1442,46 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
   // ── Tab 2: Student Ledger ───────────────────────────────────────────────────
 
   Widget _buildStudentLedgerTab() {
+    final search = (_ledgerStudentSearch ?? '').trim().toLowerCase();
+    final filteredLedgers = search.isEmpty
+        ? _ledgers
+        : _ledgers.where((l) {
+            final name = (l.studentName ?? '').toLowerCase();
+            final adm = (l.admissionNumber ?? '').toLowerCase();
+            final feeHead = l.displayLabel.toLowerCase();
+            return name.contains(search) ||
+                adm.contains(search) ||
+                feeHead.contains(search);
+          }).toList();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
             Text(
-              '${_ledgers.length} ledger entries',
+              '${filteredLedgers.length} ledger entries',
               style: const TextStyle(color: Colors.grey),
             ),
+            if (_selectedStandardId != null) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.indigo.shade50,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.indigo.shade200),
+                ),
+                child: Text(
+                  'Class filtered',
+                  style: TextStyle(
+                    color: Colors.indigo.shade700,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(width: 12),
             DropdownButton<String?>(
               value: _ledgerStatusFilter,
@@ -1322,19 +1500,26 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
             IconButton(
               icon: const Icon(Icons.refresh),
               tooltip: 'Refresh',
-              onPressed: _selectedStandardId != null ? _loadLedgers : null,
+              onPressed: _loadLedgers,
             ),
           ],
         ),
         const SizedBox(height: 8),
+        TextFormField(
+          initialValue: _ledgerStudentSearch,
+          decoration: const InputDecoration(
+            hintText: 'Search student name, admission no., fee head',
+            prefixIcon: Icon(Icons.search),
+            border: OutlineInputBorder(),
+            isDense: true,
+          ),
+          onChanged: (v) => setState(() => _ledgerStudentSearch = v),
+        ),
+        const SizedBox(height: 8),
 
-        if (_selectedStandardId == null)
-          const Expanded(
-            child: Center(child: Text('Select a class to view ledger entries.', style: TextStyle(color: Colors.grey))),
-          )
-        else if (_loadingLedgers)
+        if (_loadingLedgers)
           const Expanded(child: Center(child: CircularProgressIndicator()))
-        else if (_ledgers.isEmpty)
+        else if (filteredLedgers.isEmpty)
           Expanded(
             child: Center(
               child: Column(
@@ -1342,7 +1527,7 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                 children: [
                   const Icon(Icons.account_balance_wallet_outlined, size: 48, color: Colors.grey),
                   const SizedBox(height: 12),
-                  const Text('No ledger entries. Generate the ledger first.',
+                  const Text('No matching ledger entries found.',
                       style: TextStyle(color: Colors.grey)),
                   const SizedBox(height: 16),
                   ElevatedButton.icon(
@@ -1371,7 +1556,7 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                   DataColumn(label: Text('Status')),
                   DataColumn(label: Text('Action')),
                 ],
-                rows: _ledgers.map((l) {
+                rows: filteredLedgers.map((l) {
                   return DataRow(cells: [
                     DataCell(Text(l.studentName ?? '-', style: const TextStyle(fontSize: 13))),
                     DataCell(Text(l.admissionNumber ?? '-')),
@@ -1430,7 +1615,14 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
   // ── Tab 3: Record Payment (quick payment search) ────────────────────────────
 
   Widget _buildPaymentTab() {
-    final unpaid = _ledgers.where((l) => l.hasOutstanding).toList();
+    final search = (_ledgerStudentSearch ?? '').trim().toLowerCase();
+    final unpaid = _ledgers.where((l) => l.hasOutstanding).where((l) {
+      if (search.isEmpty) return true;
+      final name = (l.studentName ?? '').toLowerCase();
+      final adm = (l.admissionNumber ?? '').toLowerCase();
+      final feeHead = l.displayLabel.toLowerCase();
+      return name.contains(search) || adm.contains(search) || feeHead.contains(search);
+    }).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1461,9 +1653,7 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
         ),
         const SizedBox(height: 12),
 
-        if (_selectedStandardId == null)
-          const Expanded(child: Center(child: Text('Select a class to record payments.')))
-        else if (unpaid.isEmpty)
+        if (unpaid.isEmpty)
           Expanded(
             child: Center(
               child: Column(

@@ -1,3 +1,4 @@
+//Users/dishajain/Desktop/admin_console/lib/presentation/approvals/widgets/user_detail_card.dart
 import 'package:flutter/material.dart';
 
 import '../../../data/models/registration/registration_request.dart';

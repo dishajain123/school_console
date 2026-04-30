@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:dio/dio.dart';
 import 'dart:async';
 
 import '../../../core/constants/route_constants.dart';
@@ -178,6 +179,25 @@ class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
     final v = value.trim();
     if (v.isEmpty) return false;
     return _uuidRegex.hasMatch(v);
+  }
+
+  String _friendlyError(Object error) {
+    if (error is DioException) {
+      final data = error.response?.data;
+      if (data is Map) {
+        final msg = data['message']?.toString();
+        if (msg != null && msg.trim().isNotEmpty) return msg;
+        final detail = data['detail']?.toString();
+        if (detail != null && detail.trim().isNotEmpty) return detail;
+        final err = data['error'];
+        if (err is Map) {
+          final d = err['details']?.toString();
+          if (d != null && d.trim().isNotEmpty) return d;
+        }
+      }
+      return error.message ?? 'Request failed';
+    }
+    return error.toString();
   }
 
   Future<void> _loadYears() async {
@@ -746,16 +766,20 @@ class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
                             if (studentId.isNotEmpty) {
                               resolvedStudentIds.add(studentId);
                             }
-                          } catch (_) {
+                          } catch (createErr) {
                             // If profile already exists, resolve and continue.
-                            final profile = await _repo.getRoleProfileByUserId(userId);
-                            final existingStudentId =
-                                (profile['student_id'] ?? '').toString();
-                            if (existingStudentId.isNotEmpty) {
-                              resolvedStudentIds.add(existingStudentId);
-                            } else {
-                              rethrow;
+                            try {
+                              final profile = await _repo.getRoleProfileByUserId(userId);
+                              final existingStudentId =
+                                  (profile['student_id'] ?? '').toString();
+                              if (existingStudentId.isNotEmpty) {
+                                resolvedStudentIds.add(existingStudentId);
+                                continue;
+                              }
+                            } catch (_) {
+                              // Ignore fallback lookup errors and preserve original create error.
                             }
+                            throw Exception(_friendlyError(createErr));
                           }
                         }
                         if (resolvedStudentIds.isEmpty) {
@@ -773,7 +797,7 @@ class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
                       } catch (e) {
                         if (mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Failed to save child links: $e')),
+                            SnackBar(content: Text('Failed to save child links: ${_friendlyError(e)}')),
                           );
                         }
                       } finally {

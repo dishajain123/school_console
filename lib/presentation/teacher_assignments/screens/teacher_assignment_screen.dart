@@ -22,9 +22,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
 
 import '../../../core/network/dio_client.dart';
+import '../../../core/theme/admin_colors.dart';
 import '../../../domains/providers/active_year_provider.dart';
 import '../../../domains/providers/auth_provider.dart';
 import '../../common/layout/admin_scaffold.dart';
+import '../../common/widgets/admin_layout/admin_filter_card.dart';
+import '../../common/widgets/admin_layout/admin_page_header.dart';
+import '../../common/widgets/admin_layout/admin_spacing.dart';
 
 // ── Models ────────────────────────────────────────────────────────────────────
 
@@ -107,6 +111,58 @@ class _DropdownItem {
   final String name;
 }
 
+class _LeaveBalanceItem {
+  const _LeaveBalanceItem({
+    required this.leaveType,
+    required this.totalDays,
+    required this.usedDays,
+    required this.remainingDays,
+  });
+
+  final String leaveType;
+  final double totalDays;
+  final double usedDays;
+  final double remainingDays;
+
+  factory _LeaveBalanceItem.fromJson(Map<String, dynamic> json) {
+    return _LeaveBalanceItem(
+      leaveType: (json['leave_type'] ?? '').toString(),
+      totalDays: (json['total_days'] as num?)?.toDouble() ?? 0,
+      usedDays: (json['used_days'] as num?)?.toDouble() ?? 0,
+      remainingDays: (json['remaining_days'] as num?)?.toDouble() ?? 0,
+    );
+  }
+}
+
+class _LeaveRequestItem {
+  const _LeaveRequestItem({
+    required this.id,
+    required this.leaveType,
+    required this.status,
+    required this.fromDate,
+    required this.toDate,
+    this.reason,
+  });
+
+  final String id;
+  final String leaveType;
+  final String status;
+  final String fromDate;
+  final String toDate;
+  final String? reason;
+
+  factory _LeaveRequestItem.fromJson(Map<String, dynamic> json) {
+    return _LeaveRequestItem(
+      id: (json['id'] ?? '').toString(),
+      leaveType: (json['leave_type'] ?? '').toString(),
+      status: (json['status'] ?? '').toString(),
+      fromDate: (json['from_date'] ?? '').toString(),
+      toDate: (json['to_date'] ?? '').toString(),
+      reason: json['reason']?.toString(),
+    );
+  }
+}
+
 // ── Repository ────────────────────────────────────────────────────────────────
 
 class _TeacherAssignmentRepository {
@@ -117,7 +173,8 @@ class _TeacherAssignmentRepository {
     try {
       return await action();
     } on DioException catch (e) {
-      final isNetwork = e.type == DioExceptionType.connectionError ||
+      final isNetwork =
+          e.type == DioExceptionType.connectionError ||
           e.type == DioExceptionType.connectionTimeout ||
           e.type == DioExceptionType.receiveTimeout ||
           e.response == null;
@@ -233,6 +290,23 @@ class _TeacherAssignmentRepository {
     await _dio.dio.delete<dynamic>('/teacher-assignments/$assignmentId');
   }
 
+  Future<Map<String, dynamic>> reenrollTeacher({
+    required String teacherId,
+    required String sourceYearId,
+    required String targetYearId,
+    bool overwriteExisting = false,
+  }) async {
+    final r = await _dio.dio.post<Map<String, dynamic>>(
+      '/promotions/reenroll-teacher/$teacherId',
+      data: {
+        'source_year_id': sourceYearId,
+        'target_year_id': targetYearId,
+        'overwrite_existing': overwriteExisting,
+      },
+    );
+    return Map<String, dynamic>.from(r.data ?? const {});
+  }
+
   Future<List<Map<String, dynamic>>> listYears() async {
     final r = await _dio.dio.get<Map<String, dynamic>>('/academic-years');
     return ((r.data?['items'] as List?) ?? [])
@@ -271,22 +345,26 @@ class _TeacherAssignmentRepository {
       ),
     );
     final items = (r.data?['items'] as List?) ?? [];
-    return items.map((e) {
-      final m = Map<String, dynamic>.from(e as Map);
-      final teacherId = m['teacher_id']?.toString() ?? '';
-      final userId = m['user_id']?.toString() ?? '';
-      final selectionId = teacherId.isNotEmpty ? teacherId : 'user:$userId';
-      final identifier = m['employee_id']?.toString() ?? m['identifier']?.toString() ?? '';
-      return _Teacher(
-        id: selectionId,
-        userId: userId,
-        hasProfile: teacherId.isNotEmpty,
-        name: m['full_name']?.toString() ?? '',
-        employeeCode: identifier,
-        email: m['email']?.toString() ?? '',
-        phone: m['phone']?.toString() ?? '',
-      );
-    }).where((t) => t.id.trim().isNotEmpty).toList();
+    return items
+        .map((e) {
+          final m = Map<String, dynamic>.from(e as Map);
+          final teacherId = m['teacher_id']?.toString() ?? '';
+          final userId = m['user_id']?.toString() ?? '';
+          final selectionId = teacherId.isNotEmpty ? teacherId : 'user:$userId';
+          final identifier =
+              m['employee_id']?.toString() ?? m['identifier']?.toString() ?? '';
+          return _Teacher(
+            id: selectionId,
+            userId: userId,
+            hasProfile: teacherId.isNotEmpty,
+            name: m['full_name']?.toString() ?? '',
+            employeeCode: identifier,
+            email: m['email']?.toString() ?? '',
+            phone: m['phone']?.toString() ?? '',
+          );
+        })
+        .where((t) => t.id.trim().isNotEmpty)
+        .toList();
   }
 
   Future<Map<String, Map<String, dynamic>>> teacherEnrollmentStatusByUser({
@@ -376,6 +454,70 @@ class _TeacherAssignmentRepository {
       );
     }).toList();
   }
+
+  Future<List<_LeaveBalanceItem>> getTeacherLeaveBalances(
+    String teacherId, {
+    String? academicYearId,
+  }) async {
+    final resp = await _withNetworkGuard(
+      () => _dio.dio.get<List<dynamic>>(
+        '/leave/balance/teacher/$teacherId',
+        queryParameters: {
+          if (academicYearId != null) 'academic_year_id': academicYearId,
+        },
+      ),
+    );
+    return (resp.data ?? const <dynamic>[])
+        .whereType<Map>()
+        .map((e) => _LeaveBalanceItem.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+
+  Future<List<_LeaveRequestItem>> listTeacherLeaves(
+    String teacherId, {
+    String? academicYearId,
+  }) async {
+    final resp = await _withNetworkGuard(
+      () => _dio.dio.get<Map<String, dynamic>>(
+        '/leave',
+        queryParameters: {
+          'teacher_id': teacherId,
+          if (academicYearId != null) 'academic_year_id': academicYearId,
+        },
+      ),
+    );
+    final items = (resp.data?['items'] as List?) ?? const [];
+    return items
+        .whereType<Map>()
+        .map((e) => _LeaveRequestItem.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+
+  Future<List<_LeaveBalanceItem>> setTeacherLeaveBalances({
+    required String teacherId,
+    required String? academicYearId,
+    required double casualDays,
+    required double sickDays,
+    required double earnedDays,
+  }) async {
+    final resp = await _withNetworkGuard(
+      () => _dio.dio.put<List<dynamic>>(
+        '/leave/balance/teacher/$teacherId',
+        data: {
+          'allocations': [
+            {'leave_type': 'CASUAL', 'total_days': casualDays},
+            {'leave_type': 'SICK', 'total_days': sickDays},
+            {'leave_type': 'EARNED', 'total_days': earnedDays},
+          ],
+          if (academicYearId != null) 'academic_year_id': academicYearId,
+        },
+      ),
+    );
+    return (resp.data ?? const <dynamic>[])
+        .whereType<Map>()
+        .map((e) => _LeaveBalanceItem.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
 }
 
 // ── Screen ────────────────────────────────────────────────────────────────────
@@ -406,8 +548,6 @@ class _TeacherAssignmentScreenState
   String? _filterStandardId;
   String? _filterSection;
   List<_DropdownItem> _filterSections = [];
-  String? _tableStandardNameFilter;
-  String? _tableSectionFilter;
 
   List<_Assignment> _assignments = [];
   bool _loading = false;
@@ -418,8 +558,27 @@ class _TeacherAssignmentScreenState
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(() {
+      if (_tabController.indexIsChanging) return;
+      setState(() {});
+    });
     _repo = _TeacherAssignmentRepository(ref.read(dioClientProvider));
     _loadMeta();
+  }
+
+  void _resetTeacherScopeFilters() {
+    setState(() {
+      _teacherStatusFilter = 'ALL';
+      _selectedTeacherId = null;
+    });
+  }
+
+  void _resetClassScopeFilters() {
+    setState(() {
+      _filterStandardId = null;
+      _filterSection = null;
+      _filterSections = [];
+    });
   }
 
   @override
@@ -442,22 +601,6 @@ class _TeacherAssignmentScreenState
     return _teachers.where((t) {
       final assigned = _teacherAssignedBySelectionId[t.id] == true;
       return _teacherStatusFilter == 'ASSIGNED' ? assigned : !assigned;
-    }).toList();
-  }
-
-  List<_Assignment> get _visibleAssignments {
-    return _assignments.where((a) {
-      if (_tableStandardNameFilter != null &&
-          _tableStandardNameFilter!.trim().isNotEmpty &&
-          a.standardName != _tableStandardNameFilter) {
-        return false;
-      }
-      if (_tableSectionFilter != null &&
-          _tableSectionFilter!.trim().isNotEmpty &&
-          a.section != _tableSectionFilter) {
-        return false;
-      }
-      return true;
     }).toList();
   }
 
@@ -493,7 +636,9 @@ class _TeacherAssignmentScreenState
       setState(() {
         _years = years;
         _teachers = teachers;
-        _selectedYearId = selected.isNotEmpty ? selected['id']?.toString() : null;
+        _selectedYearId = selected.isNotEmpty
+            ? selected['id']?.toString()
+            : null;
       });
       ref.read(activeAcademicYearProvider.notifier).setYear(_selectedYearId);
       if (_selectedYearId != null) {
@@ -857,18 +1002,23 @@ class _TeacherAssignmentScreenState
                 try {
                   var finalTeacherId = selTeacherId!;
                   if (finalTeacherId.startsWith('user:')) {
-                    final selectedTeacher = _teachers.cast<_Teacher?>().firstWhere(
-                      (t) => t?.id == finalTeacherId,
-                      orElse: () => null,
-                    );
+                    final selectedTeacher = _teachers
+                        .cast<_Teacher?>()
+                        .firstWhere(
+                          (t) => t?.id == finalTeacherId,
+                          orElse: () => null,
+                        );
                     final userId = finalTeacherId.substring(5);
                     final created = await _repo.createTeacherProfile(
                       userId: userId,
                       customEmployeeId: selectedTeacher?.employeeCode,
                     );
-                    final newTeacherId = (created['teacher_id'] ?? '').toString();
+                    final newTeacherId = (created['teacher_id'] ?? '')
+                        .toString();
                     if (newTeacherId.isEmpty) {
-                      throw Exception('Failed to create teacher profile before assignment.');
+                      throw Exception(
+                        'Failed to create teacher profile before assignment.',
+                      );
                     }
                     final oldSelectionId = finalTeacherId;
                     finalTeacherId = newTeacherId;
@@ -908,6 +1058,156 @@ class _TeacherAssignmentScreenState
                 }
               },
               child: const Text('Assign'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showReenrollTeacherDialog() async {
+    if (!_canManage) return;
+    if (_selectedTeacherId == null || _selectedTeacherId!.startsWith('user:')) {
+      setState(() => _error = 'Select an enrolled teacher profile first.');
+      return;
+    }
+    if (_years.length < 2) {
+      setState(() => _error = 'At least two academic years are required.');
+      return;
+    }
+
+    String sourceYearId = _selectedYearId ?? (_years.first['id']?.toString() ?? '');
+    String targetYearId = _years
+            .firstWhere(
+              (y) => y['id']?.toString() != sourceYearId,
+              orElse: () => _years.first,
+            )['id']
+            ?.toString() ??
+        '';
+    bool overwrite = false;
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('Re-enroll Teacher Assignments'),
+          content: SizedBox(
+            width: 420,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'This copies this teacher\'s class-section-subject assignments from source year to target year. You can edit rows after copy.',
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  value: sourceYearId.isEmpty ? null : sourceYearId,
+                  decoration: const InputDecoration(
+                    labelText: 'Source Academic Year',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: _years
+                      .map(
+                        (y) => DropdownMenuItem<String>(
+                          value: y['id']?.toString(),
+                          child: Text(y['name']?.toString() ?? ''),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (v) {
+                    if (v == null) return;
+                    setLocal(() {
+                      sourceYearId = v;
+                      if (targetYearId == sourceYearId) {
+                        targetYearId = _years
+                                .firstWhere(
+                                  (y) => y['id']?.toString() != sourceYearId,
+                                  orElse: () => _years.first,
+                                )['id']
+                                ?.toString() ??
+                            '';
+                      }
+                    });
+                  },
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  value: targetYearId.isEmpty ? null : targetYearId,
+                  decoration: const InputDecoration(
+                    labelText: 'Target Academic Year',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: _years
+                      .where((y) => y['id']?.toString() != sourceYearId)
+                      .map(
+                        (y) => DropdownMenuItem<String>(
+                          value: y['id']?.toString(),
+                          child: Text(y['name']?.toString() ?? ''),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (v) {
+                    if (v == null) return;
+                    setLocal(() => targetYearId = v);
+                  },
+                ),
+                const SizedBox(height: 10),
+                CheckboxListTile(
+                  dense: true,
+                  value: overwrite,
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Overwrite duplicate target assignments'),
+                  onChanged: (v) => setLocal(() => overwrite = v ?? false),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                if (sourceYearId.isEmpty ||
+                    targetYearId.isEmpty ||
+                    sourceYearId == targetYearId) {
+                  return;
+                }
+                Navigator.of(ctx).pop();
+                setState(() {
+                  _loading = true;
+                  _error = null;
+                  _success = null;
+                });
+                try {
+                  final result = await _repo.reenrollTeacher(
+                    teacherId: _selectedTeacherId!,
+                    sourceYearId: sourceYearId,
+                    targetYearId: targetYearId,
+                    overwriteExisting: overwrite,
+                  );
+                  final copied = (result['copied_count'] as num?)?.toInt() ?? 0;
+                  final skipped = (result['skipped_count'] as num?)?.toInt() ?? 0;
+                  final errors = (result['error_count'] as num?)?.toInt() ?? 0;
+                  _selectedYearId = targetYearId;
+                  ref.read(activeAcademicYearProvider.notifier).setYear(targetYearId);
+                  final stds = await _repo.listStandards(targetYearId);
+                  setState(() {
+                    _standards = stds;
+                    _success =
+                        'Teacher re-enrolled: copied $copied, skipped $skipped, errors $errors. You can edit assignments below.';
+                  });
+                  await _loadByTeacher();
+                  await _refreshTeacherAssignmentStatus();
+                } catch (e) {
+                  setState(() => _error = e.toString());
+                } finally {
+                  if (mounted) setState(() => _loading = false);
+                }
+              },
+              child: const Text('Re-enroll'),
             ),
           ],
         ),
@@ -1075,105 +1375,289 @@ class _TeacherAssignmentScreenState
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return AdminScaffold(
-      title: 'Teacher Assignments',
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ── Global filters ────────────────────────────────────────────
-            Card(
-              elevation: 0,
-              color: Colors.grey.shade50,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-                side: BorderSide(color: Colors.grey.shade200),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Wrap(
-                  spacing: 12,
-                  runSpacing: 10,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    // Academic Year
-                    SizedBox(
-                      width: 220,
-                      child: DropdownButtonFormField<String>(
-                        value: _selectedYearId,
-                        decoration: const InputDecoration(
-                          labelText: 'Academic Year',
-                          isDense: true,
-                          border: OutlineInputBorder(),
-                          contentPadding: EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 8,
+  String _leaveTypeLabel(String value) {
+    final key = value.trim().toUpperCase();
+    switch (key) {
+      case 'CASUAL':
+        return 'Casual';
+      case 'SICK':
+        return 'Sick';
+      case 'EARNED':
+        return 'Earned';
+      default:
+        return key;
+    }
+  }
+
+  Future<void> _showTeacherLeaveDialog(_Teacher teacher) async {
+    if (teacher.id.startsWith('user:')) {
+      setState(
+        () => _error =
+            'Teacher profile is pending. Complete profile before managing leave allocation.',
+      );
+      return;
+    }
+
+    try {
+      final balances = await _repo.getTeacherLeaveBalances(
+        teacher.id,
+        academicYearId: _selectedYearId,
+      );
+      final leaves = await _repo.listTeacherLeaves(
+        teacher.id,
+        academicYearId: _selectedYearId,
+      );
+
+      double byType(List<_LeaveBalanceItem> items, String type) {
+        for (final item in items) {
+          if (item.leaveType.toUpperCase() == type) return item.totalDays;
+        }
+        return 0;
+      }
+
+      final casualCtrl = TextEditingController(
+        text: byType(balances, 'CASUAL').toStringAsFixed(0),
+      );
+      final sickCtrl = TextEditingController(
+        text: byType(balances, 'SICK').toStringAsFixed(0),
+      );
+      final earnedCtrl = TextEditingController(
+        text: byType(balances, 'EARNED').toStringAsFixed(0),
+      );
+
+      var localBalances = List<_LeaveBalanceItem>.from(balances);
+      var saving = false;
+
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx, setDlgState) {
+            final pending = leaves
+                .where((l) => l.status.toUpperCase() == 'PENDING')
+                .length;
+            final approved = leaves
+                .where((l) => l.status.toUpperCase() == 'APPROVED')
+                .length;
+            final rejected = leaves
+                .where((l) => l.status.toUpperCase() == 'REJECTED')
+                .length;
+
+            return AlertDialog(
+              title: Text('Teacher Leave: ${teacher.name}'),
+              content: SizedBox(
+                width: 700,
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Leave request overview (Principal decisions reflected):',
+                        style: TextStyle(color: Colors.grey.shade700),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          Chip(label: Text('Pending: $pending')),
+                          Chip(label: Text('Approved: $approved')),
+                          Chip(label: Text('Rejected: $rejected')),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      if (localBalances.isNotEmpty)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade50,
+                            border: Border.all(color: Colors.grey.shade200),
+                            borderRadius: BorderRadius.circular(8),
                           ),
-                        ),
-                        items:
-                            _years
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: localBalances
                                 .map(
-                                  (y) => DropdownMenuItem<String>(
-                                    value: y['id']?.toString(),
+                                  (b) => Padding(
+                                    padding: const EdgeInsets.only(bottom: 6),
                                     child: Text(
-                                      '${y['name']}${y['is_active'] == true ? ' ✓' : ''}',
+                                      '${_leaveTypeLabel(b.leaveType)}: '
+                                      'Allocated ${b.totalDays.toStringAsFixed(0)} | '
+                                      'Used ${b.usedDays.toStringAsFixed(0)} | '
+                                      'Remaining ${b.remainingDays.toStringAsFixed(0)}',
                                     ),
                                   ),
                                 )
-                                .toList()
-                              ..insert(
-                                0,
-                                const DropdownMenuItem<String>(
-                                  value: null,
-                                  child: Text('All Years'),
-                                ),
+                                .toList(),
+                          ),
+                        )
+                      else
+                        const Text('No leave allocation configured yet.'),
+                      const SizedBox(height: 14),
+                      const Divider(),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Manage allocation (Admin Console)',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: casualCtrl,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                              decoration: const InputDecoration(
+                                labelText: 'Casual Days',
+                                border: OutlineInputBorder(),
                               ),
-                        onChanged: (v) async {
-                          setState(() {
-                            _selectedYearId = v;
-                            _standards = [];
-                            _assignments = [];
-                            _tableStandardNameFilter = null;
-                            _tableSectionFilter = null;
-                            _filterStandardId = null;
-                            _filterSection = null;
-                            _filterSections = [];
-                          });
-                          ref.read(activeAcademicYearProvider.notifier).setYear(v);
-                          if (v != null) {
-                            final stds = await _repo.listStandards(v);
-                            setState(() => _standards = stds);
-                          }
-                          await _refreshTeacherAssignmentStatus();
-                        },
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: TextField(
+                              controller: sickCtrl,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                              decoration: const InputDecoration(
+                                labelText: 'Sick Days',
+                                border: OutlineInputBorder(),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: TextField(
+                              controller: earnedCtrl,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                              decoration: const InputDecoration(
+                                labelText: 'Earned Days',
+                                border: OutlineInputBorder(),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                    if (_canManage)
-                      OutlinedButton.icon(
-                        onPressed: _showAddYearDialog,
-                        icon: const Icon(Icons.add, size: 16),
-                        label: const Text('Add Year'),
-                      ),
-                    if (_canManage)
-                      ElevatedButton.icon(
-                        icon: const Icon(Icons.add, size: 16),
-                        label: const Text('Assign Teacher'),
-                        onPressed: _showCreateDialog,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green,
-                          foregroundColor: Colors.white,
-                        ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 12),
+              actions: [
+                TextButton(
+                  onPressed: saving ? null : () => Navigator.of(ctx).pop(),
+                  child: const Text('Close'),
+                ),
+                ElevatedButton(
+                  onPressed: saving
+                      ? null
+                      : () async {
+                          final casual = double.tryParse(
+                            casualCtrl.text.trim(),
+                          );
+                          final sick = double.tryParse(sickCtrl.text.trim());
+                          final earned = double.tryParse(
+                            earnedCtrl.text.trim(),
+                          );
+                          if (casual == null ||
+                              sick == null ||
+                              earned == null ||
+                              casual < 0 ||
+                              sick < 0 ||
+                              earned < 0) {
+                            setState(() {
+                              _error =
+                                  'Please enter valid non-negative leave days.';
+                            });
+                            return;
+                          }
+                          setDlgState(() => saving = true);
+                          try {
+                            final updated = await _repo.setTeacherLeaveBalances(
+                              teacherId: teacher.id,
+                              academicYearId: _selectedYearId,
+                              casualDays: casual,
+                              sickDays: sick,
+                              earnedDays: earned,
+                            );
+                            setDlgState(() {
+                              localBalances = updated;
+                            });
+                            if (ctx.mounted) {
+                              Navigator.of(ctx).pop();
+                            }
+                            if (mounted) {
+                              setState(
+                                () => _success =
+                                    'Leave allocation updated for ${teacher.name}.',
+                              );
+                            }
+                          } catch (e) {
+                            if (mounted) {
+                              setState(() => _error = e.toString());
+                            }
+                          } finally {
+                            setDlgState(() => saving = false);
+                          }
+                        },
+                  child: Text(saving ? 'Saving...' : 'Save Allocation'),
+                ),
+              ],
+            );
+          },
+        ),
+      );
+    } catch (e) {
+      setState(() => _error = e.toString());
+    }
+  }
 
-            // ── Status messages ───────────────────────────────────────────
+  @override
+  Widget build(BuildContext context) {
+    return AdminScaffold(
+      title: '',
+      child: Padding(
+        padding: const EdgeInsets.all(AdminSpacing.pagePadding),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AdminPageHeader(
+              title: 'Teacher assignments',
+              subtitle:
+                  'Search by teacher or by class, then load assignments for this year.',
+              primaryAction: _canManage
+                  ? FilledButton.icon(
+                      onPressed: _showCreateDialog,
+                      icon: const Icon(Icons.person_add_outlined, size: 18),
+                      label: const Text('Assign teacher'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AdminColors.primaryAction,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 18,
+                          vertical: 12,
+                        ),
+                      ),
+                    )
+                  : null,
+              iconActions: [
+                if (_canManage)
+                  IconButton(
+                    tooltip: 'Add academic year',
+                    onPressed: _showAddYearDialog,
+                    icon: const Icon(Icons.calendar_month_outlined),
+                  ),
+              ],
+            ),
+
             if (_error != null)
               _Banner(
                 message: _error!,
@@ -1187,131 +1671,137 @@ class _TeacherAssignmentScreenState
                 onDismiss: () => setState(() => _success = null),
               ),
 
-            // ── Search tabs ───────────────────────────────────────────────
-            TabBar(
-              controller: _tabController,
-              tabs: const [
-                Tab(
-                  icon: Icon(Icons.person_search_outlined),
-                  text: 'By Teacher',
-                ),
-                Tab(icon: Icon(Icons.class_outlined), text: 'By Class'),
-              ],
-            ),
-            const SizedBox(height: 10),
-
-            // Tab filters
-            _loading
-                ? const LinearProgressIndicator()
-                : _tabController.index == 0
-                ? _buildTeacherFilter()
-                : _buildClassFilter(),
-
-            const SizedBox(height: 12),
-
-            if (_assignments.isNotEmpty)
-              Wrap(
-                spacing: 12,
-                runSpacing: 8,
-                crossAxisAlignment: WrapCrossAlignment.center,
+            AdminFilterCard(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+              headerGap: AdminSpacing.xs,
+              onReset: _tabController.index == 0
+                  ? _resetTeacherScopeFilters
+                  : _resetClassScopeFilters,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  SizedBox(
-                    width: 220,
-                    child: DropdownButtonFormField<String>(
-                      value: _tableStandardNameFilter,
-                      decoration: const InputDecoration(
-                        labelText: 'Table Filter: Class',
-                        isDense: true,
-                        border: OutlineInputBorder(),
-                        contentPadding: EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 8,
-                        ),
+                  DropdownButtonFormField<String>(
+                    value: _selectedYearId,
+                    decoration: const InputDecoration(
+                      labelText: 'Academic year',
+                      isDense: true,
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 10,
                       ),
-                      items: [
-                        const DropdownMenuItem<String>(
-                          value: null,
-                          child: Text('All Classes'),
-                        ),
-                        ...(() {
-                          final names = _assignments
-                              .map((a) => a.standardName)
-                              .toSet()
-                              .toList();
-                          names.sort();
-                          return names
+                    ),
+                    items: () {
+                      final items =
+                          _years
                               .map(
-                                (name) => DropdownMenuItem<String>(
-                                  value: name,
-                                  child: Text(name),
+                                (y) => DropdownMenuItem<String>(
+                                  value: y['id']?.toString(),
+                                  child: Text(
+                                    '${y['name']}${y['is_active'] == true ? ' • Active' : ''}',
+                                  ),
                                 ),
                               )
-                              .toList();
-                        })(),
-                      ],
-                      onChanged: (v) =>
-                          setState(() => _tableStandardNameFilter = v),
-                    ),
+                              .toList()
+                            ..insert(
+                              0,
+                              const DropdownMenuItem<String>(
+                                value: null,
+                                child: Text('All years'),
+                              ),
+                            );
+                      return items;
+                    }(),
+                    onChanged: (v) async {
+                      setState(() {
+                        _selectedYearId = v;
+                        _standards = [];
+                        _assignments = [];
+                        _filterStandardId = null;
+                        _filterSection = null;
+                        _filterSections = [];
+                      });
+                      ref.read(activeAcademicYearProvider.notifier).setYear(v);
+                      if (v != null) {
+                        final stds = await _repo.listStandards(v);
+                        setState(() => _standards = stds);
+                      }
+                      await _refreshTeacherAssignmentStatus();
+                    },
                   ),
-                  SizedBox(
-                    width: 180,
-                    child: DropdownButtonFormField<String>(
-                      value: _tableSectionFilter,
-                      decoration: const InputDecoration(
-                        labelText: 'Table Filter: Section',
-                        isDense: true,
-                        border: OutlineInputBorder(),
-                        contentPadding: EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 8,
-                        ),
+                  const SizedBox(height: 6),
+                  Material(
+                    color: AdminColors.borderSubtle,
+                    borderRadius: BorderRadius.circular(8),
+                    clipBehavior: Clip.antiAlias,
+                    child: TabBar(
+                      controller: _tabController,
+                      indicatorColor: AdminColors.primaryAction,
+                      indicatorSize: TabBarIndicatorSize.tab,
+                      labelColor: AdminColors.primaryAction,
+                      unselectedLabelColor: AdminColors.textSecondary,
+                      labelStyle: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
                       ),
-                      items: [
-                        const DropdownMenuItem<String>(
-                          value: null,
-                          child: Text('All Sections'),
+                      unselectedLabelStyle: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      dividerColor: Colors.transparent,
+                      tabs: const [
+                        Tab(
+                          icon: Icon(Icons.person_search_outlined, size: 18),
+                          text: 'By teacher',
                         ),
-                        ...(() {
-                          final names =
-                              _assignments.map((a) => a.section).toSet().toList();
-                          names.sort();
-                          return names
-                              .map(
-                                (name) => DropdownMenuItem<String>(
-                                  value: name,
-                                  child: Text(name),
-                                ),
-                              )
-                              .toList();
-                        })(),
+                        Tab(
+                          icon: Icon(Icons.class_outlined, size: 18),
+                          text: 'By class',
+                        ),
                       ],
-                      onChanged: (v) => setState(() => _tableSectionFilter = v),
                     ),
                   ),
-                  Text(
-                    'Showing ${_visibleAssignments.length} of ${_assignments.length}',
-                    style: TextStyle(color: Colors.grey.shade700),
-                  ),
+                  const Divider(height: 1, color: AdminColors.border),
+                  const SizedBox(height: 8),
+                  if (_loading)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 6),
+                      child: LinearProgressIndicator(
+                        minHeight: 2,
+                        color: AdminColors.primaryAction,
+                        backgroundColor: AdminColors.borderSubtle,
+                      ),
+                    )
+                  else if (_tabController.index == 0)
+                    _buildTeacherFilter()
+                  else
+                    _buildClassFilter(),
                 ],
               ),
-            if (_assignments.isNotEmpty) const SizedBox(height: 10),
+            ),
+
+            const SizedBox(height: AdminSpacing.sm),
 
             // ── Assignments table ─────────────────────────────────────────
             Expanded(
-              child: _visibleAssignments.isEmpty
-                  ? const Center(
+              child: _assignments.isEmpty
+                  ? Center(
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(
                             Icons.assignment_ind_outlined,
                             size: 56,
-                            color: Colors.grey,
+                            color: Colors.grey.shade400,
                           ),
-                          SizedBox(height: 12),
+                          const SizedBox(height: 12),
                           Text(
-                            'Use the filters above and click Search to view assignments.',
-                            style: TextStyle(color: Colors.grey),
+                            'Choose year and filters, then tap 🔍 Load.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.grey.shade700,
+                              fontSize: 14,
+                            ),
                           ),
                         ],
                       ),
@@ -1332,7 +1822,7 @@ class _TeacherAssignmentScreenState
                           if (_canManage)
                             const DataColumn(label: Text('Actions')),
                         ],
-                        rows: _visibleAssignments.map((a) {
+                        rows: _assignments.map((a) {
                           return DataRow(
                             cells: [
                               DataCell(Text(a.teacherName ?? '-')),
@@ -1395,161 +1885,327 @@ class _TeacherAssignmentScreenState
       (t) => t?.id == _selectedTeacherId,
       orElse: () => null,
     );
-    final pendingCount = _teachers.where((t) => _teacherAssignedBySelectionId[t.id] != true).length;
-    final assignedCount = _teachers.where((t) => _teacherAssignedBySelectionId[t.id] == true).length;
-    return Row(
-      children: [
-        SizedBox(
-          width: 300,
-          child: DropdownButtonFormField<String>(
-            value: _selectedTeacherId,
-            decoration: const InputDecoration(
-              labelText: 'Select Teacher',
-              isDense: true,
-              border: OutlineInputBorder(),
-              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            ),
-            items: teachers
-                .map(
-                  (t) => DropdownMenuItem<String>(
-                    value: t.id,
-                    child: Text(
-                      t.hasProfile
-                          ? '${t.name} (${t.employeeCode})'
-                          : '${t.name} (${t.employeeCode.isNotEmpty ? t.employeeCode : 'pending id'}) • Profile pending',
-                    ),
-                  ),
-                )
-                .toList(),
-            onChanged: (v) => setState(() => _selectedTeacherId = v),
-          ),
-        ),
-        const SizedBox(width: 10),
-        ToggleButtons(
-          isSelected: [
-            _teacherStatusFilter == 'PENDING',
-            _teacherStatusFilter == 'ASSIGNED',
-            _teacherStatusFilter == 'ALL',
-          ],
-          onPressed: (index) {
-            setState(() {
-              _teacherStatusFilter = ['PENDING', 'ASSIGNED', 'ALL'][index];
-              _selectedTeacherId = null;
-            });
-          },
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Text('Pending ($pendingCount)'),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Text('Assigned ($assignedCount)'),
-            ),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 8),
-              child: Text('All'),
-            ),
-          ],
-        ),
-        const SizedBox(width: 10),
-        ElevatedButton.icon(
-          icon: const Icon(Icons.search, size: 16),
-          label: const Text('Search'),
-          onPressed: _loadByTeacher,
-        ),
-        const SizedBox(width: 12),
-        if (selectedTeacher != null)
-          Expanded(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey.shade300),
-                borderRadius: BorderRadius.circular(8),
-              ),
+    final pendingCount = _teachers
+        .where((t) => _teacherAssignedBySelectionId[t.id] != true)
+        .length;
+    final assignedCount = _teachers
+        .where((t) => _teacherAssignedBySelectionId[t.id] == true)
+        .length;
+
+    final teacherDropdown = DropdownButtonFormField<String>(
+      value: _selectedTeacherId,
+      decoration: const InputDecoration(
+        labelText: 'Teacher',
+        isDense: true,
+        contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      ),
+      isExpanded: true,
+      items: teachers
+          .map(
+            (t) => DropdownMenuItem<String>(
+              value: t.id,
               child: Text(
-                'Teacher: ${selectedTeacher.name.isNotEmpty ? selectedTeacher.name : selectedTeacher.employeeCode}  |  Emp: ${selectedTeacher.employeeCode.isNotEmpty ? selectedTeacher.employeeCode : '-'}  |  Email: ${selectedTeacher.email.isNotEmpty ? selectedTeacher.email : '-'}  |  Phone: ${selectedTeacher.phone.isNotEmpty ? selectedTeacher.phone : '-'}',
-                overflow: TextOverflow.ellipsis,
+                t.hasProfile
+                    ? '${t.name} (${t.employeeCode})'
+                    : '${t.name} (${t.employeeCode.isNotEmpty ? t.employeeCode : 'pending id'}) · profile pending',
               ),
             ),
-          ),
+          )
+          .toList(),
+      onChanged: (v) => setState(() => _selectedTeacherId = v),
+    );
+
+    final statusSegments = SegmentedButton<String>(
+      segments: [
+        ButtonSegment<String>(
+          value: 'PENDING',
+          label: Text('Pending ($pendingCount)'),
+        ),
+        ButtonSegment<String>(
+          value: 'ASSIGNED',
+          label: Text('Assigned ($assignedCount)'),
+        ),
+        const ButtonSegment<String>(
+          value: 'ALL',
+          label: Text('All'),
+        ),
       ],
+      emptySelectionAllowed: false,
+      selected: {_teacherStatusFilter},
+      onSelectionChanged: (next) {
+        if (next.isEmpty) return;
+        setState(() {
+          _teacherStatusFilter = next.first;
+          _selectedTeacherId = null;
+        });
+      },
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxW = constraints.maxWidth;
+        final loadBtn = Tooltip(
+          message: 'Load assignments for the current filters',
+          child: FilledButton.tonalIcon(
+            onPressed: _loadByTeacher,
+            icon: const Text(
+              '🔍',
+              style: TextStyle(fontSize: 17, height: 1),
+            ),
+            label: const Text('Load'),
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            ),
+          ),
+        );
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (maxW >= 720)
+              IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(child: statusSegments),
+                    const SizedBox(width: AdminSpacing.sm),
+                    SizedBox(width: 240, child: teacherDropdown),
+                    const SizedBox(width: AdminSpacing.sm),
+                    Align(
+                      alignment: Alignment.center,
+                      child: loadBtn,
+                    ),
+                    if (selectedTeacher != null &&
+                        !selectedTeacher.id.startsWith('user:')) ...[
+                      const SizedBox(width: AdminSpacing.sm),
+                      OutlinedButton.icon(
+                        onPressed: () =>
+                            _showTeacherLeaveDialog(selectedTeacher),
+                        icon: const Icon(Icons.event_available_outlined, size: 18),
+                        label: const Text('Leave'),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 12,
+                          ),
+                        ),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: _showReenrollTeacherDialog,
+                        icon: const Icon(Icons.autorenew, size: 18),
+                        label: const Text('Re-enroll'),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              )
+            else
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: statusSegments,
+                  ),
+                  const SizedBox(height: AdminSpacing.sm),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: teacherDropdown),
+                      const SizedBox(width: AdminSpacing.sm),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: loadBtn,
+                      ),
+                    ],
+                  ),
+                  if (selectedTeacher != null &&
+                      !selectedTeacher.id.startsWith('user:')) ...[
+                    const SizedBox(height: AdminSpacing.sm),
+                    Wrap(
+                      spacing: AdminSpacing.sm,
+                      runSpacing: AdminSpacing.sm,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: () =>
+                              _showTeacherLeaveDialog(selectedTeacher),
+                          icon: const Icon(
+                            Icons.event_available_outlined,
+                            size: 18,
+                          ),
+                          label: const Text('Leave'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: _showReenrollTeacherDialog,
+                          icon: const Icon(Icons.autorenew, size: 18),
+                          label: const Text('Re-enroll'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            if (selectedTeacher != null) ...[
+              const SizedBox(height: AdminSpacing.sm),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AdminSpacing.md,
+                  vertical: AdminSpacing.sm,
+                ),
+                decoration: BoxDecoration(
+                  color: AdminColors.borderSubtle,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AdminColors.border),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.badge_outlined,
+                      size: 18,
+                      color: AdminColors.textSecondary,
+                    ),
+                    const SizedBox(width: AdminSpacing.sm),
+                    Expanded(
+                      child: Text(
+                        [
+                          if (selectedTeacher.employeeCode.isNotEmpty)
+                            'Emp ${selectedTeacher.employeeCode}',
+                          if (selectedTeacher.email.isNotEmpty)
+                            selectedTeacher.email,
+                          if (selectedTeacher.phone.isNotEmpty)
+                            selectedTeacher.phone,
+                        ].join(' · '),
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: AdminColors.textSecondary,
+                              height: 1.35,
+                            ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        );
+      },
     );
   }
 
   Widget _buildClassFilter() {
-    return Row(
-      children: [
-        SizedBox(
-          width: 200,
-          child: DropdownButtonFormField<String>(
-            value: _filterStandardId,
-            decoration: const InputDecoration(
-              labelText: 'Class',
-              isDense: true,
-              border: OutlineInputBorder(),
-              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            ),
-            items: _standards
-                .map(
-                  (s) => DropdownMenuItem<String>(
-                    value: s.id,
-                    child: Text(s.name),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final narrow = constraints.maxWidth < 560;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Wrap(
+              spacing: AdminSpacing.sm,
+              runSpacing: AdminSpacing.sm,
+              crossAxisAlignment: WrapCrossAlignment.end,
+              children: [
+                SizedBox(
+                  width: narrow ? double.infinity : 220,
+                  child: DropdownButtonFormField<String>(
+                    value: _filterStandardId,
+                    decoration: const InputDecoration(
+                      labelText: 'Class',
+                      isDense: true,
+                    ),
+                    isExpanded: true,
+                    items: _standards
+                        .map(
+                          (s) => DropdownMenuItem<String>(
+                            value: s.id,
+                            child: Text(s.name),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (v) async {
+                      setState(() {
+                        _filterStandardId = v;
+                        _filterSection = null;
+                        _filterSections = [];
+                      });
+                      if (v != null && _selectedYearId != null) {
+                        final sections =
+                            await _repo.listSections(v, _selectedYearId!);
+                        if (!mounted) return;
+                        setState(() => _filterSections = sections);
+                      }
+                    },
                   ),
-                )
-                .toList(),
-            onChanged: (v) async {
-              setState(() {
-                _filterStandardId = v;
-                _filterSection = null;
-                _filterSections = [];
-              });
-              if (v != null && _selectedYearId != null) {
-                final sections = await _repo.listSections(v, _selectedYearId!);
-                if (!mounted) return;
-                setState(() => _filterSections = sections);
-              }
-            },
-          ),
-        ),
-        const SizedBox(width: 10),
-        SizedBox(
-          width: 160,
-          child: DropdownButtonFormField<String>(
-            value: _filterSection,
-            decoration: const InputDecoration(
-              labelText: 'Section',
-              isDense: true,
-              border: OutlineInputBorder(),
-              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                ),
+                SizedBox(
+                  width: narrow ? double.infinity : 180,
+                  child: DropdownButtonFormField<String>(
+                    value: _filterSection,
+                    decoration: const InputDecoration(
+                      labelText: 'Section',
+                      isDense: true,
+                    ),
+                    isExpanded: true,
+                    items: [
+                      const DropdownMenuItem<String>(
+                        value: '',
+                        child: Text('All sections'),
+                      ),
+                      ..._filterSections.map(
+                        (s) => DropdownMenuItem<String>(
+                          value: s.id,
+                          child: Text(s.name),
+                        ),
+                      ),
+                    ],
+                    onChanged: _filterSections.isEmpty
+                        ? null
+                        : (v) => setState(
+                              () => _filterSection =
+                                  (v == null || v.isEmpty) ? null : v,
+                            ),
+                  ),
+                ),
+                Tooltip(
+                  message: 'Load assignments for this class and section',
+                  child: FilledButton.tonalIcon(
+                    onPressed: _loadByClass,
+                    icon: const Text(
+                      '🔍',
+                      style: TextStyle(fontSize: 17, height: 1),
+                    ),
+                    label: const Text('Load'),
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-            items: [
-              const DropdownMenuItem<String>(
-                value: '',
-                child: Text('All Sections'),
-              ),
-              ..._filterSections.map(
-                (s) => DropdownMenuItem<String>(
-                  value: s.id,
-                  child: Text(s.name),
+            if (_assignments.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: AdminSpacing.xs),
+                child: Text(
+                  '${_assignments.length} assignment${_assignments.length == 1 ? '' : 's'} loaded',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: AdminColors.textSecondary,
+                        fontWeight: FontWeight.w500,
+                      ),
                 ),
               ),
-            ],
-            onChanged: _filterSections.isEmpty
-                ? null
-                : (v) => setState(
-                      () => _filterSection =
-                          (v == null || v.isEmpty) ? null : v,
-                    ),
-          ),
-        ),
-        const SizedBox(width: 10),
-        ElevatedButton.icon(
-          icon: const Icon(Icons.search, size: 16),
-          label: const Text('Search Assigned'),
-          onPressed: _loadByClass,
-        ),
-      ],
+          ],
+        );
+      },
     );
   }
 }

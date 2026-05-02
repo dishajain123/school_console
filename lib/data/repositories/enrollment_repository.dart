@@ -93,19 +93,48 @@ class EnrollmentRepository {
     );
   }
 
-  Future<List<Map<String, dynamic>>> searchStudents(String query) async {
+  /// Lists role profiles; omits empty [search] so the backend returns all (paginated).
+  Future<List<Map<String, dynamic>>> searchRoleProfiles({
+    required String role,
+    String? search,
+    String? academicYearId,
+    String? standardId,
+    String? section,
+    int page = 1,
+    int pageSize = 100,
+  }) async {
+    final qp = <String, dynamic>{
+      'role': role,
+      'page': page,
+      'page_size': pageSize,
+    };
+    if (search != null && search.trim().isNotEmpty) {
+      qp['search'] = search.trim();
+    }
+    if (academicYearId != null && academicYearId.isNotEmpty) {
+      qp['academic_year_id'] = academicYearId;
+    }
+    if (standardId != null && standardId.isNotEmpty) {
+      qp['standard_id'] = standardId;
+    }
+    if (section != null && section.trim().isNotEmpty) {
+      qp['section'] = section.trim();
+    }
     final resp = await _client.dio.get<Map<String, dynamic>>(
       '/role-profiles',
-      queryParameters: {
-        'role': 'STUDENT',
-        'search': query,
-        'page': 1,
-        'page_size': 20,
-      },
+      queryParameters: qp,
     );
     return ((resp.data?['items'] as List?) ?? [])
         .map((e) => Map<String, dynamic>.from(e as Map))
         .toList();
+  }
+
+  Future<List<Map<String, dynamic>>> searchStudents(String query) async {
+    return searchRoleProfiles(
+      role: 'STUDENT',
+      search: query.trim().isEmpty ? null : query,
+      pageSize: 20,
+    );
   }
 
   Future<Map<String, dynamic>> getStudentHistory(String studentId) async {
@@ -171,6 +200,7 @@ class EnrollmentRepository {
     required String sourceYearId,
     required String targetYearId,
     String? standardId,
+    String? sectionId,
   }) async {
     final resp = await _client.dio.get<Map<String, dynamic>>(
       '/promotions/preview',
@@ -179,6 +209,7 @@ class EnrollmentRepository {
         'target_year_id': targetYearId,
         if (standardId != null && standardId.isNotEmpty)
           'standard_id': standardId,
+        if (sectionId != null && sectionId.isNotEmpty) 'section_id': sectionId,
       },
     );
     return resp.data ?? <String, dynamic>{};
@@ -384,5 +415,16 @@ class EnrollmentRepository {
         .whereType<Map>()
         .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
         .toList();
+  }
+
+  Future<Map<String, dynamic>> annualReenrollUser({
+    required String userId,
+    required String academicYearId,
+  }) async {
+    final resp = await _client.dio.post<Map<String, dynamic>>(
+      '/enrollments/annual-reenroll/$userId',
+      data: {'academic_year_id': academicYearId},
+    );
+    return resp.data ?? <String, dynamic>{};
   }
 }

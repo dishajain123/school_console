@@ -13,7 +13,7 @@
 // Admin is the SINGLE SOURCE OF TRUTH. Mobile app reflects changes automatically.
 //
 // APIs used:
-//   GET  /role-profiles?role=STUDENT&search={q}
+//   GET  /role-profiles?role={STUDENT|TEACHER|PARENT|PRINCIPAL|TRUSTEE}&search={q}&…
 //   GET  /enrollments/history/{studentId}
 //   POST /enrollments/mappings/{id}/transfer
 //   POST /enrollments/mappings/{id}/exit
@@ -37,9 +37,11 @@ import '../../common/layout/admin_scaffold.dart';
 
 class _StudentSummary {
   const _StudentSummary({
+    required this.profileRole,
     required this.studentId,
     required this.userId,
     required this.fullName,
+    required this.email,
     required this.admissionNumber,
     required this.currentStandardName,
     required this.currentSectionName,
@@ -49,9 +51,12 @@ class _StudentSummary {
     required this.currentStandardId,
   });
 
+  /// Backend role: STUDENT, TEACHER, PARENT, PRINCIPAL, TRUSTEE.
+  final String profileRole;
   final String studentId;
   final String userId;
   final String? fullName;
+  final String? email;
   final String? admissionNumber;
   final String? currentStandardName;
   final String? currentSectionName;
@@ -60,11 +65,17 @@ class _StudentSummary {
   final String? currentAcademicYearId;
   final String? currentStandardId;
 
+  bool get isEnrollmentLifecycleTarget =>
+      profileRole == 'STUDENT' && studentId.trim().isNotEmpty;
+
   factory _StudentSummary.fromJson(Map<String, dynamic> j) {
+    final role = (j['role'] as String?)?.toUpperCase() ?? 'STUDENT';
     return _StudentSummary(
+      profileRole: role,
       studentId: j['student_id']?.toString() ?? j['id']?.toString() ?? '',
       userId: j['user_id']?.toString() ?? '',
       fullName: j['full_name'] as String?,
+      email: j['email'] as String?,
       admissionNumber: j['admission_number'] as String?,
       currentStandardName: j['standard_name'] as String?,
       currentSectionName: j['section'] as String?,
@@ -73,6 +84,76 @@ class _StudentSummary {
       currentAcademicYearId: j['academic_year_id'] as String?,
       currentStandardId: j['standard_id'] as String?,
     );
+  }
+
+  /// Maps GET /role-profiles list items (shape varies by role).
+  factory _StudentSummary.fromRoleProfile(Map<String, dynamic> j) {
+    final role = (j['role'] as String?)?.toUpperCase() ?? 'STUDENT';
+    switch (role) {
+      case 'TEACHER':
+        return _StudentSummary(
+          profileRole: 'TEACHER',
+          studentId: '',
+          userId: j['user_id']?.toString() ?? '',
+          fullName: j['full_name'] as String?,
+          email: j['email'] as String?,
+          admissionNumber:
+              j['employee_id']?.toString() ?? j['identifier']?.toString(),
+          currentStandardName: j['specialization'] as String?,
+          currentSectionName: null,
+          currentStatus: null,
+          currentMappingId: null,
+          currentAcademicYearId: null,
+          currentStandardId: null,
+        );
+      case 'PARENT':
+        return _StudentSummary(
+          profileRole: 'PARENT',
+          studentId: '',
+          userId: j['user_id']?.toString() ?? '',
+          fullName: j['full_name'] as String?,
+          email: j['email'] as String?,
+          admissionNumber:
+              j['parent_code']?.toString() ?? j['identifier']?.toString(),
+          currentStandardName: j['occupation'] as String?,
+          currentSectionName: j['relation']?.toString(),
+          currentStatus: null,
+          currentMappingId: null,
+          currentAcademicYearId: null,
+          currentStandardId: null,
+        );
+      case 'PRINCIPAL':
+      case 'TRUSTEE':
+        return _StudentSummary(
+          profileRole: role,
+          studentId: '',
+          userId: j['user_id']?.toString() ?? '',
+          fullName: j['full_name'] as String?,
+          email: j['email'] as String?,
+          admissionNumber: j['identifier']?.toString(),
+          currentStandardName: null,
+          currentSectionName: null,
+          currentStatus: j['status']?.toString(),
+          currentMappingId: null,
+          currentAcademicYearId: null,
+          currentStandardId: null,
+        );
+      default:
+        return _StudentSummary(
+          profileRole: 'STUDENT',
+          studentId: j['student_id']?.toString() ?? '',
+          userId: j['user_id']?.toString() ?? '',
+          fullName: j['full_name'] as String?,
+          email: j['email'] as String?,
+          admissionNumber: j['admission_number'] as String?,
+          currentStandardName: null,
+          currentSectionName: j['section'] as String?,
+          currentStatus: j['enrollment_completed'] == true ? 'ACTIVE' : null,
+          currentMappingId: null,
+          currentAcademicYearId: null,
+          currentStandardId: j['standard_id']?.toString(),
+        );
+    }
   }
 
   _StudentSummary copyWith({
@@ -84,9 +165,11 @@ class _StudentSummary {
     String? currentStandardId,
   }) {
     return _StudentSummary(
+      profileRole: profileRole,
       studentId: studentId,
       userId: userId,
       fullName: fullName,
+      email: email,
       admissionNumber: admissionNumber,
       currentStandardName: currentStandardName ?? this.currentStandardName,
       currentSectionName: currentSectionName ?? this.currentSectionName,
@@ -163,13 +246,57 @@ class _LifecycleRepository {
   _LifecycleRepository(this._api);
   final EnrollmentRepository _api;
 
-  Future<List<_StudentSummary>> searchStudents(
-    String query,
-  ) async {
-    final items = await _api.searchStudents(query);
+  Future<List<_StudentSummary>> searchRoleProfiles({
+    required String role,
+    String? search,
+    String? academicYearId,
+    String? standardId,
+    String? section,
+  }) async {
+    final items = await _api.searchRoleProfiles(
+      role: role,
+      search: search,
+      academicYearId: academicYearId,
+      standardId: standardId,
+      section: section,
+      pageSize: 100,
+    );
     return items
-        .map((e) => _StudentSummary.fromJson(e))
+        .map((e) => _StudentSummary.fromRoleProfile(
+              Map<String, dynamic>.from(e as Map),
+            ))
         .toList();
+  }
+
+  Future<List<_StudentSummary>> listStudentsByClassFilters({
+    required String standardId,
+    required String academicYearId,
+    String? sectionId,
+  }) async {
+    final data = await _api.getRoster(
+      standardId: standardId,
+      academicYearId: academicYearId,
+      sectionId: sectionId,
+    );
+    final mappings = (data['mappings'] as List?) ?? [];
+    return mappings.map((e) {
+      final m = Map<String, dynamic>.from(e as Map);
+      return _StudentSummary(
+        profileRole: 'STUDENT',
+        studentId: m['student_id']?.toString() ?? '',
+        userId: '',
+        fullName: m['student_name'] as String?,
+        email: null,
+        admissionNumber: m['admission_number'] as String?,
+        currentStandardName: m['standard_name'] as String?,
+        currentSectionName:
+            (m['section_name'] as String?) ?? (m['section'] as String?),
+        currentStatus: m['status']?.toString(),
+        currentMappingId: m['id']?.toString(),
+        currentAcademicYearId: academicYearId,
+        currentStandardId: standardId,
+      );
+    }).toList();
   }
 
   Future<List<_HistoryEntry>> getHistory(String studentId) async {
@@ -291,12 +418,20 @@ class _LifecycleManagementScreenState
   late final _LifecycleRepository _repo;
   final _searchCtrl = TextEditingController();
   Timer? _searchDebounce;
+  int _searchRequestSeq = 0;
 
   List<_StudentSummary> _searchResults = [];
   _StudentSummary? _selected;
   List<_HistoryEntry> _history = [];
   List<_AcademicYear> _years = [];
   List<_Standard> _standards = [];
+  List<_Section> _filterSections = [];
+  String? _filterYearId;
+  String? _filterStandardId;
+  String? _filterSectionName;
+
+  /// Role filter for /role-profiles (students vs teachers vs parents, etc.).
+  String _profileRole = 'STUDENT';
 
   bool _searchLoading = false;
   bool _historyLoading = false;
@@ -337,29 +472,133 @@ class _LifecycleManagementScreenState
         setState(() {
           _years = results[0] as List<_AcademicYear>;
           _standards = results[1] as List<_Standard>;
+          final activeYear = _years.where((y) => y.isActive).cast<_AcademicYear?>().firstWhere(
+                (y) => y != null,
+                orElse: () => _years.isNotEmpty ? _years.first : null,
+              );
+          _filterYearId = activeYear?.id;
         });
+        await _loadFilterSections();
+        await _search();
       }
     } catch (_) {}
   }
 
-  void _onSearchChanged(String raw) {
-    _searchDebounce?.cancel();
-    final q = raw.trim();
-    if (q.isEmpty) {
-      setState(() {
-        _searchResults = [];
-        _searchLoading = false;
-      });
+  Future<void> _loadFilterSections() async {
+    final yearId = _filterYearId;
+    final standardId = _filterStandardId;
+    if (yearId == null || yearId.isEmpty || standardId == null || standardId.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _filterSections = [];
+          _filterSectionName = null;
+        });
+      }
       return;
     }
+    try {
+      final sections = await _repo.getSections(
+        standardId: standardId,
+        academicYearId: yearId,
+      );
+      if (!mounted) return;
+      setState(() {
+        _filterSections = sections;
+        if (_filterSectionName != null &&
+            !_filterSections.any((s) => s.name == _filterSectionName)) {
+          _filterSectionName = null;
+        }
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _filterSections = [];
+          _filterSectionName = null;
+        });
+      }
+    }
+  }
+
+  String? _selectedYearName() {
+    final id = _filterYearId;
+    if (id == null) return null;
+    final year = _years.where((y) => y.id == id).cast<_AcademicYear?>().firstWhere(
+          (y) => y != null,
+          orElse: () => null,
+        );
+    return year?.name;
+  }
+
+  String? _selectedStandardName() {
+    final id = _filterStandardId;
+    if (id == null) return null;
+    final standard = _standards.where((s) => s.id == id).cast<_Standard?>().firstWhere(
+          (s) => s != null,
+          orElse: () => null,
+        );
+    return standard?.name;
+  }
+
+  List<_StudentSummary> _filteredSearchResults() {
+    final selectedStandardName = _selectedStandardName();
+    final q = _searchCtrl.text.trim().toLowerCase();
+    return _searchResults.where((s) {
+      final matchesQuery = q.isEmpty ||
+          (s.fullName ?? '').toLowerCase().contains(q) ||
+          (s.admissionNumber ?? '').toLowerCase().contains(q) ||
+          (s.email ?? '').toLowerCase().contains(q);
+      final yearOk = _filterYearId == null ||
+          _filterYearId!.isEmpty ||
+          (s.currentAcademicYearId == null || s.currentAcademicYearId!.isEmpty) ||
+          (s.currentAcademicYearId ?? '') == _filterYearId;
+      final classOk = _filterStandardId == null ||
+          _filterStandardId!.isEmpty ||
+          (s.currentStandardId == null || s.currentStandardId!.isEmpty) ||
+          (s.currentStandardId ?? '') == _filterStandardId ||
+          ((selectedStandardName ?? '').isNotEmpty &&
+              (s.currentStandardName ?? '').trim().toLowerCase() ==
+                  selectedStandardName!.trim().toLowerCase());
+      final sectionOk = _filterSectionName == null ||
+          _filterSectionName!.isEmpty ||
+          (s.currentSectionName == null || s.currentSectionName!.isEmpty) ||
+          (s.currentSectionName ?? '').trim().toLowerCase() ==
+              _filterSectionName!.trim().toLowerCase();
+      return matchesQuery && yearOk && classOk && sectionOk;
+    }).toList(growable: false);
+  }
+
+  List<_HistoryEntry> _filteredHistory() {
+    final selectedYearName = _selectedYearName();
+    final selectedStandardName = _selectedStandardName();
+    return _history.where((h) {
+      final yearOk = selectedYearName == null ||
+          selectedYearName.isEmpty ||
+          (h.academicYearName ?? '').trim().toLowerCase() ==
+              selectedYearName.trim().toLowerCase();
+      final classOk = selectedStandardName == null ||
+          selectedStandardName.isEmpty ||
+          (h.standardName ?? '').trim().toLowerCase() ==
+              selectedStandardName.trim().toLowerCase();
+      final sectionOk = _filterSectionName == null ||
+          _filterSectionName!.isEmpty ||
+          (h.sectionName ?? '').trim().toLowerCase() ==
+              _filterSectionName!.trim().toLowerCase();
+      return yearOk && classOk && sectionOk;
+    }).toList(growable: false);
+  }
+
+  void _onSearchChanged(String raw) {
+    _searchDebounce?.cancel();
+    // Keep UI responsive while typing; filter current in-memory results instantly.
+    if (mounted) setState(() {});
     _searchDebounce = Timer(const Duration(milliseconds: 280), _search);
   }
 
   Future<void> _search() async {
     final q = _searchCtrl.text.trim();
-    if (q.isEmpty) return;
     final user = ref.read(authControllerProvider).valueOrNull;
     if (user == null) return;
+    final requestId = ++_searchRequestSeq;
     setState(() {
       _searchLoading = true;
       _error = null;
@@ -367,12 +606,48 @@ class _LifecycleManagementScreenState
       _history = [];
     });
     try {
-      final results = await _repo.searchStudents(q);
-      if (mounted) setState(() => _searchResults = results);
+      late final List<_StudentSummary> results;
+      final yearId = _filterYearId;
+      final standardId = _filterStandardId;
+      final sectionName = _filterSectionName;
+      final sectionId = (sectionName == null || sectionName.isEmpty)
+          ? null
+          : _filterSections
+              .where((s) => s.name.trim().toLowerCase() == sectionName.trim().toLowerCase())
+              .map((s) => s.id)
+              .cast<String?>()
+              .firstWhere((id) => id != null && id.isNotEmpty, orElse: () => null);
+
+      // Filter-first mode (students only): class+year selected and search empty → roster.
+      if (_profileRole == 'STUDENT' &&
+          q.isEmpty &&
+          yearId != null &&
+          yearId.isNotEmpty &&
+          standardId != null &&
+          standardId.isNotEmpty) {
+        results = await _repo.listStudentsByClassFilters(
+          standardId: standardId,
+          academicYearId: yearId,
+          sectionId: sectionId,
+        );
+      } else {
+        results = await _repo.searchRoleProfiles(
+          role: _profileRole,
+          search: q.isEmpty ? null : q,
+          academicYearId: _profileRole == 'STUDENT' ? yearId : null,
+          standardId: _profileRole == 'STUDENT' ? standardId : null,
+          section: _profileRole == 'STUDENT' ? sectionName : null,
+        );
+      }
+      if (!mounted || requestId != _searchRequestSeq) return;
+      setState(() => _searchResults = results);
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      if (!mounted || requestId != _searchRequestSeq) return;
+      setState(() => _error = e.toString());
     } finally {
-      if (mounted) setState(() => _searchLoading = false);
+      if (mounted && requestId == _searchRequestSeq) {
+        setState(() => _searchLoading = false);
+      }
     }
   }
 
@@ -380,11 +655,15 @@ class _LifecycleManagementScreenState
     setState(() {
       _selected = s;
       _searchResults = [];
-      _historyLoading = true;
       _history = [];
       _error = null;
       _successMsg = null;
     });
+    if (!s.isEnrollmentLifecycleTarget) {
+      if (mounted) setState(() => _historyLoading = false);
+      return;
+    }
+    setState(() => _historyLoading = true);
     try {
       final h = await _repo.getHistory(s.studentId);
       if (mounted) {
@@ -1065,23 +1344,195 @@ class _LifecycleManagementScreenState
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            'Step 1 — Find Student',
-                            style: TextStyle(
+                          Text(
+                            _profileRole == 'STUDENT'
+                                ? 'Step 1 — Find student'
+                                : 'Step 1 — Find person',
+                            style: const TextStyle(
                                 fontWeight: FontWeight.bold, fontSize: 15),
                           ),
                           const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              SizedBox(
+                                width: 200,
+                                child: DropdownButtonFormField<String>(
+                                  value: _profileRole,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Role',
+                                    border: OutlineInputBorder(),
+                                    contentPadding: EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 8),
+                                  ),
+                                  items: const [
+                                    DropdownMenuItem(
+                                      value: 'STUDENT',
+                                      child: Text('Students'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'TEACHER',
+                                      child: Text('Teachers'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'PARENT',
+                                      child: Text('Parents'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'PRINCIPAL',
+                                      child: Text('Principals'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'TRUSTEE',
+                                      child: Text('Trustees'),
+                                    ),
+                                  ],
+                                  onChanged: (v) {
+                                    if (v == null) return;
+                                    setState(() {
+                                      _profileRole = v;
+                                      _selected = null;
+                                      _history = [];
+                                    });
+                                    _search();
+                                  },
+                                ),
+                              ),
+                              Opacity(
+                                opacity: _profileRole == 'STUDENT' ? 1 : 0.45,
+                                child: SizedBox(
+                                  width: 240,
+                                  child: DropdownButtonFormField<String>(
+                                    value: _filterYearId,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Academic Year',
+                                      border: OutlineInputBorder(),
+                                      contentPadding: EdgeInsets.symmetric(
+                                          horizontal: 12, vertical: 8),
+                                    ),
+                                    items: _years
+                                        .map(
+                                          (y) => DropdownMenuItem<String>(
+                                            value: y.id,
+                                            child: Text(
+                                              '${y.name}${y.isActive ? ' (Active)' : ''}',
+                                            ),
+                                          ),
+                                        )
+                                        .toList(),
+                                    onChanged: _profileRole == 'STUDENT'
+                                        ? (v) {
+                                            setState(() {
+                                              _filterYearId = v;
+                                              _filterSectionName = null;
+                                            });
+                                            _loadFilterSections()
+                                                .then((_) => _search());
+                                          }
+                                        : null,
+                                  ),
+                                ),
+                              ),
+                              Opacity(
+                                opacity: _profileRole == 'STUDENT' ? 1 : 0.45,
+                                child: SizedBox(
+                                  width: 220,
+                                  child: DropdownButtonFormField<String>(
+                                    value: _filterStandardId,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Class',
+                                      border: OutlineInputBorder(),
+                                      contentPadding: EdgeInsets.symmetric(
+                                          horizontal: 12, vertical: 8),
+                                    ),
+                                    items: _standards
+                                        .map((st) => DropdownMenuItem<String>(
+                                              value: st.id,
+                                              child: Text(st.name),
+                                            ))
+                                        .toList(),
+                                    onChanged: _profileRole == 'STUDENT'
+                                        ? (v) {
+                                            setState(() {
+                                              _filterStandardId = v;
+                                              _filterSectionName = null;
+                                            });
+                                            _loadFilterSections()
+                                                .then((_) => _search());
+                                          }
+                                        : null,
+                                  ),
+                                ),
+                              ),
+                              Opacity(
+                                opacity: _profileRole == 'STUDENT' ? 1 : 0.45,
+                                child: SizedBox(
+                                  width: 180,
+                                  child: DropdownButtonFormField<String?>(
+                                    value: _filterSectionName,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Section',
+                                      border: OutlineInputBorder(),
+                                      contentPadding: EdgeInsets.symmetric(
+                                          horizontal: 12, vertical: 8),
+                                    ),
+                                    items: [
+                                      const DropdownMenuItem<String>(
+                                        value: null,
+                                        child: Text('All Sections'),
+                                      ),
+                                      ..._filterSections.map(
+                                        (s) => DropdownMenuItem<String>(
+                                          value: s.name,
+                                          child: Text(s.name),
+                                        ),
+                                      ),
+                                    ],
+                                    onChanged: _profileRole == 'STUDENT'
+                                        ? (v) {
+                                            setState(() => _filterSectionName = v);
+                                            _search();
+                                          }
+                                        : null,
+                                  ),
+                                ),
+                              ),
+                              OutlinedButton.icon(
+                                onPressed: () {
+                                  setState(() {
+                                    _filterStandardId = null;
+                                    _filterSectionName = null;
+                                    final activeYear = _years
+                                        .where((y) => y.isActive)
+                                        .cast<_AcademicYear?>()
+                                        .firstWhere(
+                                          (y) => y != null,
+                                          orElse: () =>
+                                              _years.isNotEmpty ? _years.first : null,
+                                        );
+                                    _filterYearId = activeYear?.id;
+                                    _filterSections = [];
+                                  });
+                                  _search();
+                                },
+                                icon: const Icon(Icons.filter_alt_off_outlined),
+                                label: const Text('Reset Filters'),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
                           Row(
                             children: [
                               Expanded(
                                 child: TextField(
                                   controller: _searchCtrl,
-                                  decoration: const InputDecoration(
-                                    hintText:
-                                        'Search by name or admission number...',
-                                    border: OutlineInputBorder(),
-                                    prefixIcon: Icon(Icons.search),
-                                    contentPadding: EdgeInsets.symmetric(
+                                  decoration: InputDecoration(
+                                    hintText: _profileRole == 'STUDENT'
+                                        ? 'Type name or admission no. (optional)'
+                                        : 'Search name, email, phone, or ID (optional)',
+                                    border: const OutlineInputBorder(),
+                                    contentPadding: const EdgeInsets.symmetric(
                                         horizontal: 12, vertical: 10),
                                   ),
                                   onChanged: _onSearchChanged,
@@ -1099,11 +1550,11 @@ class _LifecycleManagementScreenState
                                             strokeWidth: 2,
                                             color: Colors.white),
                                       )
-                                    : const Text('Search'),
+                                    : const Text('🔍'),
                               ),
                             ],
                           ),
-                          if (_searchResults.isNotEmpty) ...[
+                          if (_filteredSearchResults().isNotEmpty) ...[
                             const SizedBox(height: 8),
                             Container(
                               decoration: BoxDecoration(
@@ -1111,16 +1562,17 @@ class _LifecycleManagementScreenState
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Column(
-                                children: _searchResults.map((s) {
+                                children: _filteredSearchResults().map((s) {
                                   return ListTile(
                                     dense: true,
                                     title: Text(s.fullName ?? '—'),
-                                    subtitle: Text(
-                                        'Adm: ${s.admissionNumber ?? '—'} | ${s.currentStandardName ?? ''} ${s.currentSectionName ?? ''}'),
+                                    subtitle: Text(_searchResultSubtitle(s)),
                                     trailing: Text(
-                                      s.currentStatus ?? '—',
+                                      _searchResultTrailing(s),
                                       style: TextStyle(
-                                        color: _statusColor(s.currentStatus),
+                                        color: s.profileRole == 'STUDENT'
+                                            ? _statusColor(s.currentStatus)
+                                            : Colors.blueGrey,
                                         fontWeight: FontWeight.bold,
                                         fontSize: 12,
                                       ),
@@ -1136,8 +1588,8 @@ class _LifecycleManagementScreenState
                     ),
                   ),
 
-                  // ── Student actions ──────────────────────────────────────
-                  if (_selected != null) ...[
+                  // ── Student lifecycle actions (students with profile only) ─
+                  if (_selected != null && _selected!.isEnrollmentLifecycleTarget) ...[
                     const SizedBox(height: 16),
                     Card(
                       child: Padding(
@@ -1264,18 +1716,18 @@ class _LifecycleManagementScreenState
                               ],
                             ),
                             const SizedBox(height: 8),
-                            if (_history.isEmpty && !_historyLoading)
+                            if (_filteredHistory().isEmpty && !_historyLoading)
                               const Text('No history records found.',
                                   style: TextStyle(color: Colors.grey))
                             else
                               ListView.separated(
                                 shrinkWrap: true,
                                 physics: const NeverScrollableScrollPhysics(),
-                                itemCount: _history.length,
+                                itemCount: _filteredHistory().length,
                                 separatorBuilder: (_, __) =>
                                     const Divider(height: 1),
                                 itemBuilder: (_, i) {
-                                  final h = _history[i];
+                                  final h = _filteredHistory()[i];
                                   return ListTile(
                                     dense: true,
                                     leading: CircleAvatar(
@@ -1348,10 +1800,121 @@ class _LifecycleManagementScreenState
                       ),
                     ),
                   ],
+
+                  // ── Non-student or pending student (browse-only) ─────────
+                  if (_selected != null &&
+                      !_selected!.isEnrollmentLifecycleTarget) ...[
+                    const SizedBox(height: 16),
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _selected!.profileRole == 'STUDENT'
+                                  ? 'Student profile pending'
+                                  : 'Browse-only (${_selected!.profileRole})',
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 15),
+                            ),
+                            const SizedBox(height: 8),
+                            if (_selected!.profileRole == 'STUDENT')
+                              const Text(
+                                'This account does not have a student record yet. '
+                                'Finish enrollment (student profile) before using transfers, '
+                                'withdrawal, or academic history here.',
+                                style: TextStyle(fontSize: 13),
+                              )
+                            else
+                              const Text(
+                                'Transfer, withdrawal, year completion, and re-enrollment '
+                                'apply to enrolled students only. Switch Role to “Students” '
+                                'to manage class lifecycle; use this list to look up staff '
+                                'and parents by name or ID.',
+                                style: TextStyle(fontSize: 13),
+                              ),
+                            const SizedBox(height: 12),
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade100,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _selected!.fullName ?? '—',
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Chip(
+                                    label: Text(_selected!.profileRole),
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                                  if (_selected!.email != null &&
+                                      _selected!.email!.isNotEmpty)
+                                    Text('Email: ${_selected!.email}'),
+                                  if (_selected!.admissionNumber != null &&
+                                      _selected!.admissionNumber!.isNotEmpty)
+                                    Text(_idLineForSelected(_selected!)),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
     );
+  }
+
+  String _searchResultSubtitle(_StudentSummary s) {
+    switch (s.profileRole) {
+      case 'TEACHER':
+        final id = s.admissionNumber ?? '—';
+        final em = s.email;
+        if (em != null && em.isNotEmpty) return 'Employee ID: $id · $em';
+        return 'Employee ID: $id';
+      case 'PARENT':
+        final code = s.admissionNumber ?? '—';
+        final em = s.email;
+        if (em != null && em.isNotEmpty) return 'Code: $code · $em';
+        return 'Code: $code';
+      case 'PRINCIPAL':
+      case 'TRUSTEE':
+        return s.email ?? '—';
+      default:
+        return 'Adm: ${s.admissionNumber ?? '—'} | ${s.currentStandardName ?? ''} ${s.currentSectionName ?? ''}'
+            .trim();
+    }
+  }
+
+  String _searchResultTrailing(_StudentSummary s) {
+    if (s.profileRole == 'STUDENT') {
+      return s.currentStatus ?? '—';
+    }
+    return s.profileRole;
+  }
+
+  String _idLineForSelected(_StudentSummary s) {
+    switch (s.profileRole) {
+      case 'TEACHER':
+        return 'Employee ID: ${s.admissionNumber ?? '—'}';
+      case 'PARENT':
+        return 'Parent code: ${s.admissionNumber ?? '—'}';
+      case 'PRINCIPAL':
+      case 'TRUSTEE':
+        return 'Identifier: ${s.admissionNumber ?? '—'}';
+      default:
+        return 'Admission: ${s.admissionNumber ?? '—'}';
+    }
   }
 
   Color _statusColor(String? status) {

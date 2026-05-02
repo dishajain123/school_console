@@ -17,7 +17,7 @@ import '../../presentation/enrollment/screens/promotion_workflow_screen.dart';
 import '../../presentation/teacher_assignments/screens/teacher_assignment_screen.dart';
 import '../../presentation/role_profiles/screens/role_profiles_screen.dart';
 import '../../presentation/fees/screens/fee_management_screen.dart';
-import '../../domains/providers/results/screens/exams_results_screen.dart';
+import '../../presentation/results/screens/exams_results_screen.dart';
 import '../../presentation/reports/screens/reports_screen.dart';
 import '../../presentation/communication/screens/communication_screen.dart';
 import '../../presentation/documents/screens/document_management_screen.dart';

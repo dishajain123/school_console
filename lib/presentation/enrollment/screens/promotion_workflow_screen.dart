@@ -73,7 +73,11 @@ extension _DecisionX on _Decision {
 // ── Models ────────────────────────────────────────────────────────────────────
 
 class _AcademicYear {
-  const _AcademicYear({required this.id, required this.name, required this.isActive});
+  const _AcademicYear({
+    required this.id,
+    required this.name,
+    required this.isActive,
+  });
   final String id;
   final String name;
   final bool isActive;
@@ -84,6 +88,12 @@ class _Standard {
   final String id;
   final String name;
   final int level;
+}
+
+class _Section {
+  const _Section({required this.id, required this.name});
+  final String id;
+  final String name;
 }
 
 class _PreviewItem {
@@ -98,6 +108,8 @@ class _PreviewItem {
     required this.suggestedDecision,
     required this.suggestedNextStandardId,
     required this.suggestedNextStandardName,
+    required this.suggestedNextSectionId,
+    required this.suggestedNextSectionName,
     required this.hasWarning,
     required this.warningMessage,
   });
@@ -112,6 +124,8 @@ class _PreviewItem {
   _Decision suggestedDecision;
   final String? suggestedNextStandardId;
   final String? suggestedNextStandardName;
+  final String? suggestedNextSectionId;
+  final String? suggestedNextSectionName;
   final bool hasWarning;
   final String? warningMessage;
 
@@ -121,6 +135,8 @@ class _PreviewItem {
   bool selected = true;
   // Admin override for target standard (used when PROMOTE/REPEAT).
   String? targetStandardId;
+  // Target section override (defaults to suggested value from preview).
+  String? targetSectionId;
 
   factory _PreviewItem.fromJson(Map<String, dynamic> json) {
     final item = _PreviewItem(
@@ -131,15 +147,21 @@ class _PreviewItem {
       currentStandardId: json['current_standard_id']?.toString() ?? '',
       currentStandardName: json['current_standard_name']?.toString() ?? '',
       currentSectionName: json['current_section_name'] as String?,
-      suggestedDecision: _DecisionX.fromString(json['suggested_decision'] as String?),
+      suggestedDecision: _DecisionX.fromString(
+        json['suggested_decision'] as String?,
+      ),
       suggestedNextStandardId: json['suggested_next_standard_id']?.toString(),
-      suggestedNextStandardName: json['suggested_next_standard_name'] as String?,
+      suggestedNextStandardName:
+          json['suggested_next_standard_name'] as String?,
+      suggestedNextSectionId: json['suggested_next_section_id']?.toString(),
+      suggestedNextSectionName: json['suggested_next_section_name'] as String?,
       hasWarning: json['has_warning'] == true,
       warningMessage: json['warning_message'] as String?,
     );
     // Default: apply suggested decision
     item.decision = item.suggestedDecision;
     item.targetStandardId = item.suggestedNextStandardId;
+    item.targetSectionId = item.suggestedNextSectionId;
     return item;
   }
 }
@@ -162,7 +184,10 @@ class _PromotionRepository {
     }).toList();
   }
 
-  Future<List<_Standard>> listStandards(String schoolId, String academicYearId) async {
+  Future<List<_Standard>> listStandards(
+    String schoolId,
+    String academicYearId,
+  ) async {
     final items = await _api.listStandards(
       schoolId: schoolId,
       academicYearId: academicYearId,
@@ -174,19 +199,41 @@ class _PromotionRepository {
         name: m['name'].toString(),
         level: (m['level'] as num?)?.toInt() ?? 0,
       );
-    }).toList()
-      ..sort((a, b) => a.level.compareTo(b.level));
+    }).toList()..sort((a, b) => a.level.compareTo(b.level));
+  }
+
+  Future<List<_Section>> listSections({
+    required String schoolId,
+    required String academicYearId,
+    required String standardId,
+  }) async {
+    final items = await _api.listSections(
+      schoolId: schoolId,
+      academicYearId: academicYearId,
+      standardId: standardId,
+    );
+    final sections =
+        items
+            .map(
+              (e) =>
+                  _Section(id: e['id'].toString(), name: e['name'].toString()),
+            )
+            .toList()
+          ..sort((a, b) => a.name.compareTo(b.name));
+    return sections;
   }
 
   Future<List<_PreviewItem>> preview({
     required String sourceYearId,
     required String targetYearId,
     String? standardId,
+    String? sectionId,
   }) async {
     final data = await _api.previewPromotion(
       sourceYearId: sourceYearId,
       targetYearId: targetYearId,
       standardId: standardId,
+      sectionId: sectionId,
     );
     final items = (data['items'] as List?) ?? [];
     return items
@@ -205,9 +252,13 @@ class _PromotionRepository {
         'mapping_id': item.mappingId,
         'decision': item.decision.apiValue,
       };
-      if (item.decision == _Decision.promote || item.decision == _Decision.repeat) {
+      if (item.decision == _Decision.promote ||
+          item.decision == _Decision.repeat) {
         if (item.targetStandardId != null) {
           m['target_standard_id'] = item.targetStandardId;
+        }
+        if (item.targetSectionId != null) {
+          m['target_section_id'] = item.targetSectionId;
         }
       }
       return m;
@@ -239,20 +290,27 @@ class PromotionWorkflowScreen extends ConsumerStatefulWidget {
   const PromotionWorkflowScreen({super.key});
 
   @override
-  ConsumerState<PromotionWorkflowScreen> createState() => _PromotionWorkflowScreenState();
+  ConsumerState<PromotionWorkflowScreen> createState() =>
+      _PromotionWorkflowScreenState();
 }
 
-class _PromotionWorkflowScreenState extends ConsumerState<PromotionWorkflowScreen> {
+class _PromotionWorkflowScreenState
+    extends ConsumerState<PromotionWorkflowScreen> {
   late final _PromotionRepository _repo;
 
   List<_AcademicYear> _years = [];
   List<_Standard> _sourceStandards = [];
   List<_Standard> _targetStandards = [];
+  List<_Section> _sourceSections = [];
   List<_PreviewItem> _previewItems = [];
+  final Map<String, List<_Section>> _targetSectionsByStandard = {};
 
   String? _sourceYearId;
   String? _targetYearId;
   String? _filterStandardId;
+  String? _filterSectionId;
+  String? _bulkTargetStandardId;
+  String? _bulkTargetSectionId;
 
   bool _loading = false;
   bool _executing = false;
@@ -267,11 +325,15 @@ class _PromotionWorkflowScreenState extends ConsumerState<PromotionWorkflowScree
     _loadYears();
   }
 
-  String? get _schoolId => ref.read(authControllerProvider).valueOrNull?.schoolId;
+  String? get _schoolId =>
+      ref.read(authControllerProvider).valueOrNull?.schoolId;
 
   Future<void> _loadYears() async {
     if (_schoolId == null) return;
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final years = await _repo.listYears(_schoolId!);
       setState(() => _years = years);
@@ -286,7 +348,11 @@ class _PromotionWorkflowScreenState extends ConsumerState<PromotionWorkflowScree
     if (_schoolId == null || _targetYearId == null) return;
     try {
       final stds = await _repo.listStandards(_schoolId!, _targetYearId!);
-      setState(() => _targetStandards = stds);
+      if (!mounted) return;
+      setState(() {
+        _targetStandards = stds;
+        _targetSectionsByStandard.clear();
+      });
     } catch (_) {
       setState(() => _targetStandards = []);
     }
@@ -302,28 +368,157 @@ class _PromotionWorkflowScreenState extends ConsumerState<PromotionWorkflowScree
     }
   }
 
+  Future<void> _loadSourceSections() async {
+    if (_schoolId == null ||
+        _sourceYearId == null ||
+        _filterStandardId == null ||
+        _filterStandardId!.isEmpty) {
+      if (!mounted) return;
+      setState(() => _sourceSections = []);
+      return;
+    }
+    try {
+      final sections = await _repo.listSections(
+        schoolId: _schoolId!,
+        academicYearId: _sourceYearId!,
+        standardId: _filterStandardId!,
+      );
+      if (!mounted) return;
+      setState(() => _sourceSections = sections);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _sourceSections = []);
+    }
+  }
+
+  Future<void> _ensureTargetSectionsForStandard(String? standardId) async {
+    if (_schoolId == null ||
+        _targetYearId == null ||
+        standardId == null ||
+        standardId.isEmpty ||
+        _targetSectionsByStandard.containsKey(standardId)) {
+      return;
+    }
+    try {
+      final sections = await _repo.listSections(
+        schoolId: _schoolId!,
+        academicYearId: _targetYearId!,
+        standardId: standardId,
+      );
+      if (!mounted) return;
+      setState(() => _targetSectionsByStandard[standardId] = sections);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _targetSectionsByStandard[standardId] = const []);
+    }
+  }
+
+  List<_Section> _sectionsForTargetStandard(String? standardId) {
+    if (standardId == null) return const [];
+    return _targetSectionsByStandard[standardId] ?? const [];
+  }
+
+  int? _sourceLevelForItem(_PreviewItem item) {
+    for (final standard in _sourceStandards) {
+      if (standard.id == item.currentStandardId) return standard.level;
+    }
+    return null;
+  }
+
+  _Standard? _targetStandardByLevel(int level) {
+    for (final standard in _targetStandards) {
+      if (standard.level == level) return standard;
+    }
+    return null;
+  }
+
+  List<_Standard> _targetClassOptionsForItem(_PreviewItem item) {
+    if (item.decision == _Decision.promote) {
+      if (item.suggestedNextStandardId == null) return const [];
+      return _targetStandards
+          .where((s) => s.id == item.suggestedNextStandardId)
+          .toList(growable: false);
+    }
+    if (item.decision == _Decision.repeat) {
+      final currentLevel = _sourceLevelForItem(item);
+      if (currentLevel == null) return const [];
+      final sameLevel = _targetStandardByLevel(currentLevel);
+      if (sameLevel == null) return const [];
+      return [sameLevel];
+    }
+    return const [];
+  }
+
+  List<_Standard> _bulkTargetClassOptions() {
+    final ids = <String>{};
+    for (final item in _previewItems) {
+      if (!item.selected) continue;
+      if (item.decision == _Decision.promote && item.suggestedNextStandardId != null) {
+        ids.add(item.suggestedNextStandardId!);
+      } else if (item.decision == _Decision.repeat) {
+        final level = _sourceLevelForItem(item);
+        if (level == null) continue;
+        final sameLevel = _targetStandardByLevel(level);
+        if (sameLevel != null) ids.add(sameLevel.id);
+      }
+    }
+    return _targetStandards.where((s) => ids.contains(s.id)).toList(growable: false);
+  }
+
+  void _applyBulkTargetSelection() {
+    if (_bulkTargetStandardId == null) {
+      setState(() => _error = 'Select target class first for bulk update.');
+      return;
+    }
+    setState(() {
+      for (final item in _previewItems) {
+        if (!item.selected) continue;
+        if (item.decision != _Decision.promote &&
+            item.decision != _Decision.repeat) {
+          continue;
+        }
+        item.targetStandardId = _bulkTargetStandardId;
+        item.targetSectionId = _bulkTargetSectionId;
+      }
+      _error = null;
+    });
+  }
+
   Future<void> _runPreview() async {
     if (_sourceYearId == null || _targetYearId == null) {
-      setState(() => _error = 'Please select both source and target academic years.');
+      setState(
+        () => _error = 'Please select both source and target academic years.',
+      );
       return;
     }
     if (_sourceYearId == _targetYearId) {
-      setState(() => _error = 'Source and target academic years must be different.');
+      setState(
+        () => _error = 'Source and target academic years must be different.',
+      );
       return;
     }
-    setState(() { _loading = true; _error = null; _successMessage = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+      _successMessage = null;
+    });
     try {
       final items = await _repo.preview(
         sourceYearId: _sourceYearId!,
         targetYearId: _targetYearId!,
         standardId: _filterStandardId,
+        sectionId: _filterSectionId,
       );
       await _loadTargetStandards();
+      for (final standard in _targetStandards) {
+        await _ensureTargetSectionsForStandard(standard.id);
+      }
       items.sort((a, b) {
         final byClass = a.currentStandardName.compareTo(b.currentStandardName);
         if (byClass != 0) return byClass;
-        final bySection =
-            (a.currentSectionName ?? '').compareTo(b.currentSectionName ?? '');
+        final bySection = (a.currentSectionName ?? '').compareTo(
+          b.currentSectionName ?? '',
+        );
         if (bySection != 0) return bySection;
         return (a.studentName ?? '').compareTo(b.studentName ?? '');
       });
@@ -338,7 +533,10 @@ class _PromotionWorkflowScreenState extends ConsumerState<PromotionWorkflowScree
   Future<void> _executePromotion() async {
     final selectedItems = _previewItems.where((e) => e.selected).toList();
     if (selectedItems.isEmpty) {
-      setState(() => _error = 'Please select at least one student to execute promotion.');
+      setState(
+        () =>
+            _error = 'Please select at least one student to execute promotion.',
+      );
       return;
     }
     final confirmed = await showDialog<bool>(
@@ -365,7 +563,11 @@ class _PromotionWorkflowScreenState extends ConsumerState<PromotionWorkflowScree
     );
     if (confirmed != true || !mounted) return;
 
-    setState(() { _executing = true; _error = null; _successMessage = null; });
+    setState(() {
+      _executing = true;
+      _error = null;
+      _successMessage = null;
+    });
     try {
       final result = await _repo.execute(
         sourceYearId: _sourceYearId!,
@@ -391,10 +593,16 @@ class _PromotionWorkflowScreenState extends ConsumerState<PromotionWorkflowScree
 
   Future<void> _copyTeacherAssignments() async {
     if (_sourceYearId == null || _targetYearId == null) {
-      setState(() => _error = 'Please select both source and target years first.');
+      setState(
+        () => _error = 'Please select both source and target years first.',
+      );
       return;
     }
-    setState(() { _copyingAssignments = true; _error = null; _successMessage = null; });
+    setState(() {
+      _copyingAssignments = true;
+      _error = null;
+      _successMessage = null;
+    });
     try {
       final result = await _repo.copyTeacherAssignments(
         sourceYearId: _sourceYearId!,
@@ -417,7 +625,9 @@ class _PromotionWorkflowScreenState extends ConsumerState<PromotionWorkflowScree
   Widget build(BuildContext context) {
     final user = ref.watch(authControllerProvider).valueOrNull;
     final isPrincipalOrSuper =
-        user != null && (user.role.toUpperCase() == 'PRINCIPAL' || user.role.toUpperCase() == 'SUPERADMIN');
+        user != null &&
+        (user.role.toUpperCase() == 'PRINCIPAL' ||
+            user.role.toUpperCase() == 'SUPERADMIN');
 
     return AdminScaffold(
       title: 'Promotion Workflow (Phase 7)',
@@ -450,21 +660,30 @@ class _PromotionWorkflowScreenState extends ConsumerState<PromotionWorkflowScree
                             decoration: const InputDecoration(
                               labelText: 'Source Year (promoting FROM)',
                               border: OutlineInputBorder(),
-                              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              contentPadding: EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
                             ),
                             value: _sourceYearId,
                             items: _years
-                                .map((y) => DropdownMenuItem<String>(
-                                      value: y.id,
-                                      child: Text(y.name + (y.isActive ? ' (Active)' : '')),
-                                    ))
+                                .map(
+                                  (y) => DropdownMenuItem<String>(
+                                    value: y.id,
+                                    child: Text(
+                                      y.name + (y.isActive ? ' (Active)' : ''),
+                                    ),
+                                  ),
+                                )
                                 .toList(),
                             onChanged: (v) async {
                               setState(() {
                                 _sourceYearId = v;
                                 _filterStandardId = null;
+                                _filterSectionId = null;
                                 _previewItems = [];
                                 _sourceStandards = [];
+                                _sourceSections = [];
                               });
                               await _loadSourceStandards();
                             },
@@ -476,19 +695,29 @@ class _PromotionWorkflowScreenState extends ConsumerState<PromotionWorkflowScree
                             decoration: const InputDecoration(
                               labelText: 'Target Year (promoting TO)',
                               border: OutlineInputBorder(),
-                              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              contentPadding: EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
                             ),
                             value: _targetYearId,
                             items: _years
-                                .map((y) => DropdownMenuItem<String>(
-                                      value: y.id,
-                                      child: Text(y.name + (y.isActive ? ' (Active)' : '')),
-                                    ))
+                                .map(
+                                  (y) => DropdownMenuItem<String>(
+                                    value: y.id,
+                                    child: Text(
+                                      y.name + (y.isActive ? ' (Active)' : ''),
+                                    ),
+                                  ),
+                                )
                                 .toList(),
                             onChanged: (v) {
                               setState(() {
                                 _targetYearId = v;
                                 _previewItems = [];
+                                _bulkTargetStandardId = null;
+                                _bulkTargetSectionId = null;
+                                _targetSectionsByStandard.clear();
                               });
                             },
                           ),
@@ -499,8 +728,10 @@ class _PromotionWorkflowScreenState extends ConsumerState<PromotionWorkflowScree
                             decoration: const InputDecoration(
                               labelText: 'Class (optional filter)',
                               border: OutlineInputBorder(),
-                              contentPadding:
-                                  EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              contentPadding: EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
                             ),
                             value: _filterStandardId,
                             items: [
@@ -515,10 +746,47 @@ class _PromotionWorkflowScreenState extends ConsumerState<PromotionWorkflowScree
                                 ),
                               ),
                             ],
-                            onChanged: (v) => setState(() {
-                              _filterStandardId = v;
-                              _previewItems = [];
-                            }),
+                            onChanged: (v) async {
+                              setState(() {
+                                _filterStandardId = v;
+                                _filterSectionId = null;
+                                _previewItems = [];
+                                _sourceSections = [];
+                              });
+                              await _loadSourceSections();
+                            },
+                          ),
+                        ),
+                        SizedBox(
+                          width: 240,
+                          child: DropdownButtonFormField<String>(
+                            decoration: const InputDecoration(
+                              labelText: 'Section (optional filter)',
+                              border: OutlineInputBorder(),
+                              contentPadding: EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
+                            ),
+                            value: _filterSectionId,
+                            items: [
+                              const DropdownMenuItem<String>(
+                                value: null,
+                                child: Text('All Sections'),
+                              ),
+                              ..._sourceSections.map(
+                                (s) => DropdownMenuItem<String>(
+                                  value: s.id,
+                                  child: Text(s.name),
+                                ),
+                              ),
+                            ],
+                            onChanged: _filterStandardId == null
+                                ? null
+                                : (v) => setState(() {
+                                    _filterSectionId = v;
+                                    _previewItems = [];
+                                  }),
                           ),
                         ),
                         ElevatedButton.icon(
@@ -526,7 +794,10 @@ class _PromotionWorkflowScreenState extends ConsumerState<PromotionWorkflowScree
                               ? const SizedBox(
                                   width: 14,
                                   height: 14,
-                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
                                 )
                               : const Icon(Icons.preview_outlined),
                           label: const Text('Preview Promotion'),
@@ -548,7 +819,10 @@ class _PromotionWorkflowScreenState extends ConsumerState<PromotionWorkflowScree
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(color: Colors.red.shade200),
                       ),
-                      child: Text(_error!, style: TextStyle(color: Colors.red.shade700)),
+                      child: Text(
+                        _error!,
+                        style: TextStyle(color: Colors.red.shade700),
+                      ),
                     ),
                   if (_successMessage != null)
                     Container(
@@ -560,13 +834,17 @@ class _PromotionWorkflowScreenState extends ConsumerState<PromotionWorkflowScree
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(color: Colors.green.shade200),
                       ),
-                      child: Text(_successMessage!, style: TextStyle(color: Colors.green.shade700)),
+                      child: Text(
+                        _successMessage!,
+                        style: TextStyle(color: Colors.green.shade700),
+                      ),
                     ),
 
                   // ── Preview Table ──────────────────────────────────────────
                   if (_previewItems.isNotEmpty) ...[
                     _SectionCard(
-                      title: 'Step 2 — Review & Override Decisions (${_previewItems.length} students)',
+                      title:
+                          'Step 2 — Review & Override Decisions (${_previewItems.length} students)',
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -593,29 +871,124 @@ class _PromotionWorkflowScreenState extends ConsumerState<PromotionWorkflowScree
                                 icon: const Icon(Icons.deselect, size: 16),
                                 label: const Text('Clear Selection'),
                               ),
-                              const Text('Set all to:',
-                                  style: TextStyle(fontWeight: FontWeight.w600)),
-                              ..._Decision.values.map((d) => OutlinedButton(
-                                    style: OutlinedButton.styleFrom(
-                                      foregroundColor: d.color,
-                                      side: BorderSide(color: d.color),
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                      textStyle: const TextStyle(fontSize: 12),
+                              const Text(
+                                'Set all to:',
+                                style: TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                              ..._Decision.values.map(
+                                (d) => OutlinedButton(
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: d.color,
+                                    side: BorderSide(color: d.color),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 4,
                                     ),
-                                    onPressed: () => setState(() {
-                                      for (final item in _previewItems) {
-                                        item.decision = d;
-                                      }
-                                    }),
-                                    child: Text(d.label),
-                                  )),
+                                    textStyle: const TextStyle(fontSize: 12),
+                                  ),
+                                  onPressed: () => setState(() {
+                                    for (final item in _previewItems) {
+                                      item.decision = d;
+                                    }
+                                  }),
+                                  child: Text(d.label),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              const Text(
+                                'Bulk target for selected students:',
+                                style: TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                              SizedBox(
+                                width: 220,
+                                child: DropdownButtonFormField<String>(
+                                  value: _bulkTargetClassOptions().any(
+                                        (s) => s.id == _bulkTargetStandardId,
+                                      )
+                                      ? _bulkTargetStandardId
+                                      : null,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Target Class',
+                                    border: OutlineInputBorder(),
+                                    contentPadding: EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 6,
+                                    ),
+                                  ),
+                                  items: _bulkTargetClassOptions()
+                                      .map(
+                                        (s) => DropdownMenuItem<String>(
+                                          value: s.id,
+                                          child: Text(s.name),
+                                        ),
+                                      )
+                                      .toList(),
+                                  onChanged: (v) async {
+                                    setState(() {
+                                      _bulkTargetStandardId = v;
+                                      _bulkTargetSectionId = null;
+                                    });
+                                    await _ensureTargetSectionsForStandard(v);
+                                  },
+                                ),
+                              ),
+                              SizedBox(
+                                width: 220,
+                                child: DropdownButtonFormField<String>(
+                                  value: _bulkTargetSectionId,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Target Section',
+                                    border: OutlineInputBorder(),
+                                    contentPadding: EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 6,
+                                    ),
+                                  ),
+                                  items: [
+                                    const DropdownMenuItem<String>(
+                                      value: null,
+                                      child: Text('Auto / None'),
+                                    ),
+                                    ..._sectionsForTargetStandard(
+                                      _bulkTargetStandardId,
+                                    ).map(
+                                      (s) => DropdownMenuItem<String>(
+                                        value: s.id,
+                                        child: Text(s.name),
+                                      ),
+                                    ),
+                                  ],
+                                  onChanged: _bulkTargetStandardId == null
+                                      ? null
+                                      : (v) => setState(
+                                          () => _bulkTargetSectionId = v,
+                                        ),
+                                ),
+                              ),
+                              ElevatedButton.icon(
+                                onPressed: _applyBulkTargetSelection,
+                                icon: const Icon(Icons.done_all),
+                                label: const Text('Apply to Selected'),
+                              ),
                             ],
                           ),
                           const SizedBox(height: 8),
                           ...(() {
                             final classGroups = <String, List<_PreviewItem>>{};
                             for (final item in _previewItems) {
-                              classGroups.putIfAbsent(item.currentStandardName, () => []).add(item);
+                              classGroups
+                                  .putIfAbsent(
+                                    item.currentStandardName,
+                                    () => [],
+                                  )
+                                  .add(item);
                             }
                             return classGroups.entries.map((entry) {
                               final className = entry.key;
@@ -636,90 +1009,282 @@ class _PromotionWorkflowScreenState extends ConsumerState<PromotionWorkflowScree
                                     SingleChildScrollView(
                                       scrollDirection: Axis.horizontal,
                                       child: DataTable(
-                                        headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
+                                        headingRowColor:
+                                            WidgetStateProperty.all(
+                                              Colors.grey.shade100,
+                                            ),
                                         columns: const [
                                           DataColumn(label: Text('Select')),
-                                          DataColumn(label: Text('Admission #')),
-                                          DataColumn(label: Text('Student Name')),
-                                          DataColumn(label: Text('Current Class')),
+                                          DataColumn(
+                                            label: Text('Admission #'),
+                                          ),
+                                          DataColumn(
+                                            label: Text('Student Name'),
+                                          ),
+                                          DataColumn(
+                                            label: Text('Current Class'),
+                                          ),
                                           DataColumn(label: Text('Section')),
-                                          DataColumn(label: Text('Suggested Next')),
+                                          DataColumn(
+                                            label: Text('Promote To Class'),
+                                          ),
+                                          DataColumn(
+                                            label: Text('Promote To Section'),
+                                          ),
                                           DataColumn(label: Text('Decision')),
-                                          DataColumn(label: Text('Target Class')),
+                                          DataColumn(
+                                            label: Text('Target Class'),
+                                          ),
+                                          DataColumn(
+                                            label: Text('Target Section'),
+                                          ),
                                         ],
                                         rows: classItems.map((item) {
                                           return DataRow(
                                             color: item.hasWarning
-                                                ? WidgetStateProperty.all(Colors.amber.shade50)
+                                                ? WidgetStateProperty.all(
+                                                    Colors.amber.shade50,
+                                                  )
                                                 : null,
                                             cells: [
                                               DataCell(
                                                 Checkbox(
                                                   value: item.selected,
-                                                  onChanged: (v) => setState(() {
-                                                    item.selected = v ?? false;
-                                                  }),
+                                                  onChanged: (v) =>
+                                                      setState(() {
+                                                        item.selected =
+                                                            v ?? false;
+                                                      }),
                                                 ),
                                               ),
-                                              DataCell(Text(item.admissionNumber ?? '-')),
+                                              DataCell(
+                                                Text(
+                                                  item.admissionNumber ?? '-',
+                                                ),
+                                              ),
                                               DataCell(
                                                 Row(
-                                                  mainAxisSize: MainAxisSize.min,
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
                                                   children: [
-                                                    Text(item.studentName ?? '-'),
+                                                    Text(
+                                                      item.studentName ?? '-',
+                                                    ),
                                                     if (item.hasWarning) ...[
                                                       const SizedBox(width: 4),
                                                       Tooltip(
-                                                        message: item.warningMessage ?? 'Warning',
-                                                        child: Icon(Icons.warning_amber_rounded,
-                                                            size: 14, color: Colors.amber.shade700),
+                                                        message:
+                                                            item.warningMessage ??
+                                                            'Warning',
+                                                        child: Icon(
+                                                          Icons
+                                                              .warning_amber_rounded,
+                                                          size: 14,
+                                                          color: Colors
+                                                              .amber
+                                                              .shade700,
+                                                        ),
                                                       ),
                                                     ],
                                                   ],
                                                 ),
                                               ),
-                                              DataCell(Text(item.currentStandardName)),
-                                              DataCell(Text(item.currentSectionName ?? '-')),
-                                              DataCell(Text(item.suggestedNextStandardName ?? '—')),
+                                              DataCell(
+                                                Text(item.currentStandardName),
+                                              ),
+                                              DataCell(
+                                                Text(
+                                                  item.currentSectionName ??
+                                                      '-',
+                                                ),
+                                              ),
+                                              DataCell(
+                                                Text(
+                                                  item.suggestedNextStandardName ??
+                                                      '—',
+                                                ),
+                                              ),
+                                              DataCell(
+                                                Text(
+                                                  item.suggestedNextSectionName ??
+                                                      '—',
+                                                ),
+                                              ),
                                               DataCell(
                                                 DropdownButton<_Decision>(
                                                   value: item.decision,
-                                                  underline: const SizedBox.shrink(),
+                                                  underline:
+                                                      const SizedBox.shrink(),
                                                   style: TextStyle(
                                                     color: item.decision.color,
                                                     fontWeight: FontWeight.w600,
                                                     fontSize: 13,
                                                   ),
                                                   items: _Decision.values
-                                                      .map((d) => DropdownMenuItem(
-                                                            value: d,
-                                                            child: Text(d.label,
-                                                                style: TextStyle(color: d.color)),
-                                                          ))
+                                                      .map(
+                                                        (d) => DropdownMenuItem(
+                                                          value: d,
+                                                          child: Text(
+                                                            d.label,
+                                                            style: TextStyle(
+                                                              color: d.color,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      )
                                                       .toList(),
                                                   onChanged: (v) {
                                                     if (v != null) {
-                                                      setState(() => item.decision = v);
+                                                      setState(() {
+                                                        item.decision = v;
+                                                        final options =
+                                                            _targetClassOptionsForItem(
+                                                          item,
+                                                        );
+                                                        if (options.isEmpty) {
+                                                          item.targetStandardId =
+                                                              null;
+                                                          item.targetSectionId =
+                                                              null;
+                                                          return;
+                                                        }
+                                                        final currentTarget =
+                                                            item.targetStandardId;
+                                                        final stillValid = options
+                                                            .any(
+                                                              (s) =>
+                                                                  s.id ==
+                                                                  currentTarget,
+                                                            );
+                                                        item.targetStandardId =
+                                                            stillValid
+                                                            ? currentTarget
+                                                            : options.first.id;
+                                                        item.targetSectionId =
+                                                            null;
+                                                      });
+                                                      _ensureTargetSectionsForStandard(
+                                                        item.targetStandardId,
+                                                      );
                                                     }
                                                   },
                                                 ),
                                               ),
                                               DataCell(
-                                                (item.decision == _Decision.promote ||
-                                                        item.decision == _Decision.repeat)
+                                                (item.decision ==
+                                                            _Decision.promote ||
+                                                        item.decision ==
+                                                            _Decision.repeat)
                                                     ? DropdownButton<String?>(
-                                                        value: item.targetStandardId,
-                                                        underline: const SizedBox.shrink(),
-                                                        hint: const Text('Select', style: TextStyle(fontSize: 12)),
-                                                        items: _targetStandards
-                                                            .map((s) => DropdownMenuItem<String?>(
-                                                                  value: s.id,
-                                                                  child: Text(s.name,
-                                                                      style: const TextStyle(fontSize: 12)),
-                                                                ))
+                                                        value: _targetClassOptionsForItem(
+                                                                  item,
+                                                                ).any(
+                                                                  (s) =>
+                                                                      s.id ==
+                                                                      item.targetStandardId,
+                                                                )
+                                                            ? item.targetStandardId
+                                                            : null,
+                                                        underline:
+                                                            const SizedBox.shrink(),
+                                                        hint: const Text(
+                                                          'Select',
+                                                          style: TextStyle(
+                                                            fontSize: 12,
+                                                          ),
+                                                        ),
+                                                        items: _targetClassOptionsForItem(item)
+                                                            .map(
+                                                              (s) =>
+                                                                  DropdownMenuItem<
+                                                                    String?
+                                                                  >(
+                                                                    value: s.id,
+                                                                    child: Text(
+                                                                      s.name,
+                                                                      style: const TextStyle(
+                                                                        fontSize:
+                                                                            12,
+                                                                      ),
+                                                                    ),
+                                                                  ),
+                                                            )
                                                             .toList(),
-                                                        onChanged: (v) =>
-                                                            setState(() => item.targetStandardId = v),
+                                                        onChanged: (v) async {
+                                                          setState(() {
+                                                            item.targetStandardId =
+                                                                v;
+                                                            if (v !=
+                                                                item.suggestedNextStandardId) {
+                                                              item.targetSectionId =
+                                                                  null;
+                                                            } else {
+                                                              item.targetSectionId =
+                                                                  item.suggestedNextSectionId;
+                                                            }
+                                                          });
+                                                          await _ensureTargetSectionsForStandard(
+                                                            v,
+                                                          );
+                                                        },
+                                                      )
+                                                    : const Text('—'),
+                                              ),
+                                              DataCell(
+                                                (item.decision ==
+                                                            _Decision.promote ||
+                                                        item.decision ==
+                                                            _Decision.repeat)
+                                                    ? DropdownButton<String?>(
+                                                        value: item
+                                                            .targetSectionId,
+                                                        underline:
+                                                            const SizedBox.shrink(),
+                                                        hint: const Text(
+                                                          'Auto',
+                                                          style: TextStyle(
+                                                            fontSize: 12,
+                                                          ),
+                                                        ),
+                                                        items: [
+                                                          const DropdownMenuItem<
+                                                            String?
+                                                          >(
+                                                            value: null,
+                                                            child: Text(
+                                                              'Auto / None',
+                                                              style: TextStyle(
+                                                                fontSize: 12,
+                                                              ),
+                                                            ),
+                                                          ),
+                                                          ..._sectionsForTargetStandard(
+                                                            item.targetStandardId,
+                                                          ).map(
+                                                            (s) =>
+                                                                DropdownMenuItem<
+                                                                  String?
+                                                                >(
+                                                                  value: s.id,
+                                                                  child: Text(
+                                                                    s.name,
+                                                                    style: const TextStyle(
+                                                                      fontSize:
+                                                                          12,
+                                                                    ),
+                                                                  ),
+                                                                ),
+                                                          ),
+                                                        ],
+                                                        onChanged:
+                                                            item.targetStandardId ==
+                                                                null
+                                                            ? null
+                                                            : (v) => setState(
+                                                                () =>
+                                                                    item.targetSectionId =
+                                                                        v,
+                                                              ),
                                                       )
                                                     : const Text('—'),
                                               ),
@@ -749,7 +1314,10 @@ class _PromotionWorkflowScreenState extends ConsumerState<PromotionWorkflowScree
                               'Review all decisions above before executing. '
                               'This creates new academic mappings in the target year '
                               'and closes the source year mappings as terminal states.',
-                              style: TextStyle(fontSize: 13, color: Colors.black54),
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.black54,
+                              ),
                             ),
                             const SizedBox(height: 12),
                             Row(
@@ -760,7 +1328,9 @@ class _PromotionWorkflowScreenState extends ConsumerState<PromotionWorkflowScree
                                           width: 14,
                                           height: 14,
                                           child: CircularProgressIndicator(
-                                              strokeWidth: 2, color: Colors.white),
+                                            strokeWidth: 2,
+                                            color: Colors.white,
+                                          ),
                                         )
                                       : const Icon(Icons.check_circle_outline),
                                   label: const Text('Execute Promotion'),
@@ -768,7 +1338,9 @@ class _PromotionWorkflowScreenState extends ConsumerState<PromotionWorkflowScree
                                     backgroundColor: Colors.green.shade700,
                                     foregroundColor: Colors.white,
                                   ),
-                                  onPressed: _executing ? null : _executePromotion,
+                                  onPressed: _executing
+                                      ? null
+                                      : _executePromotion,
                                 ),
                                 const SizedBox(width: 12),
                                 Text(
@@ -786,10 +1358,13 @@ class _PromotionWorkflowScreenState extends ConsumerState<PromotionWorkflowScree
                   ],
 
                   // ── Copy Teacher Assignments (optional) ─────────────────
-                  if (_sourceYearId != null && _targetYearId != null && isPrincipalOrSuper) ...[
+                  if (_sourceYearId != null &&
+                      _targetYearId != null &&
+                      isPrincipalOrSuper) ...[
                     const SizedBox(height: 12),
                     _SectionCard(
-                      title: 'Optional — Copy Teacher Assignments to Target Year',
+                      title:
+                          'Optional — Copy Teacher Assignments to Target Year',
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -797,7 +1372,10 @@ class _PromotionWorkflowScreenState extends ConsumerState<PromotionWorkflowScree
                             'Copies all teacher-class-subject assignments from the source year to the target year. '
                             'Existing assignments in the target year are skipped (not overwritten). '
                             'Fresh assignments can always be created manually.',
-                            style: TextStyle(fontSize: 13, color: Colors.black54),
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.black54,
+                            ),
                           ),
                           const SizedBox(height: 12),
                           ElevatedButton.icon(
@@ -806,7 +1384,9 @@ class _PromotionWorkflowScreenState extends ConsumerState<PromotionWorkflowScree
                                     width: 14,
                                     height: 14,
                                     child: CircularProgressIndicator(
-                                        strokeWidth: 2, color: Colors.white),
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
                                   )
                                 : const Icon(Icons.copy_all_outlined),
                             label: const Text('Copy Teacher Assignments'),
@@ -814,7 +1394,9 @@ class _PromotionWorkflowScreenState extends ConsumerState<PromotionWorkflowScree
                               backgroundColor: Colors.blueGrey.shade700,
                               foregroundColor: Colors.white,
                             ),
-                            onPressed: _copyingAssignments ? null : _copyTeacherAssignments,
+                            onPressed: _copyingAssignments
+                                ? null
+                                : _copyTeacherAssignments,
                           ),
                         ],
                       ),

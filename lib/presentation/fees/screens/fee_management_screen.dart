@@ -116,6 +116,9 @@ class _StudentFeeRow {
     required this.parentName,
     required this.parentPhone,
     required this.parentEmail,
+    required this.studentPhone,
+    required this.paymentCycle,
+    required this.status,
     required this.totalBilled,
     required this.totalPaid,
     required this.totalOutstanding,
@@ -131,6 +134,9 @@ class _StudentFeeRow {
   final String? parentName;
   final String? parentPhone;
   final String? parentEmail;
+  final String? studentPhone;
+  final String paymentCycle;
+  final String status;
   final double totalBilled;
   final double totalPaid;
   final double totalOutstanding;
@@ -148,6 +154,9 @@ class _StudentFeeRow {
       parentName: json['parent_name'] as String?,
       parentPhone: json['parent_phone'] as String?,
       parentEmail: json['parent_email'] as String?,
+      studentPhone: json['student_phone'] as String?,
+      paymentCycle: json['payment_cycle']?.toString() ?? 'UNASSIGNED',
+      status: json['status']?.toString() ?? 'PENDING',
       totalBilled: (json['total_billed'] as num?)?.toDouble() ?? 0,
       totalPaid: (json['total_paid'] as num?)?.toDouble() ?? 0,
       totalOutstanding: (json['total_outstanding'] as num?)?.toDouble() ?? 0,
@@ -169,6 +178,15 @@ class _StudentFeeRow {
 class _FeeRepository {
   _FeeRepository(this._dio);
   final DioClient _dio;
+  static const List<String> feeCategories = [
+    'TUITION',
+    'TRANSPORT',
+    'LIBRARY',
+    'LABORATORY',
+    'SPORTS',
+    'EXAMINATION',
+    'MISCELLANEOUS',
+  ];
 
   bool _isUuid(String? value) {
     if (value == null) return false;
@@ -198,6 +216,24 @@ class _FeeRepository {
       queryParameters: {
         'school_id': schoolId,
         'academic_year_id': academicYearId,
+      },
+    );
+    return ((resp.data?['items'] as List?) ?? [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+  }
+
+  Future<List<Map<String, dynamic>>> listSections({
+    required String schoolId,
+    required String academicYearId,
+    required String standardId,
+  }) async {
+    final resp = await _dio.dio.get<Map<String, dynamic>>(
+      '/masters/sections',
+      queryParameters: {
+        'school_id': schoolId,
+        'academic_year_id': academicYearId,
+        'standard_id': standardId,
       },
     );
     return ((resp.data?['items'] as List?) ?? [])
@@ -256,11 +292,21 @@ class _FeeRepository {
     );
   }
 
+  Future<void> createStructuresBatch({
+    required List<Map<String, dynamic>> structures,
+  }) async {
+    await _dio.dio.post<dynamic>(
+      '/fees/structures/batch',
+      data: {'structures': structures},
+    );
+  }
+
   Future<void> updateStructure({
     required String structureId,
     double? amount,
     String? dueDate,
     String? description,
+    bool? applyToAllClasses,
   }) async {
     await _dio.dio.patch<dynamic>(
       '/fees/structures/$structureId',
@@ -268,12 +314,22 @@ class _FeeRepository {
         if (amount != null) 'amount': amount,
         if (dueDate != null) 'due_date': dueDate,
         if (description != null) 'description': description,
+        if (applyToAllClasses != null)
+          'apply_to_all_classes': applyToAllClasses,
       },
     );
   }
 
-  Future<void> deleteStructure(String structureId) async {
-    await _dio.dio.delete<dynamic>('/fees/structures/$structureId');
+  Future<void> deleteStructure(
+    String structureId, {
+    bool deleteLinkedEntries = false,
+  }) async {
+    await _dio.dio.delete<dynamic>(
+      '/fees/structures/$structureId',
+      queryParameters: {
+        if (deleteLinkedEntries) 'delete_linked_entries': true,
+      },
+    );
   }
 
   Future<Map<String, dynamic>> generateLedger(
@@ -294,6 +350,7 @@ class _FeeRepository {
     required String studentId,
     required String standardId,
     String? academicYearId,
+    String? paymentCycle,
   }) async {
     final resp = await _dio.dio.post<Map<String, dynamic>>(
       '/fees/ledger/generate-student',
@@ -301,6 +358,8 @@ class _FeeRepository {
         'student_id': studentId,
         'standard_id': standardId,
         if (academicYearId != null) 'academic_year_id': academicYearId,
+        if (paymentCycle != null && paymentCycle.isNotEmpty)
+          'payment_cycle': paymentCycle,
       },
     );
     return resp.data ?? {};
@@ -310,6 +369,8 @@ class _FeeRepository {
   Future<Map<String, dynamic>> listClassFeeStudents({
     required String standardId,
     String? academicYearId,
+    String? section,
+    String? paymentCycle,
     String? status,
   }) async {
     final resp = await _dio.dio.get<Map<String, dynamic>>(
@@ -317,6 +378,9 @@ class _FeeRepository {
       queryParameters: {
         'standard_id': standardId,
         if (_isUuid(academicYearId)) 'academic_year_id': academicYearId,
+        if (section != null && section.trim().isNotEmpty) 'section': section.trim(),
+        if (paymentCycle != null && paymentCycle.trim().isNotEmpty)
+          'payment_cycle': paymentCycle.trim(),
         if (status != null && status.isNotEmpty) 'status': status,
       },
     );
@@ -340,6 +404,35 @@ class _FeeRepository {
         'amount': amount,
         'payment_mode': paymentMode,
         'payment_date': paymentDate,
+        if (referenceNumber != null && referenceNumber.isNotEmpty)
+          'reference_number': referenceNumber,
+        if (transactionRef != null && transactionRef.isNotEmpty)
+          'transaction_ref': transactionRef,
+      },
+    );
+    return resp.data ?? {};
+  }
+
+  Future<Map<String, dynamic>> allocatePayment({
+    required String studentId,
+    required double amount,
+    required String paymentMode,
+    String? paymentCycle,
+    required String paymentDate,
+    String? academicYearId,
+    String? referenceNumber,
+    String? transactionRef,
+  }) async {
+    final resp = await _dio.dio.post<Map<String, dynamic>>(
+      '/fees/payments/allocate',
+      data: {
+        'student_id': studentId,
+        'amount': amount,
+        'payment_mode': paymentMode,
+        if (paymentCycle != null && paymentCycle.trim().isNotEmpty)
+          'payment_cycle': paymentCycle.trim(),
+        'payment_date': paymentDate,
+        if (_isUuid(academicYearId)) 'academic_year_id': academicYearId,
         if (referenceNumber != null && referenceNumber.isNotEmpty)
           'reference_number': referenceNumber,
         if (transactionRef != null && transactionRef.isNotEmpty)
@@ -399,14 +492,19 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
 
   List<Map<String, dynamic>> _years = [];
   List<Map<String, dynamic>> _standards = [];
+  List<Map<String, dynamic>> _sections = [];
   String? _selectedYearId;
   String? _selectedStandardId;
+  String? _selectedSection;
+  String? _paymentCycleFilter;
   String? _statusFilter;
 
   // Tab data
+  List<_FeeStructure> _structures = [];
   List<_StudentFeeRow> _students = [];
   Map<String, dynamic> _analytics = {};
   List<Map<String, dynamic>> _defaulters = [];
+  final Map<String, String> _studentPreferredCycle = {};
 
   bool _loading = false;
   String? _error;
@@ -414,7 +512,7 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     _repo = _FeeRepository(ref.read(dioClientProvider));
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging) _onTabChanged(_tabController.index);
@@ -465,89 +563,184 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
       final stds = await _repo.listStandards(_schoolId!, _selectedYearId!);
       setState(() {
         _standards = stds;
-        if (_selectedStandardId == null && stds.isNotEmpty) {
+        final stillValid = stds.any(
+          (s) => s['id']?.toString() == _selectedStandardId,
+        );
+        if ((!stillValid || _selectedStandardId == null) && stds.isNotEmpty) {
           _selectedStandardId = stds.first['id']?.toString();
         }
+        if (stds.isEmpty) {
+          _selectedStandardId = null;
+        }
+        _sections = [];
+        _selectedSection = null;
       });
+      await _loadSections();
       await _onTabChanged(_tabController.index);
     } catch (_) {}
+  }
+
+  Future<void> _loadSections() async {
+    if (_schoolId == null || _selectedYearId == null || _selectedStandardId == null) {
+      setState(() {
+        _sections = [];
+        _selectedSection = null;
+      });
+      return;
+    }
+    try {
+      final items = await _repo.listSections(
+        schoolId: _schoolId!,
+        academicYearId: _selectedYearId!,
+        standardId: _selectedStandardId!,
+      );
+      setState(() {
+        _sections = items;
+        final valid = items.any((s) => s['name']?.toString() == _selectedSection);
+        if (!valid) _selectedSection = null;
+      });
+    } catch (_) {
+      setState(() {
+        _sections = [];
+        _selectedSection = null;
+      });
+    }
   }
 
   Future<void> _onTabChanged(int i) async {
     switch (i) {
       case 0:
-        await _loadStudents();
+        await _loadStructures();
         break;
       case 1:
-        await _loadAnalytics();
+        await _loadStudents();
         break;
       case 2:
+        await _loadAnalytics();
+        break;
+      case 3:
         await _loadDefaulters();
         break;
     }
   }
 
-  Future<void> _loadStudents() async {
+  Future<void> _loadStructures({bool quiet = false}) async {
+    if (_selectedStandardId == null || _selectedYearId == null) return;
+    if (!quiet) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
+    try {
+      final items = await _repo.listStructures(
+        _selectedStandardId!,
+        academicYearId: _selectedYearId,
+      );
+      if (mounted) setState(() => _structures = items);
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
+    } finally {
+      if (mounted && !quiet) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _loadStudents({bool quiet = false}) async {
     if (_selectedStandardId == null) return;
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    if (!quiet) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     try {
       final data = await _repo.listClassFeeStudents(
         standardId: _selectedStandardId!,
         academicYearId: _selectedYearId,
+        section: _selectedSection,
+        paymentCycle: _paymentCycleFilter,
         status: _statusFilter,
       );
       final rawStudents = data['items'] as List<dynamic>? ?? [];
-      setState(() {
-        _students = rawStudents
-            .map(
-              (e) =>
-                  _StudentFeeRow.fromJson(Map<String, dynamic>.from(e as Map)),
-            )
-            .toList();
-      });
+      if (mounted) {
+        setState(() {
+          _students = rawStudents
+              .map(
+                (e) =>
+                    _StudentFeeRow.fromJson(Map<String, dynamic>.from(e as Map)),
+              )
+              .toList();
+        });
+      }
     } catch (e) {
-      setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = e.toString());
     } finally {
-      setState(() => _loading = false);
+      if (mounted && !quiet) setState(() => _loading = false);
     }
   }
 
-  Future<void> _loadAnalytics() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  Future<void> _loadAnalytics({bool quiet = false}) async {
+    if (!quiet) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     try {
       final data = await _repo.getFeeAnalytics(
         academicYearId: _selectedYearId,
         standardId: _selectedStandardId,
       );
-      setState(() => _analytics = data);
+      if (mounted) setState(() => _analytics = data);
     } catch (e) {
-      setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = e.toString());
     } finally {
-      setState(() => _loading = false);
+      if (mounted && !quiet) setState(() => _loading = false);
     }
   }
 
-  Future<void> _loadDefaulters() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  Future<void> _loadDefaulters({bool quiet = false}) async {
+    if (!quiet) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     try {
       final data = await _repo.getDefaulters(
         academicYearId: _selectedYearId,
         standardId: _selectedStandardId,
       );
-      setState(() => _defaulters = data);
+      if (mounted) setState(() => _defaulters = data);
     } catch (e) {
-      setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = e.toString());
     } finally {
-      setState(() => _loading = false);
+      if (mounted && !quiet) setState(() => _loading = false);
+    }
+  }
+
+  /// Reloads every filter-dependent view (not only the active tab). Fixes losing
+  /// the student list after Apply while on Structures / Analytics / Defaulters.
+  Future<void> _applyFeeFilters() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      if (_selectedStandardId != null && _selectedYearId != null) {
+        await _loadStructures(quiet: true);
+      } else {
+        if (mounted) setState(() => _structures = []);
+      }
+      if (_selectedStandardId != null) {
+        await _loadStudents(quiet: true);
+      } else {
+        if (mounted) setState(() => _students = []);
+      }
+      await _loadAnalytics(quiet: true);
+      await _loadDefaulters(quiet: true);
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -556,27 +749,105 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
     return '₹${d.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}';
   }
 
-  Future<void> _recordPaymentForStudent(_StudentFeeRow student) async {
-    final payableInstallments = student.installments
-        .where((i) => i.hasOutstanding && i.ledgerId.isNotEmpty)
-        .toList();
-    if (payableInstallments.isEmpty) {
+  Future<void> _recordPaymentForStudent(
+    _StudentFeeRow student, {
+    String? preferredCycle,
+  }) async {
+    if (student.totalOutstanding <= 0.01) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('No outstanding installments for this student.'),
+          content: Text('No outstanding fees for this student.'),
         ),
       );
       return;
     }
 
-    _InstallmentRow selected = payableInstallments.first;
     final amountCtrl = TextEditingController(
-      text: selected.outstandingAmount.toStringAsFixed(2),
+      text: student.totalOutstanding.toStringAsFixed(2),
     );
     final referenceCtrl = TextEditingController();
     final notesCtrl = TextEditingController();
     String paymentMode = 'CASH';
+    String paymentCycle =
+        (preferredCycle ??
+                _studentPreferredCycle[student.studentId] ??
+                student.paymentCycle)
+            .toUpperCase();
+    if (paymentCycle != 'MONTHLY' &&
+        paymentCycle != 'QUARTERLY' &&
+        paymentCycle != 'YEARLY') {
+      paymentCycle = 'YEARLY';
+    }
+    bool verified = false;
+
+    double _suggestedAmountForCycle(String cycle) {
+      final outstandingInstallments = student.installments
+          .where((i) => i.hasOutstanding)
+          .toList()
+        ..sort((a, b) {
+          final ad = DateTime.tryParse(a.dueDate ?? '') ?? DateTime(2100);
+          final bd = DateTime.tryParse(b.dueDate ?? '') ?? DateTime(2100);
+          return ad.compareTo(bd);
+        });
+      final total = student.totalOutstanding;
+      if (total <= 0.01) return 0;
+
+      final hasMonthlyNames = outstandingInstallments.any(
+        (i) => i.installmentName.toLowerCase().contains('month'),
+      );
+      final hasQuarterNames = outstandingInstallments.any(
+        (i) => i.installmentName.toLowerCase().contains('quarter'),
+      );
+
+      if (cycle == 'MONTHLY') {
+        if (hasMonthlyNames && outstandingInstallments.isNotEmpty) {
+          return outstandingInstallments.first.outstandingAmount.clamp(0.0, total);
+        }
+        if (hasQuarterNames && outstandingInstallments.isNotEmpty) {
+          return (outstandingInstallments.first.outstandingAmount / 3).clamp(0.0, total);
+        }
+        return (total / 12).clamp(0.0, total);
+      }
+      if (cycle == 'QUARTERLY') {
+        if (hasMonthlyNames) {
+          final chunk = outstandingInstallments.take(3).fold<double>(
+            0.0,
+            (sum, i) => sum + i.outstandingAmount,
+          );
+          return chunk.clamp(0.0, total);
+        }
+        if (hasQuarterNames && outstandingInstallments.isNotEmpty) {
+          return outstandingInstallments.first.outstandingAmount.clamp(0.0, total);
+        }
+        return (total / 4).clamp(0.0, total);
+      }
+      return total;
+    }
+
+    List<_InstallmentRow> _nextInstallmentsForCycle(String cycle) {
+      final outstandingInstallments = student.installments
+          .where((i) => i.hasOutstanding)
+          .toList()
+        ..sort((a, b) {
+          final ad = DateTime.tryParse(a.dueDate ?? '') ?? DateTime(2100);
+          final bd = DateTime.tryParse(b.dueDate ?? '') ?? DateTime(2100);
+          return ad.compareTo(bd);
+        });
+      if (outstandingInstallments.isEmpty) return const [];
+      if (cycle == 'MONTHLY') return [outstandingInstallments.first];
+      if (cycle == 'QUARTERLY') {
+        final hasMonthlyNames = outstandingInstallments.any(
+          (i) => i.installmentName.toLowerCase().contains('month'),
+        );
+        return hasMonthlyNames
+            ? outstandingInstallments.take(3).toList()
+            : [outstandingInstallments.first];
+      }
+      return outstandingInstallments;
+    }
+
+    amountCtrl.text = _suggestedAmountForCycle(paymentCycle).toStringAsFixed(2);
 
     final shouldSubmit = await showDialog<bool>(
       context: context,
@@ -585,7 +856,7 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
           builder: (ctx, setDialogState) {
             return AlertDialog(
               title: Text(
-                'Record Payment • ${student.studentName ?? student.admissionNumber ?? 'Student'}',
+                'Collect Payment • ${student.studentName ?? student.admissionNumber ?? 'Student'}',
               ),
               content: SizedBox(
                 width: 420,
@@ -593,31 +864,45 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.blue.shade200),
+                        ),
+                        child: Text(
+                          'This payment will be auto-distributed across overdue and pending fee heads for this student.',
+                          style: TextStyle(color: Colors.blue.shade800, fontSize: 12),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
-                        value: selected.ledgerId,
+                        initialValue: paymentCycle,
                         decoration: const InputDecoration(
-                          labelText: 'Installment',
+                          labelText: 'Payment Cycle',
                           border: OutlineInputBorder(),
                         ),
-                        items: payableInstallments
-                            .map(
-                              (i) => DropdownMenuItem<String>(
-                                value: i.ledgerId,
-                                child: Text(
-                                  '${i.displayLabel} • Due ${_fmt(i.outstandingAmount)}',
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            )
-                            .toList(),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'MONTHLY',
+                            child: Text('Monthly'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'QUARTERLY',
+                            child: Text('Quarterly'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'YEARLY',
+                            child: Text('Yearly'),
+                          ),
+                        ],
                         onChanged: (v) {
-                          if (v == null) return;
-                          final match = payableInstallments.firstWhere(
-                            (i) => i.ledgerId == v,
-                          );
+                          final next = v ?? 'YEARLY';
                           setDialogState(() {
-                            selected = match;
-                            amountCtrl.text = selected.outstandingAmount
+                            paymentCycle = next;
+                            amountCtrl.text = _suggestedAmountForCycle(next)
                                 .toStringAsFixed(2);
                           });
                         },
@@ -631,7 +916,66 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                         decoration: const InputDecoration(
                           labelText: 'Amount',
                           border: OutlineInputBorder(),
+                          helperText: 'Student outstanding: auto-calculated and split',
                         ),
+                      ),
+                      const SizedBox(height: 10),
+                      Builder(
+                        builder: (_) {
+                          final targets = _nextInstallmentsForCycle(paymentCycle);
+                          final title = paymentCycle == 'MONTHLY'
+                              ? 'Next monthly installment target'
+                              : paymentCycle == 'QUARTERLY'
+                              ? 'Next quarterly target installment(s)'
+                              : 'Yearly target (all outstanding installments)';
+                          return Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.orange.shade200),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  title,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.orange.shade900,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                ...targets.take(4).map((inst) {
+                                  final due = inst.dueDate ?? '-';
+                                  final label = inst.installmentName.trim().isEmpty
+                                      ? inst.feeHead
+                                      : '${inst.feeHead} • ${inst.installmentName}';
+                                  return Padding(
+                                    padding: const EdgeInsets.only(bottom: 2),
+                                    child: Text(
+                                      '• $label  |  Due: $due  |  Pending: ${_fmt(inst.outstandingAmount)}',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.orange.shade800,
+                                      ),
+                                    ),
+                                  );
+                                }),
+                                if (targets.length > 4)
+                                  Text(
+                                    '...and ${targets.length - 4} more installment(s)',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.orange.shade800,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          );
+                        },
                       ),
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
@@ -653,6 +997,14 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                           DropdownMenuItem(value: 'UPI', child: Text('UPI')),
                           DropdownMenuItem(value: 'NEFT', child: Text('NEFT')),
                           DropdownMenuItem(value: 'RTGS', child: Text('RTGS')),
+                          DropdownMenuItem(
+                            value: 'CARD',
+                            child: Text('Card'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'BANK_TRANSFER',
+                            child: Text('Bank Transfer'),
+                          ),
                           DropdownMenuItem(
                             value: 'DD',
                             child: Text('Demand Draft'),
@@ -682,6 +1034,18 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                           border: OutlineInputBorder(),
                         ),
                       ),
+                      const SizedBox(height: 10),
+                      CheckboxListTile(
+                        contentPadding: EdgeInsets.zero,
+                        value: verified,
+                        onChanged: (v) =>
+                            setDialogState(() => verified = v ?? false),
+                        title: const Text(
+                          'Verified by admin',
+                          style: TextStyle(fontSize: 13),
+                        ),
+                        controlAffinity: ListTileControlAffinity.leading,
+                      ),
                     ],
                   ),
                 ),
@@ -692,7 +1056,17 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                   child: const Text('Cancel'),
                 ),
                 ElevatedButton(
-                  onPressed: () => Navigator.of(ctx).pop(true),
+                  onPressed: () {
+                    if (!verified) {
+                      ScaffoldMessenger.of(ctx).showSnackBar(
+                        const SnackBar(
+                          content: Text('Please verify before saving payment.'),
+                        ),
+                      );
+                      return;
+                    }
+                    Navigator.of(ctx).pop(true);
+                  },
                   child: const Text('Save'),
                 ),
               ],
@@ -712,12 +1086,12 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
       );
       return;
     }
-    if (amount > selected.outstandingAmount + 0.01) {
+    if (amount > student.totalOutstanding + 0.01) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Amount cannot exceed outstanding ${_fmt(selected.outstandingAmount)}.',
+            'Amount cannot exceed outstanding ${_fmt(student.totalOutstanding)}.',
           ),
         ),
       );
@@ -729,12 +1103,13 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
       final today = DateTime.now();
       final paymentDate =
           '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
-      await _repo.recordPayment(
+      final result = await _repo.allocatePayment(
         studentId: student.studentId,
-        feeLedgerId: selected.ledgerId,
         amount: amount,
         paymentMode: paymentMode,
+        paymentCycle: paymentCycle,
         paymentDate: paymentDate,
+        academicYearId: _selectedYearId,
         referenceNumber: referenceCtrl.text.trim().isEmpty
             ? null
             : referenceCtrl.text.trim(),
@@ -742,12 +1117,20 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
             ? null
             : notesCtrl.text.trim(),
       );
+      _studentPreferredCycle[student.studentId] = paymentCycle;
       await _loadStudents();
       await _loadAnalytics();
       await _loadDefaulters();
       if (!mounted) return;
+      final applied = (result['total_applied'] as num?)?.toDouble() ?? 0;
+      final unapplied = (result['total_unapplied'] as num?)?.toDouble() ?? 0;
+      final allocations = (result['allocations'] as List?)?.length ?? 0;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Payment updated successfully.')),
+        SnackBar(
+          content: Text(
+            'Payment collected. Applied ${_fmt(applied)} across $allocations entries${unapplied > 0 ? ', Unapplied: ${_fmt(unapplied)}' : ''}.',
+          ),
+        ),
       );
     } catch (e) {
       if (!mounted) return;
@@ -758,6 +1141,685 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
       if (mounted) {
         setState(() => _loading = false);
       }
+    }
+  }
+
+  Future<void> _assignLedgerForStudent(
+    _StudentFeeRow student, {
+    bool continueToPayment = false,
+  }) async {
+    if (_selectedStandardId == null) return;
+    String paymentCycle = 'YEARLY';
+    final shouldAssign = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: Text(
+            'Assign Fee Entry • ${student.studentName ?? student.admissionNumber ?? 'Student'}',
+          ),
+          content: SizedBox(
+            width: 360,
+            child: DropdownButtonFormField<String>(
+              initialValue: paymentCycle,
+              decoration: const InputDecoration(
+                labelText: 'Payment Cycle',
+                border: OutlineInputBorder(),
+              ),
+              items: const [
+                DropdownMenuItem(value: 'YEARLY', child: Text('Yearly')),
+                DropdownMenuItem(value: 'QUARTERLY', child: Text('Quarterly')),
+                DropdownMenuItem(value: 'MONTHLY', child: Text('Monthly')),
+              ],
+              onChanged: (v) =>
+                  setDialogState(() => paymentCycle = v ?? 'YEARLY'),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Assign'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (shouldAssign != true) return;
+
+    _StudentFeeRow? updatedStudent;
+    try {
+      setState(() => _loading = true);
+      await _repo.generateStudentLedger(
+        studentId: student.studentId,
+        standardId: _selectedStandardId!,
+        academicYearId: _selectedYearId,
+        paymentCycle: paymentCycle,
+      );
+      await _loadStudents();
+      await _loadAnalytics();
+      await _loadDefaulters();
+      updatedStudent = _students.where((s) => s.studentId == student.studentId).fold<
+        _StudentFeeRow?
+      >(null, (prev, item) => prev ?? item);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Ledger assigned for ${student.studentName ?? student.admissionNumber ?? 'student'}.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Unable to assign ledger: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+
+    if (!mounted || !continueToPayment) return;
+    if (updatedStudent == null) return;
+    if (updatedStudent.installments.isEmpty) return;
+    _studentPreferredCycle[student.studentId] = paymentCycle;
+    await _recordPaymentForStudent(
+      updatedStudent,
+      preferredCycle: paymentCycle,
+    );
+  }
+
+  Future<void> _showCreateStructureDialog() async {
+    if (_selectedStandardId == null || _selectedYearId == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select academic year and class first.'),
+        ),
+      );
+      return;
+    }
+
+    Map<String, dynamic> newDraft() {
+      return {
+        'fee_category': 'TUITION',
+        'custom_fee_head_ctrl': TextEditingController(),
+        'amount_ctrl': TextEditingController(),
+        'desc_ctrl': TextEditingController(),
+      };
+    }
+
+    final drafts = <Map<String, dynamic>>[newDraft()];
+    final sharedDueDate = <DateTime>[DateTime.now()];
+
+    final shouldSubmit = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) => AlertDialog(
+            title: const Text('Add Fee Structure'),
+            content: SizedBox(
+              width: 420,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'The same due date is applied to every fee head in this save. '
+                      'Adjust amounts and categories per head below.',
+                      style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                            color: Colors.grey.shade700,
+                          ),
+                    ),
+                    const SizedBox(height: 10),
+                    Material(
+                      color: Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(10),
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 4,
+                        ),
+                        title: const Text('Due date'),
+                        subtitle: Text(
+                          '${sharedDueDate[0].year}-${sharedDueDate[0].month.toString().padLeft(2, '0')}-${sharedDueDate[0].day.toString().padLeft(2, '0')}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 15,
+                          ),
+                        ),
+                        trailing: TextButton(
+                          onPressed: () async {
+                            final picked = await showDatePicker(
+                              context: ctx,
+                              firstDate: DateTime(2020),
+                              lastDate: DateTime(2100),
+                              initialDate: sharedDueDate[0],
+                            );
+                            if (picked != null) {
+                              setDialogState(() => sharedDueDate[0] = picked);
+                            }
+                          },
+                          child: const Text('Change'),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    ...List.generate(drafts.length, (index) {
+                      final draft = drafts[index];
+                      final headCtrl =
+                          draft['custom_fee_head_ctrl'] as TextEditingController;
+                      final amountCtrl =
+                          draft['amount_ctrl'] as TextEditingController;
+                      final descCtrl =
+                          draft['desc_ctrl'] as TextEditingController;
+                      final feeCategory = draft['fee_category'] as String;
+                      return Container(
+                        margin: EdgeInsets.only(
+                          bottom: index == drafts.length - 1 ? 0 : 12,
+                        ),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade50,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.grey.shade300),
+                        ),
+                        child: Column(
+                          children: [
+                            Row(
+                              children: [
+                                Text(
+                                  'Fee Head ${index + 1}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const Spacer(),
+                                if (drafts.length > 1)
+                                  IconButton(
+                                    icon: const Icon(
+                                      Icons.delete_outline,
+                                      color: Colors.red,
+                                      size: 18,
+                                    ),
+                                    onPressed: () {
+                                      (draft['custom_fee_head_ctrl']
+                                              as TextEditingController)
+                                          .dispose();
+                                      (draft['amount_ctrl']
+                                              as TextEditingController)
+                                          .dispose();
+                                      (draft['desc_ctrl']
+                                              as TextEditingController)
+                                          .dispose();
+                                      setDialogState(() {
+                                        drafts.removeAt(index);
+                                      });
+                                    },
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            DropdownButtonFormField<String>(
+                              initialValue: feeCategory,
+                              decoration: const InputDecoration(
+                                labelText: 'Fee Category',
+                                border: OutlineInputBorder(),
+                              ),
+                              items: _FeeRepository.feeCategories
+                                  .map(
+                                    (e) => DropdownMenuItem<String>(
+                                      value: e,
+                                      child: Text(e),
+                                    ),
+                                  )
+                                  .toList(),
+                              onChanged: (v) => setDialogState(() {
+                                draft['fee_category'] = v ?? 'TUITION';
+                              }),
+                            ),
+                            const SizedBox(height: 10),
+                            TextFormField(
+                              controller: headCtrl,
+                              decoration: const InputDecoration(
+                                labelText: 'Custom Fee Head (required for Misc.)',
+                                border: OutlineInputBorder(),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            TextFormField(
+                              controller: amountCtrl,
+                              keyboardType: const TextInputType.numberWithOptions(
+                                decimal: true,
+                              ),
+                              onChanged: (_) => setDialogState(() {}),
+                              decoration: const InputDecoration(
+                                labelText: 'Amount',
+                                border: OutlineInputBorder(),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Builder(
+                              builder: (_) {
+                                final parsed =
+                                    double.tryParse(amountCtrl.text.trim()) ?? 0;
+                                final monthly = parsed / 12;
+                                final quarterly = parsed / 4;
+                                return Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.shade50,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: Colors.grey.shade300),
+                                  ),
+                                  child: Text(
+                                    'Auto split preview -> Monthly: ${_fmt(monthly)}, Quarterly: ${_fmt(quarterly)}, Yearly: ${_fmt(parsed)}',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey.shade700,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 10),
+                            TextFormField(
+                              controller: descCtrl,
+                              maxLines: 2,
+                              decoration: const InputDecoration(
+                                labelText: 'Description (optional)',
+                                border: OutlineInputBorder(),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                    const SizedBox(height: 12),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: OutlinedButton.icon(
+                        onPressed: () => setDialogState(() {
+                          drafts.add(newDraft());
+                        }),
+                        icon: const Icon(Icons.add, size: 16),
+                        label: const Text('Add another fee head'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('Save'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (shouldSubmit != true) {
+      for (final draft in drafts) {
+        (draft['custom_fee_head_ctrl'] as TextEditingController).dispose();
+        (draft['amount_ctrl'] as TextEditingController).dispose();
+        (draft['desc_ctrl'] as TextEditingController).dispose();
+      }
+      return;
+    }
+
+    final dueStr =
+        '${sharedDueDate[0].year}-${sharedDueDate[0].month.toString().padLeft(2, '0')}-${sharedDueDate[0].day.toString().padLeft(2, '0')}';
+
+    final structures = <Map<String, dynamic>>[];
+    for (var i = 0; i < drafts.length; i++) {
+      final draft = drafts[i];
+      final feeCategory = (draft['fee_category'] as String).trim();
+      final head = (draft['custom_fee_head_ctrl'] as TextEditingController)
+          .text
+          .trim();
+      final amountText =
+          (draft['amount_ctrl'] as TextEditingController).text.trim();
+      final amount = double.tryParse(amountText);
+      final desc =
+          (draft['desc_ctrl'] as TextEditingController).text.trim();
+
+      if (amount == null || amount <= 0) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Enter valid amount for fee head ${i + 1}.')),
+        );
+        return;
+      }
+      if (feeCategory == 'MISCELLANEOUS' && head.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Custom fee head is required for MISCELLANEOUS (row ${i + 1}).',
+            ),
+          ),
+        );
+        return;
+      }
+
+      structures.add({
+        'standard_id': _selectedStandardId!,
+        'academic_year_id': _selectedYearId!,
+        'fee_category': feeCategory,
+        'amount': amount,
+        'due_date': dueStr,
+        if (head.isNotEmpty) 'custom_fee_head': head,
+        if (desc.isNotEmpty) 'description': desc,
+      });
+    }
+
+    try {
+      setState(() => _loading = true);
+      await _repo.createStructuresBatch(
+        structures: structures,
+      );
+      await _loadStructures();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            structures.length == 1
+                ? 'Fee structure created.'
+                : '${structures.length} fee structures created.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Unable to create structure: $e')));
+    } finally {
+      for (final draft in drafts) {
+        (draft['custom_fee_head_ctrl'] as TextEditingController).dispose();
+        (draft['amount_ctrl'] as TextEditingController).dispose();
+        (draft['desc_ctrl'] as TextEditingController).dispose();
+      }
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _editStructure(_FeeStructure structure) async {
+    final amountCtrl = TextEditingController(
+      text: structure.amount.toStringAsFixed(2),
+    );
+    final descCtrl = TextEditingController(text: structure.description ?? '');
+    DateTime dueDate =
+        DateTime.tryParse(structure.dueDate) ?? DateTime.now();
+    bool applyToAll = false;
+
+    final shouldSubmit = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) => AlertDialog(
+            title: Text('Edit ${structure.displayLabel}'),
+            content: SizedBox(
+              width: 420,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextFormField(
+                      controller: amountCtrl,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: const InputDecoration(
+                        labelText: 'Amount',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: descCtrl,
+                      maxLines: 2,
+                      decoration: const InputDecoration(
+                        labelText: 'Description',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Due Date'),
+                      subtitle: Text(
+                        '${dueDate.year}-${dueDate.month.toString().padLeft(2, '0')}-${dueDate.day.toString().padLeft(2, '0')}',
+                      ),
+                      trailing: TextButton(
+                        onPressed: () async {
+                          final picked = await showDatePicker(
+                            context: ctx,
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime(2100),
+                            initialDate: dueDate,
+                          );
+                          if (picked != null) {
+                            setDialogState(() => dueDate = picked);
+                          }
+                        },
+                        child: const Text('Select'),
+                      ),
+                    ),
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: applyToAll,
+                      onChanged: (v) =>
+                          setDialogState(() => applyToAll = v ?? false),
+                      title: const Text('Apply to all classes (same fee head)'),
+                      controlAffinity: ListTileControlAffinity.leading,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('Update'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (shouldSubmit != true) return;
+    final amount = double.tryParse(amountCtrl.text.trim());
+    if (amount == null || amount <= 0) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a valid amount.')),
+      );
+      return;
+    }
+
+    try {
+      setState(() => _loading = true);
+      await _repo.updateStructure(
+        structureId: structure.id,
+        amount: amount,
+        description: descCtrl.text.trim(),
+        dueDate:
+            '${dueDate.year}-${dueDate.month.toString().padLeft(2, '0')}-${dueDate.day.toString().padLeft(2, '0')}',
+        applyToAllClasses: applyToAll,
+      );
+      await _loadStructures();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Fee structure updated.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Unable to update structure: $e')));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _deleteStructure(_FeeStructure structure) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Fee Structure'),
+        content: Text('Delete "${structure.displayLabel}"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    try {
+      setState(() => _loading = true);
+      await _repo.deleteStructure(structure.id);
+      await _loadStructures();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Fee structure deleted.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      final msg = e.toString();
+      final isLinked = msg.contains('delete_linked_entries=true') ||
+          msg.contains('linked with') ||
+          msg.contains('422');
+      if (isLinked) {
+        final confirmLinked = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Linked Entries Found'),
+            content: const Text(
+              'This fee structure has linked ledger/payment entries. Delete all linked entries too?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('Yes, Continue'),
+              ),
+            ],
+          ),
+        );
+        if (confirmLinked == true) {
+          final finalConfirm = await showDialog<bool>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('Final Confirmation'),
+              content: const Text(
+                'This will permanently delete the fee structure and all linked ledger/payment entries. Are you absolutely sure?',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(false),
+                  child: const Text('No'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(ctx).pop(true),
+                  child: const Text('Delete Everything'),
+                ),
+              ],
+            ),
+          );
+          if (finalConfirm == true) {
+            try {
+              await _repo.deleteStructure(
+                structure.id,
+                deleteLinkedEntries: true,
+              );
+              await _loadStructures();
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Fee structure and linked entries deleted.',
+                  ),
+                ),
+              );
+            } catch (inner) {
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Unable to delete linked entries: $inner')),
+              );
+            }
+          }
+        }
+      } else {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Unable to delete structure: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _generateClassLedger() async {
+    if (_selectedStandardId == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select a class first.')),
+      );
+      return;
+    }
+    try {
+      setState(() => _loading = true);
+      final result = await _repo.generateLedger(
+        _selectedStandardId!,
+        academicYearId: _selectedYearId,
+      );
+      await _loadStudents();
+      await _loadAnalytics();
+      await _loadDefaulters();
+      if (!mounted) return;
+      final created = (result['created'] as num?)?.toInt() ?? 0;
+      final skipped = (result['skipped'] as num?)?.toInt() ?? 0;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Class ledger generated. Created: $created, Skipped: $skipped.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Unable to generate class ledger: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -791,6 +1853,7 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
               controller: _tabController,
               isScrollable: true,
               tabs: const [
+                Tab(text: 'Structures'),
                 Tab(text: 'Students'),
                 Tab(text: 'Analytics'),
                 Tab(text: 'Defaulters'),
@@ -803,6 +1866,7 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                   : TabBarView(
                       controller: _tabController,
                       children: [
+                        _buildStructuresTab(),
                         _buildStudentsTab(),
                         _buildAnalyticsTab(),
                         _buildDefaultersTab(),
@@ -841,9 +1905,12 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
             onChanged: (v) {
               setState(() {
                 _selectedYearId = v;
+                _structures = [];
                 _students = [];
                 _analytics = {};
                 _defaulters = [];
+                _sections = [];
+                _selectedSection = null;
               });
               ref.read(activeAcademicYearProvider.notifier).setYear(v);
               _loadStandards();
@@ -859,19 +1926,98 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
               contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             ),
             value: _selectedStandardId,
+            items: _standards
+                .map(
+                  (s) => DropdownMenuItem<String?>(
+                    value: s['id']?.toString(),
+                    child: Text(s['name']?.toString() ?? ''),
+                  ),
+                )
+                .toList(),
+            onChanged: (v) async {
+              setState(() {
+                _selectedStandardId = v;
+                _structures = [];
+                _students = [];
+                _selectedSection = null;
+              });
+              await _loadSections();
+              if (v != null && mounted && _selectedYearId != null) {
+                await _loadStructures(quiet: true);
+              }
+              if (v != null && mounted) {
+                await _loadStudents();
+              }
+            },
+          ),
+        ),
+        SizedBox(
+          width: 140,
+          child: DropdownButtonFormField<String?>(
+            decoration: const InputDecoration(
+              labelText: 'Section',
+              border: OutlineInputBorder(),
+              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            ),
+            value: _selectedSection,
             items: [
               const DropdownMenuItem<String?>(
                 value: null,
-                child: Text('All Classes'),
+                child: Text('All'),
               ),
-              ..._standards.map(
+              ..._sections.map(
                 (s) => DropdownMenuItem<String?>(
-                  value: s['id']?.toString(),
+                  value: s['name']?.toString(),
                   child: Text(s['name']?.toString() ?? ''),
                 ),
               ),
             ],
-            onChanged: (v) => setState(() => _selectedStandardId = v),
+            onChanged: (v) {
+              setState(() => _selectedSection = v);
+              if (_selectedStandardId != null) {
+                _loadStudents();
+              }
+            },
+          ),
+        ),
+        SizedBox(
+          width: 150,
+          child: DropdownButtonFormField<String?>(
+            decoration: const InputDecoration(
+              labelText: 'Cycle',
+              border: OutlineInputBorder(),
+              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            ),
+            value: _paymentCycleFilter,
+            items: const [
+              DropdownMenuItem<String?>(value: null, child: Text('All')),
+              DropdownMenuItem<String?>(
+                value: 'MONTHLY',
+                child: Text('Monthly'),
+              ),
+              DropdownMenuItem<String?>(
+                value: 'QUARTERLY',
+                child: Text('Quarterly'),
+              ),
+              DropdownMenuItem<String?>(
+                value: 'YEARLY',
+                child: Text('Yearly'),
+              ),
+              DropdownMenuItem<String?>(
+                value: 'CUSTOM',
+                child: Text('Custom'),
+              ),
+              DropdownMenuItem<String?>(
+                value: 'UNASSIGNED',
+                child: Text('Unassigned'),
+              ),
+            ],
+            onChanged: (v) {
+              setState(() => _paymentCycleFilter = v);
+              if (_selectedStandardId != null) {
+                _loadStudents();
+              }
+            },
           ),
         ),
         SizedBox(
@@ -899,22 +2045,133 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                 child: Text('Overdue'),
               ),
             ],
-            onChanged: (v) => setState(() => _statusFilter = v),
+            onChanged: (v) {
+              setState(() => _statusFilter = v);
+              if (_selectedStandardId != null) {
+                _loadStudents();
+              }
+            },
           ),
         ),
         ElevatedButton.icon(
           icon: const Icon(Icons.refresh, size: 14),
           label: const Text('Apply'),
-          onPressed: () {
-            final i = _tabController.index;
-            setState(() {
-              _students = [];
-              _analytics = {};
-              _defaulters = [];
-            });
-            _onTabChanged(i);
-          },
+          onPressed: _applyFeeFilters,
         ),
+      ],
+    );
+  }
+
+  Widget _buildStructuresTab() {
+    if (_selectedStandardId == null) {
+      return const Center(
+        child: Text('Please select a class to manage fee structures.'),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            ElevatedButton.icon(
+              icon: const Icon(Icons.add, size: 16),
+              label: const Text('Add Fee Structure'),
+              onPressed: _showCreateStructureDialog,
+            ),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.refresh, size: 16),
+              label: const Text('Refresh'),
+              onPressed: _loadStructures,
+            ),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.auto_awesome, size: 16),
+              label: const Text('Generate Class Ledger'),
+              onPressed: _generateClassLedger,
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (_structures.isEmpty)
+          const Expanded(
+            child: Center(
+              child: Text('No fee structures found for selected class/year.'),
+            ),
+          )
+        else
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
+                headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
+                columns: const [
+                  DataColumn(label: Text('Fee Head')),
+                  DataColumn(label: Text('Category')),
+                  DataColumn(label: Text('Class')),
+                  DataColumn(label: Text('Amount')),
+                  DataColumn(label: Text('Due Date')),
+                  DataColumn(label: Text('Description')),
+                  DataColumn(label: Text('Actions')),
+                ],
+                rows: _structures.map((s) {
+                  return DataRow(
+                    cells: [
+                      DataCell(Text(s.displayLabel)),
+                      DataCell(Text(s.feeCategory)),
+                      DataCell(Text(s.standardName ?? '-')),
+                      DataCell(Text(_fmt(s.amount))),
+                      DataCell(Text(s.dueDate)),
+                      DataCell(Text(s.description?.trim().isNotEmpty == true ? s.description! : '-')),
+                      DataCell(
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            InkWell(
+                              onTap: () => _editStructure(s),
+                              borderRadius: BorderRadius.circular(18),
+                              child: Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.shade50,
+                                  borderRadius: BorderRadius.circular(18),
+                                  border: Border.all(color: Colors.blue.shade200),
+                                ),
+                                child: Icon(
+                                  Icons.edit_outlined,
+                                  color: Colors.blue.shade700,
+                                  size: 16,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            InkWell(
+                              onTap: () => _deleteStructure(s),
+                              borderRadius: BorderRadius.circular(18),
+                              child: Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.red.shade50,
+                                  borderRadius: BorderRadius.circular(18),
+                                  border: Border.all(color: Colors.red.shade200),
+                                ),
+                                child: Icon(
+                                  Icons.delete_outline,
+                                  color: Colors.red.shade700,
+                                  size: 16,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
       ],
     );
   }
@@ -923,16 +2180,23 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
 
   Widget _buildStudentsTab() {
     if (_students.isEmpty) {
+      final noClass = _selectedStandardId == null;
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('Select a class and click Apply to load students.'),
+            Text(
+              noClass
+                  ? 'Select a class (and year) first, then use Apply or Load Students.'
+                  : 'No rows yet, or no students match Cycle / Status. '
+                      'Class and filters are kept—click Load Students or Apply to refresh.',
+              textAlign: TextAlign.center,
+            ),
             const SizedBox(height: 12),
             ElevatedButton.icon(
               icon: const Icon(Icons.refresh),
               label: const Text('Load Students'),
-              onPressed: _loadStudents,
+              onPressed: noClass ? null : _loadStudents,
             ),
           ],
         ),
@@ -945,30 +2209,51 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
         headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
         columns: const [
           DataColumn(label: Text('Student')),
+          DataColumn(label: Text('Action')),
           DataColumn(label: Text('Adm. No.')),
           DataColumn(label: Text('Class')),
+          DataColumn(label: Text('Cycle')),
           DataColumn(label: Text('Parent')),
-          DataColumn(label: Text('Phone')),
+          DataColumn(label: Text('Parent Phone')),
+          DataColumn(label: Text('Student Phone')),
           DataColumn(label: Text('Billed')),
           DataColumn(label: Text('Paid')),
           DataColumn(label: Text('Outstanding')),
           DataColumn(label: Text('Status')),
-          DataColumn(label: Text('Action')),
         ],
         rows: _students.map((s) {
-          final statusColor = s.hasOverdue
+          final statusLabel = s.status.toUpperCase();
+          final statusColor = statusLabel == 'OVERDUE'
               ? Colors.red
-              : s.totalOutstanding > 0
+              : statusLabel == 'PAID'
+              ? Colors.green
+              : statusLabel == 'PARTIAL'
               ? Colors.orange
-              : Colors.green;
-          final statusLabel = s.hasOverdue
-              ? 'Overdue'
-              : s.totalOutstanding > 0
-              ? 'Partial'
-              : 'Paid';
+              : Colors.blueGrey;
           return DataRow(
             cells: [
               DataCell(Text(s.studentName ?? s.admissionNumber ?? '-')),
+              DataCell(
+                s.installments.isEmpty
+                    ? OutlinedButton.icon(
+                        onPressed: () => _assignLedgerForStudent(
+                          s,
+                          continueToPayment: true,
+                        ),
+                        icon: const Icon(Icons.playlist_add, size: 16),
+                        label: const Text('Assign + Update'),
+                      )
+                    : ElevatedButton.icon(
+                        onPressed: s.installments.any((i) => i.hasOutstanding)
+                            ? () => _recordPaymentForStudent(
+                                s,
+                                preferredCycle: _studentPreferredCycle[s.studentId],
+                              )
+                            : null,
+                        icon: const Icon(Icons.edit_note, size: 16),
+                        label: const Text('Update'),
+                      ),
+              ),
               DataCell(Text(s.admissionNumber ?? '-')),
               DataCell(
                 Text(
@@ -976,8 +2261,10 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                       .trim(),
                 ),
               ),
+              DataCell(Text(s.paymentCycle)),
               DataCell(Text(s.parentName ?? '-')),
               DataCell(Text(s.parentPhone ?? '-')),
+              DataCell(Text(s.studentPhone ?? '-')),
               DataCell(Text(_fmt(s.totalBilled))),
               DataCell(Text(_fmt(s.totalPaid))),
               DataCell(Text(_fmt(s.totalOutstanding))),
@@ -988,15 +2275,6 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                     color: statusColor,
                     fontWeight: FontWeight.w600,
                   ),
-                ),
-              ),
-              DataCell(
-                ElevatedButton.icon(
-                  onPressed: s.installments.any((i) => i.hasOutstanding)
-                      ? () => _recordPaymentForStudent(s)
-                      : null,
-                  icon: const Icon(Icons.edit_note, size: 16),
-                  label: const Text('Update'),
                 ),
               ),
             ],

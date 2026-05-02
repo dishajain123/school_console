@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'domains/providers/auth_provider.dart';
 import 'core/router/app_router.dart';
+import 'core/theme/admin_app_theme.dart';
 
 void main() {
   runApp(const ProviderScope(child: AdminConsoleApp()));
@@ -36,10 +37,7 @@ class AdminConsoleApp extends ConsumerWidget {
     return MaterialApp.router(
       title: 'Admin Console',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
-        useMaterial3: true,
-      ),
+      theme: buildAdminTheme(),
       routerConfig: router,
     );
   }

@@ -7,10 +7,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../core/network/dio_client.dart';
-import '../../active_year_provider.dart';
-import '../../auth_provider.dart';
-import '../../../../presentation/common/layout/admin_scaffold.dart';
+import '../../../core/network/dio_client.dart';
+import '../../../domains/providers/active_year_provider.dart';
+import '../../../domains/providers/auth_provider.dart';
+import '../../common/layout/admin_scaffold.dart';
 
 // ── Models ────────────────────────────────────────────────────────────────────
 
@@ -77,15 +77,31 @@ class _ResultStudent {
         studentName: json['student_name']?.toString() ?? '',
         admissionNumber: json['admission_number']?.toString() ?? '',
         section: json['section']?.toString(),
-        totalObtained:
-            (json['total_obtained'] as num?)?.toDouble() ?? 0,
-        totalMax: (json['total_max'] as num?)?.toDouble() ?? 0,
-        overallPercentage:
-            (json['overall_percentage'] as num?)?.toDouble() ?? 0,
-        subjects: ((json['subjects'] as List?) ?? [])
-            .map((s) => Map<String, dynamic>.from(s as Map))
-            .toList(),
+        totalObtained: _readDouble(json['total_obtained']),
+        totalMax: _readDouble(json['total_max']),
+        overallPercentage: _readDouble(json['overall_percentage']),
+        subjects: _parseSubjectMaps(json['subjects']),
       );
+
+  static double _readDouble(dynamic v) {
+    if (v == null) return 0;
+    if (v is num) return v.toDouble();
+    if (v is String) return double.tryParse(v.trim()) ?? 0;
+    return 0;
+  }
+
+  static List<Map<String, dynamic>> _parseSubjectMaps(dynamic raw) {
+    if (raw is! List) return const [];
+    final out = <Map<String, dynamic>>[];
+    for (final e in raw) {
+      if (e is Map<String, dynamic>) {
+        out.add(e);
+      } else if (e is Map) {
+        out.add(Map<String, dynamic>.from(e));
+      }
+    }
+    return out;
+  }
 
   Color get percentageColor {
     if (overallPercentage >= 75) return Colors.green;
@@ -144,20 +160,56 @@ class _ResultsRepository {
         .toList();
   }
 
-  // GET /results/exams/{id}/distribution — class result distribution
-  Future<List<_ResultStudent>> getDistribution(
-      String examId, {String? section}) async {
-    final resp = await _dio.dio.get<Map<String, dynamic>>(
-      '/results/exams/$examId/distribution',
-      queryParameters: {
-        if (section != null) 'section': section,
+  Future<Map<String, dynamic>> createExamForAllClasses({
+    required String name,
+    required String startDate,
+    required String endDate,
+    String? academicYearId,
+  }) async {
+    final resp = await _dio.dio.post<Map<String, dynamic>>(
+      '/results/exams/bulk',
+      data: {
+        'name': name,
+        'apply_to_all_standards': true,
+        if (academicYearId != null) 'academic_year_id': academicYearId,
+        'start_date': startDate,
+        'end_date': endDate,
       },
     );
-    final items = (resp.data?['items'] as List?) ?? [];
-    return items
-        .map((e) =>
-            _ResultStudent.fromJson(Map<String, dynamic>.from(e as Map)))
-        .toList();
+    return resp.data ?? <String, dynamic>{};
+  }
+
+  // GET /results/exams/{id}/distribution — class result distribution
+  Future<List<_ResultStudent>> getDistribution(
+    String examId, {
+    String? section,
+  }) async {
+    final resp = await _dio.dio.get<dynamic>(
+      '/results/exams/$examId/distribution',
+      queryParameters: {
+        if (section != null && section.trim().isNotEmpty) 'section': section,
+      },
+    );
+    final data = resp.data;
+    if (data is! Map) {
+      throw FormatException('Unexpected distribution response shape');
+    }
+    final map = Map<String, dynamic>.from(data);
+    final rawItems = map['items'];
+    if (rawItems == null) return const [];
+    if (rawItems is! List) {
+      throw FormatException('distribution.items is not a list');
+    }
+    final out = <_ResultStudent>[];
+    for (final e in rawItems) {
+      if (e is! Map) continue;
+      try {
+        out.add(_ResultStudent.fromJson(Map<String, dynamic>.from(e)));
+      } catch (_) {
+        continue;
+      }
+    }
+    return out;
   }
 
   // PATCH /results/exams/{id}/publish — publish all results (principal only)
@@ -166,6 +218,10 @@ class _ResultsRepository {
       '/results/exams/$examId/publish',
     );
     return (resp.data?['updated'] as num?)?.toInt() ?? 0;
+  }
+
+  Future<void> deleteExam(String examId) async {
+    await _dio.dio.delete<dynamic>('/results/exams/$examId');
   }
 }
 
@@ -188,6 +244,8 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
   List<Map<String, dynamic>> _standards = [];
   List<_Exam> _exams = [];
   List<_ResultStudent> _distribution = [];
+  bool _distributionLoading = false;
+  String? _distributionError;
 
   _Exam? _selectedExam;
   String? _selectedYearId;
@@ -221,6 +279,15 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
     return role == 'PRINCIPAL' ||
         role == 'SUPERADMIN' ||
         user.permissions.contains('result:publish');
+  }
+
+  bool get _canCreateExam {
+    final user = ref.read(authControllerProvider).valueOrNull;
+    if (user == null) return false;
+    final role = user.role.toUpperCase();
+    return role == 'PRINCIPAL' ||
+        role == 'SUPERADMIN' ||
+        user.permissions.contains('result:create');
   }
 
   Future<void> _loadYears() async {
@@ -277,6 +344,7 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
         _exams = exams;
         _selectedExam = null;
         _distribution = [];
+        _distributionError = null;
       });
     } catch (e) {
       setState(() => _error = e.toString());
@@ -288,18 +356,27 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
   Future<void> _loadDistribution(_Exam exam) async {
     setState(() {
       _selectedExam = exam;
-      _loading = true;
+      _distributionLoading = true;
+      _distributionError = null;
       _error = null;
       _distribution = [];
     });
     _tabController.animateTo(1);
     try {
       final dist = await _repo.getDistribution(exam.id);
-      setState(() => _distribution = dist);
+      if (!mounted) return;
+      setState(() {
+        _distribution = dist;
+        _distributionError = null;
+      });
     } catch (e) {
-      setState(() => _error = e.toString());
+      if (!mounted) return;
+      setState(() {
+        _distributionError = e.toString();
+        _distribution = [];
+      });
     } finally {
-      setState(() => _loading = false);
+      if (mounted) setState(() => _distributionLoading = false);
     }
   }
 
@@ -347,6 +424,216 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
     }
   }
 
+  Future<void> _deleteExam(_Exam exam) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Exam'),
+        content: Text(
+          'Delete "${exam.name}" for ${exam.standardName ?? 'selected class'}?\n\n'
+          'This deletes associated entered results for this exam as well.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Delete', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() {
+      _loading = true;
+      _error = null;
+      _success = null;
+    });
+    try {
+      await _repo.deleteExam(exam.id);
+      await _loadExams();
+      if (mounted) {
+        setState(() => _success = 'Exam "${exam.name}" deleted successfully.');
+      }
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _openCreateExamDialog() async {
+    if (!_canCreateExam) return;
+    final nameCtrl = TextEditingController();
+    DateTime? startDate;
+    DateTime? endDate;
+    bool submitting = false;
+
+    Future<void> pickDate(bool isStart, StateSetter setLocal) async {
+      final now = DateTime.now();
+      final initial = (isStart ? startDate : endDate) ?? now;
+      final picked = await showDatePicker(
+        context: context,
+        initialDate: initial,
+        firstDate: DateTime(2024, 1, 1),
+        lastDate: DateTime(2035, 12, 31),
+      );
+      if (picked == null) return;
+      setLocal(() {
+        if (isStart) {
+          startDate = picked;
+          if (endDate != null && endDate!.isBefore(startDate!)) {
+            endDate = startDate;
+          }
+        } else {
+          endDate = picked;
+        }
+      });
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('Create Exam (All Classes)'),
+          content: SizedBox(
+            width: 420,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Exam Name',
+                    hintText: 'e.g. Unit Test 1 / Semester / Finals',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => pickDate(true, setLocal),
+                        child: Text(
+                          startDate == null
+                              ? 'Start Date'
+                              : '${startDate!.year}-${startDate!.month.toString().padLeft(2, '0')}-${startDate!.day.toString().padLeft(2, '0')}',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => pickDate(false, setLocal),
+                        child: Text(
+                          endDate == null
+                              ? 'End Date'
+                              : '${endDate!.year}-${endDate!.month.toString().padLeft(2, '0')}-${endDate!.day.toString().padLeft(2, '0')}',
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Creates this exam for all classes in the selected academic year.',
+                    style: TextStyle(fontSize: 12, color: Colors.black54),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: submitting ? null : () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: submitting
+                  ? null
+                  : () async {
+                      var dialogClosed = false;
+                      final name = nameCtrl.text.trim();
+                      if (name.isEmpty || startDate == null || endDate == null) {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Please fill all fields')),
+                          );
+                        }
+                        return;
+                      }
+                      if (endDate!.isBefore(startDate!)) {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('End date must be on or after start date'),
+                            ),
+                          );
+                        }
+                        return;
+                      }
+                      setLocal(() => submitting = true);
+                      try {
+                        final payload = await _repo.createExamForAllClasses(
+                          name: name,
+                          startDate:
+                              '${startDate!.year}-${startDate!.month.toString().padLeft(2, '0')}-${startDate!.day.toString().padLeft(2, '0')}',
+                          endDate:
+                              '${endDate!.year}-${endDate!.month.toString().padLeft(2, '0')}-${endDate!.day.toString().padLeft(2, '0')}',
+                          academicYearId: _selectedYearId,
+                        );
+                        final createdCount =
+                            (payload['created_count'] as num?)?.toInt() ?? 0;
+                        final skippedCount =
+                            (payload['skipped_count'] as num?)?.toInt() ?? 0;
+                        if (mounted) {
+                          dialogClosed = true;
+                          Navigator.of(ctx).pop();
+                          setState(() {
+                            _success =
+                                'Exam "$name" created for $createdCount class(es). '
+                                'Skipped: $skippedCount.';
+                            _error = null;
+                          });
+                        }
+                        await _loadExams();
+                      } catch (e) {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(e.toString())),
+                          );
+                        }
+                        if (ctx.mounted) {
+                          setLocal(() => submitting = false);
+                        }
+                      } finally {
+                        if (!dialogClosed && ctx.mounted) {
+                          setLocal(() => submitting = false);
+                        }
+                      }
+                    },
+              child: submitting
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Create'),
+            ),
+          ],
+        ),
+      ),
+    );
+    nameCtrl.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return AdminScaffold(
@@ -377,7 +664,12 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
                             child: Text(y['name']?.toString() ?? '')))
                         .toList(),
                     onChanged: (v) {
-                      setState(() => _selectedYearId = v);
+                      setState(() {
+                        _selectedYearId = v;
+                        _selectedExam = null;
+                        _distribution = [];
+                        _distributionError = null;
+                      });
                       ref.read(activeAcademicYearProvider.notifier).setYear(v);
                       _loadStandards();
                     },
@@ -399,8 +691,12 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
                           value: s['id']?.toString(),
                           child: Text(s['name']?.toString() ?? ''))),
                     ],
-                    onChanged: (v) =>
-                        setState(() => _selectedStandardId = v),
+                    onChanged: (v) => setState(() {
+                      _selectedStandardId = v;
+                      _selectedExam = null;
+                      _distribution = [];
+                      _distributionError = null;
+                    }),
                   ),
                 ),
                 ElevatedButton.icon(
@@ -414,6 +710,12 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
                   label: const Text('Load Exams'),
                   onPressed: _loading ? null : _loadExams,
                 ),
+                if (_canCreateExam)
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.add_circle_outline, size: 16),
+                    label: const Text('Create Exam (All Classes)'),
+                    onPressed: _openCreateExamDialog,
+                  ),
               ],
             ),
             const SizedBox(height: 12),
@@ -550,6 +852,19 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
                         ? null
                         : () => _publishExam(exam),
                   ),
+                if (_canCreateExam)
+                  TextButton.icon(
+                    icon: const Icon(
+                      Icons.delete_outline,
+                      size: 14,
+                      color: Colors.red,
+                    ),
+                    label: const Text(
+                      'Delete',
+                      style: TextStyle(fontSize: 12, color: Colors.red),
+                    ),
+                    onPressed: () => _deleteExam(exam),
+                  ),
               ],
             )),
           ]);
@@ -568,8 +883,38 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
           child: Text(
               'Select an exam from the list and click View.'));
     }
-    if (_loading) {
+    if (_distributionLoading) {
       return const Center(child: CircularProgressIndicator());
+    }
+    if (_distributionError != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.error_outline, size: 48, color: Colors.red.shade400),
+              const SizedBox(height: 12),
+              Text(
+                'Could not load distribution',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 8),
+              SelectableText(
+                _distributionError!,
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey.shade800, fontSize: 13),
+              ),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: () => _loadDistribution(_selectedExam!),
+                icon: const Icon(Icons.refresh),
+                label: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      );
     }
     if (_distribution.isEmpty) {
       return const Center(
@@ -649,7 +994,7 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 2),
                       decoration: BoxDecoration(
-                        color: s.percentageColor.withOpacity(0.1),
+                        color: s.percentageColor.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Text(

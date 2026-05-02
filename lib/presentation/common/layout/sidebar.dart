@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/route_constants.dart';
+import '../../../core/theme/admin_colors.dart';
 import '../../../data/models/auth/admin_user.dart';
 import '../../../domains/providers/auth_provider.dart';
 
@@ -212,42 +213,106 @@ class AdminSidebar extends ConsumerWidget {
     );
     final selectedIndex = _resolveSelectedIndex(items, location);
 
-    return NavigationDrawer(
-      selectedIndex: selectedIndex,
-      onDestinationSelected: (i) {
-        context.go(items[i].route);
-        if (Scaffold.of(context).isDrawerOpen) {
-          Navigator.of(context).pop();
-        }
-      },
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Text(
-            'Admin Console',
-            style: Theme.of(context)
-                .textTheme
-                .titleMedium
-                ?.copyWith(fontWeight: FontWeight.bold),
-          ),
+    const railWidth = 268.0;
+
+    return SizedBox(
+      width: railWidth,
+      child: Material(
+        color: AdminColors.sidebarBg,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 24, 16, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Console',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.2,
+                          color: AdminColors.textPrimary,
+                        ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    user.email ?? user.phone ?? user.role,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AdminColors.textMuted,
+                          fontSize: 11,
+                        ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1, color: AdminColors.borderSubtle),
+            Expanded(
+              child: ListView.builder(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                itemCount: items.length,
+                itemBuilder: (context, i) {
+                  final item = items[i];
+                  final selected = i == selectedIndex;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Material(
+                      color: selected
+                          ? AdminColors.primaryAction.withValues(alpha: 0.08)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(10),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(10),
+                        hoverColor:
+                            AdminColors.primaryAction.withValues(alpha: 0.06),
+                        onTap: () => context.go(item.route),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 11,
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                selected ? item.selectedIcon : item.icon,
+                                size: 20,
+                                color: selected
+                                    ? AdminColors.primaryAction
+                                    : AdminColors.textSecondary,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  item.label,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .labelLarge
+                                      ?.copyWith(
+                                        fontSize: 13,
+                                        fontWeight: selected
+                                            ? FontWeight.w600
+                                            : FontWeight.w500,
+                                        color: selected
+                                            ? AdminColors.primaryAction
+                                            : AdminColors.textPrimary,
+                                      ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
         ),
-        const Divider(),
-        ...items.map(
-          (item) => NavigationDrawerDestination(
-            icon: Icon(item.icon),
-            selectedIcon: Icon(item.selectedIcon),
-            label: Text(item.label),
-          ),
-        ),
-        const Divider(),
-        ListTile(
-          leading: const Icon(Icons.logout),
-          title: const Text('Sign Out'),
-          onTap: () {
-            ref.read(authControllerProvider.notifier).logout();
-          },
-        ),
-      ],
+      ),
     );
   }
 }

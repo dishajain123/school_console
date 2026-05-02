@@ -4,8 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/network/dio_client.dart';
+import '../../../core/theme/admin_colors.dart';
 import '../../../domains/providers/auth_provider.dart';
 import '../../common/layout/admin_scaffold.dart';
+import '../../common/widgets/admin_layout/admin_empty_state.dart';
+import '../../common/widgets/admin_layout/admin_loading_placeholder.dart';
+import '../../common/widgets/admin_layout/admin_page_header.dart';
+import '../../common/widgets/admin_layout/admin_spacing.dart';
+import '../../common/widgets/admin_layout/admin_surface_card.dart';
 
 // ── Repository ────────────────────────────────────────────────────────────────
 
@@ -39,30 +45,22 @@ class SettingsScreen extends ConsumerStatefulWidget {
   ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends ConsumerState<SettingsScreen>
-    with SingleTickerProviderStateMixin {
-  late final TabController _tabController;
+class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   late final _SettingsRepository _repo;
 
   bool _loading = false;
   String? _error;
   List<Map<String, dynamic>> _settings = [];
-  final _newKeyCtrl = TextEditingController();
-  final _newValueCtrl = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
     _repo = _SettingsRepository(ref.read(dioClientProvider));
     _loadData();
   }
 
   @override
   void dispose() {
-    _tabController.dispose();
-    _newKeyCtrl.dispose();
-    _newValueCtrl.dispose();
     super.dispose();
   }
 
@@ -88,16 +86,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   }
 
   Future<void> _saveSettingItem() async {
-    final key = _newKeyCtrl.text.trim();
-    final value = _newValueCtrl.text.trim();
+    final key = keyInput.trim();
+    final value = valueInput.trim();
     if (key.isEmpty) return;
     setState(() => _loading = true);
     try {
       await _repo.updateSettings([
         {'key': key, 'value': value},
       ]);
-      _newKeyCtrl.clear();
-      _newValueCtrl.clear();
       await _loadData();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -115,156 +111,259 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     }
   }
 
+  String _settingKey(Map<String, dynamic> item) {
+    return item['setting_key']?.toString() ?? item['key']?.toString() ?? '';
+  }
+
+  String _settingValue(Map<String, dynamic> item) {
+    return item['setting_value']?.toString() ?? item['value']?.toString() ?? '';
+  }
+
+  String keyInput = '';
+  String valueInput = '';
+
+  Future<void> _openEditSettingDialog(Map<String, dynamic> item) async {
+    if (!_canManageSettings) return;
+    final key = _settingKey(item);
+    final value = _settingValue(item);
+    if (key.trim().isEmpty) return;
+
+    final valueCtrl = TextEditingController(text: value);
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Update "$key"'),
+        content: TextField(
+          controller: valueCtrl,
+          maxLines: 3,
+          decoration: const InputDecoration(
+            labelText: 'Value',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              keyInput = key;
+              valueInput = valueCtrl.text;
+              Navigator.of(ctx).pop();
+              await _saveSettingItem();
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    valueCtrl.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return AdminScaffold(
-      title: 'Settings',
-      child: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (_error != null)
-                    Container(
-                      width: double.infinity,
-                      margin: const EdgeInsets.only(bottom: 12),
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: Colors.red.shade50,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.red.shade200),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              _error!,
-                              style: TextStyle(color: Colors.red.shade700),
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: _loadData,
-                            child: const Text('Retry'),
-                          ),
-                        ],
-                      ),
-                    ),
-                  TabBar(
-                    controller: _tabController,
-                    tabs: const [
-                      Tab(text: 'School'),
-                      Tab(text: 'Config'),
-                    ],
+      title: '',
+      child: Padding(
+        padding: const EdgeInsets.all(AdminSpacing.pagePadding),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AdminPageHeader(
+              title: 'Settings',
+              subtitle: 'School configuration and system keys.',
+              iconActions: [
+                IconButton(
+                  tooltip: 'Refresh',
+                  onPressed: _loading ? null : _loadData,
+                  icon: const Icon(Icons.refresh_rounded),
+                ),
+              ],
+            ),
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: AdminSpacing.md),
+                child: Card(
+                  color: AdminColors.surface,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    side: BorderSide(color: AdminColors.border),
                   ),
-                  const SizedBox(height: 16),
-                  Expanded(
-                    child: TabBarView(
-                      controller: _tabController,
+                  child: Padding(
+                    padding: const EdgeInsets.all(AdminSpacing.md),
+                    child: Row(
                       children: [
-                        // ── Single-school info ─────────────────────────────
-                        SingleChildScrollView(
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 560),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'School Information',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                        Icon(Icons.error_outline,
+                            color: AdminColors.textSecondary, size: 20),
+                        const SizedBox(width: AdminSpacing.sm),
+                        Expanded(
+                          child: Text(
+                            _error!,
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: AdminColors.textPrimary,
                                 ),
-                                const SizedBox(height: 16),
-                                Text(
-                                  'Mode: Single School',
-                                  style: TextStyle(color: Colors.green.shade700),
-                                ),
-                                const SizedBox(height: 12),
-                                ListTile(
-                                  contentPadding: EdgeInsets.zero,
-                                  title: const Text('School ID'),
-                                  subtitle: Text(_schoolId ?? 'Not available'),
-                                ),
-                                const SizedBox(height: 24),
-                                const Text(
-                                  'System Settings',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                ..._settings.map(
-                                  (s) => ListTile(
-                                    contentPadding: EdgeInsets.zero,
-                                    title: Text(
-                                      s['setting_key']?.toString() ??
-                                          s['key']?.toString() ??
-                                          '',
-                                    ),
-                                    subtitle: Text(
-                                      s['setting_value']?.toString() ??
-                                          s['value']?.toString() ??
-                                          '',
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
                           ),
                         ),
-                        // ── Config ─────────────────────────────────────────
-                        SingleChildScrollView(
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 560),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'Configuration',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-                                TextField(
-                                  controller: _newKeyCtrl,
-                                  readOnly: !_canManageSettings,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Setting Key',
-                                    border: OutlineInputBorder(),
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-                                TextField(
-                                  controller: _newValueCtrl,
-                                  readOnly: !_canManageSettings,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Setting Value',
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  maxLines: 2,
-                                ),
-                                const SizedBox(height: 16),
-                                if (_canManageSettings)
-                                  ElevatedButton(
-                                    onPressed: _saveSettingItem,
-                                    child: const Text('Save Setting'),
-                                  ),
-                              ],
-                            ),
-                          ),
+                        TextButton(
+                          onPressed: _loadData,
+                          child: const Text('Retry'),
                         ),
                       ],
                     ),
                   ),
-                ],
+                ),
               ),
+            Expanded(
+              child: _loading
+                  ? const AdminLoadingPlaceholder()
+                  : SingleChildScrollView(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 760),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            AdminSurfaceCard(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'School',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleSmall
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.w600,
+                                          color: AdminColors.textPrimary,
+                                        ),
+                                  ),
+                                  const SizedBox(height: AdminSpacing.sm),
+                                  Text(
+                                    'Mode: single school',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall
+                                        ?.copyWith(
+                                          color: AdminColors.textSecondary,
+                                        ),
+                                  ),
+                                  const SizedBox(height: AdminSpacing.md),
+                                  ListTile(
+                                    contentPadding: EdgeInsets.zero,
+                                    title: Text(
+                                      'School ID',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelLarge
+                                          ?.copyWith(
+                                            color: AdminColors.textSecondary,
+                                          ),
+                                    ),
+                                    subtitle: Text(
+                                      _schoolId ?? 'Not available',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodyLarge
+                                          ?.copyWith(
+                                            color: AdminColors.textPrimary,
+                                          ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: AdminSpacing.md),
+                            AdminSurfaceCard(
+                              padding: EdgeInsets.zero,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Padding(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      AdminSpacing.md,
+                                      AdminSpacing.md,
+                                      AdminSpacing.md,
+                                      AdminSpacing.sm,
+                                    ),
+                                    child: Text(
+                                      'System settings',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleSmall
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w600,
+                                            color: AdminColors.textPrimary,
+                                          ),
+                                    ),
+                                  ),
+                                  if (_settings.isEmpty)
+                                    const Padding(
+                                      padding: EdgeInsets.only(
+                                        bottom: AdminSpacing.lg,
+                                      ),
+                                      child: AdminEmptyState(
+                                        title: 'No settings loaded',
+                                        message:
+                                            'Keys will appear here when configured.',
+                                      ),
+                                    )
+                                  else
+                                    ListView.separated(
+                                      shrinkWrap: true,
+                                      physics:
+                                          const NeverScrollableScrollPhysics(),
+                                      itemCount: _settings.length,
+                                      separatorBuilder: (_, _) =>
+                                          const Divider(height: 1),
+                                      itemBuilder: (context, index) {
+                                        final item = _settings[index];
+                                        final key = _settingKey(item);
+                                        final value = _settingValue(item);
+                                        return ListTile(
+                                          title: Text(
+                                            key.isEmpty ? '-' : key,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodyLarge
+                                                ?.copyWith(
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                          ),
+                                          subtitle: Text(
+                                            value.isEmpty ? '-' : value,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodySmall
+                                                ?.copyWith(
+                                                  color:
+                                                      AdminColors.textSecondary,
+                                                ),
+                                          ),
+                                          trailing: _canManageSettings
+                                              ? IconButton(
+                                                  tooltip: 'Edit',
+                                                  icon: const Icon(
+                                                    Icons.edit_outlined,
+                                                  ),
+                                                  onPressed: () =>
+                                                      _openEditSettingDialog(
+                                                          item),
+                                                )
+                                              : null,
+                                        );
+                                      },
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
             ),
+          ],
+        ),
+      ),
     );
   }
 }

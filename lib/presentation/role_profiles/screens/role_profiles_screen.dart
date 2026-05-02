@@ -18,6 +18,13 @@ class RoleProfilesScreen extends ConsumerStatefulWidget {
 
 class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
     with SingleTickerProviderStateMixin {
+  static const List<String> _roleTabs = [
+    'STUDENT',
+    'TEACHER',
+    'PARENT',
+    'PRINCIPAL',
+    'TRUSTEE',
+  ];
   late final TabController _tabController;
   final _searchController = TextEditingController();
   int _page = 1;
@@ -31,7 +38,7 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: _roleTabs.length, vsync: this);
     _tabController.addListener(() {
       if (_tabController.indexIsChanging) return;
       setState(() {
@@ -58,7 +65,7 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
     super.dispose();
   }
 
-  String get _currentRole => ['STUDENT', 'TEACHER', 'PARENT'][_tabController.index];
+  String get _currentRole => _roleTabs[_tabController.index];
   bool get _isStudentTab => _tabController.index == 0;
 
   String? get _schoolId => ref.read(authControllerProvider).valueOrNull?.schoolId;
@@ -126,6 +133,8 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
                 Tab(text: 'Students'),
                 Tab(text: 'Teachers'),
                 Tab(text: 'Parents'),
+                Tab(text: 'Principals'),
+                Tab(text: 'Trustees'),
               ],
             ),
             const SizedBox(height: 12),
@@ -510,6 +519,12 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
       return item.specialization == null || item.specialization!.isEmpty
           ? 'Teacher profile'
           : item.specialization!;
+    }
+    if (item.role == 'PRINCIPAL') {
+      return 'Principal profile';
+    }
+    if (item.role == 'TRUSTEE') {
+      return 'Trustee profile';
     }
     return item.occupation == null || item.occupation!.isEmpty
         ? (item.relation ?? 'Parent profile')

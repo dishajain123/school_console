@@ -16,9 +16,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
 
 import '../../../core/network/dio_client.dart';
+import '../../../core/theme/admin_colors.dart';
 import '../../../domains/providers/active_year_provider.dart';
 import '../../../domains/providers/auth_provider.dart';
 import '../../common/layout/admin_scaffold.dart';
+import '../../common/widgets/admin_layout/admin_empty_state.dart';
+import '../../common/widgets/admin_layout/admin_filter_card.dart';
+import '../../common/widgets/admin_layout/admin_loading_placeholder.dart';
+import '../../common/widgets/admin_layout/admin_page_header.dart';
+import '../../common/widgets/admin_layout/admin_spacing.dart';
+import '../../common/widgets/admin_layout/admin_surface_card.dart';
+import '../../common/widgets/admin_layout/admin_table_helpers.dart';
 
 // ── Models ────────────────────────────────────────────────────────────────────
 
@@ -76,7 +84,7 @@ class _Document {
         admissionNumber: j['student_admission_number'] as String?,
         fileKey: j['file_key'] as String?,
         reviewNote: j['review_note'] as String?,
-        reviewedAt: j['reviewed_at'] as String?,
+        reviewedAt: j['reviewed_at']?.toString(),
         academicYearId: j['academic_year_id']?.toString(),
       );
 }
@@ -229,6 +237,8 @@ class _DocumentManagementScreenState
   late final TabController _tabController;
   late final _DocRepository _repo;
 
+  /// Full list from last API load (unfiltered). Used for Pending Review + student filter.
+  List<_Document> _allDocumentsRaw = [];
   List<_Document> _documents = [];
   List<_DocRequirement> _requirements = [];
   List<Map<String, dynamic>> _years = [];
@@ -236,6 +246,7 @@ class _DocumentManagementScreenState
   String? _selectedYearId;
   String? _selectedStandardId;
   final TextEditingController _sectionCtrl = TextEditingController();
+  final TextEditingController _studentNameSearchCtrl = TextEditingController();
 
   String? _statusFilter;
   bool _loading = false;
@@ -284,7 +295,48 @@ class _DocumentManagementScreenState
   void dispose() {
     _tabController.dispose();
     _sectionCtrl.dispose();
+    _studentNameSearchCtrl.dispose();
     super.dispose();
+  }
+
+  bool _documentMatchesStudentNameSearch(_Document d) {
+    final q = _studentNameSearchCtrl.text.trim().toLowerCase();
+    if (q.isEmpty) return true;
+    return (d.studentName ?? '').toLowerCase().contains(q);
+  }
+
+  void _resetUnifiedFilters() {
+    setState(() {
+      _studentNameSearchCtrl.clear();
+      _selectedStandardId = null;
+      _sectionCtrl.clear();
+      _statusFilter = null;
+    });
+    _loadDocuments();
+  }
+
+  void _applyDocumentFilters() {
+    var list = List<_Document>.from(_allDocumentsRaw);
+    list = list.where(_documentMatchesStudentNameSearch).toList(growable: false);
+    if (_statusFilter == null) {
+      _documents = list;
+    } else if (_statusFilter == 'AWAITING_ADMIN') {
+      _documents = list
+          .where((d) =>
+              d.status.toUpperCase() == 'PENDING' && !d.hasFile)
+          .toList(growable: false);
+    } else {
+      _documents = list
+          .where((d) => d.status.toUpperCase() == _statusFilter)
+          .toList(growable: false);
+    }
+  }
+
+  bool _canVerifyInUi(_Document doc) {
+    if (!doc.hasFile) return false;
+    final reviewed = (doc.reviewedAt ?? '').trim().isNotEmpty;
+    if (reviewed) return false;
+    return doc.status.toUpperCase() == 'PROCESSING';
   }
 
   Future<void> _loadDocuments() async {
@@ -298,14 +350,15 @@ class _DocumentManagementScreenState
         standardId: _selectedStandardId,
         section: _sectionCtrl.text,
       );
-      final filtered = _statusFilter == null
-          ? docs
-          : docs.where((d) => d.status.toUpperCase() == _statusFilter).toList();
-      setState(() => _documents = filtered);
+      if (!mounted) return;
+      setState(() {
+        _allDocumentsRaw = docs;
+        _applyDocumentFilters();
+      });
     } catch (e) {
       setState(() => _error = e.toString());
     } finally {
-      setState(() => _loading = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -534,7 +587,13 @@ class _DocumentManagementScreenState
     ];
     final editableItems = _requirements.isEmpty
         ? <Map<String, dynamic>>[
-            {'document_type': 'ID_CARD', 'is_mandatory': true, 'note': ''},
+            {
+              'document_type': 'ID_CARD',
+              'is_mandatory': true,
+              'note': '',
+              if (_selectedYearId != null && _selectedYearId!.trim().isNotEmpty)
+                'academic_year_id': _selectedYearId,
+            },
           ]
         : _requirements
             .map(
@@ -542,6 +601,10 @@ class _DocumentManagementScreenState
                 'document_type': r.documentType,
                 'is_mandatory': r.isMandatory,
                 'note': r.note ?? '',
+                if (r.academicYearId != null && r.academicYearId!.trim().isNotEmpty)
+                  'academic_year_id': r.academicYearId,
+                if (r.standardId != null && r.standardId!.trim().isNotEmpty)
+                  'standard_id': r.standardId,
               },
             )
             .toList(growable: true);
@@ -654,9 +717,17 @@ class _DocumentManagementScreenState
                   alignment: Alignment.centerLeft,
                   child: OutlinedButton.icon(
                     onPressed: () => setDialog(() {
-                      editableItems.add(
-                        {'document_type': 'OTHER', 'is_mandatory': true, 'note': ''},
-                      );
+                      editableItems.add({
+                        'document_type': 'OTHER',
+                        'is_mandatory': true,
+                        'note': '',
+                        if (scopeYearId != null && scopeYearId!.trim().isNotEmpty)
+                          'academic_year_id': scopeYearId,
+                        if (!allClasses &&
+                            scopeStandardId != null &&
+                            scopeStandardId!.trim().isNotEmpty)
+                          'standard_id': scopeStandardId,
+                      });
                     }),
                     icon: const Icon(Icons.add, size: 16),
                     label: const Text('Add Document'),
@@ -674,12 +745,11 @@ class _DocumentManagementScreenState
                 Navigator.of(ctx).pop();
                 try {
                   final payload = <Map<String, dynamic>>[];
-                  for (final row in editableItems.where(
-                    (r) => r['is_mandatory'] == true,
-                  )) {
+                  for (final row in editableItems) {
                     final type =
                         (row['document_type']?.toString() ?? 'OTHER').toUpperCase();
                     final note = (row['note']?.toString() ?? '').trim();
+                    final mandatory = row['is_mandatory'] == true;
                     if (type == 'OTHER' && note.isEmpty) {
                       if (mounted) {
                         setState(() {
@@ -689,13 +759,20 @@ class _DocumentManagementScreenState
                       }
                       return;
                     }
+                    final yearVal = row['academic_year_id'] ?? scopeYearId;
+                    final stdVal = allClasses
+                        ? null
+                        : (row['standard_id'] ?? scopeStandardId);
                     payload.add({
                       'document_type': type,
-                      'is_mandatory': true,
+                      'is_mandatory': mandatory,
                       if (note.isNotEmpty) 'note': note,
-                      if (scopeYearId != null) 'academic_year_id': scopeYearId,
-                      if (!allClasses && scopeStandardId != null)
-                        'standard_id': scopeStandardId,
+                      if (yearVal != null &&
+                          yearVal.toString().trim().isNotEmpty)
+                        'academic_year_id': yearVal.toString().trim(),
+                      if (stdVal != null &&
+                          stdVal.toString().trim().isNotEmpty)
+                        'standard_id': stdVal.toString().trim(),
                     });
                   }
                   await _repo.setRequirements(
@@ -734,47 +811,395 @@ class _DocumentManagementScreenState
     }
   }
 
+  Future<void> _showDocumentReviewDialog(_Document doc) async {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Review document'),
+        content: SizedBox(
+          width: 420,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  doc.studentName ?? 'Student',
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                const SizedBox(height: 6),
+                Text('Admission: ${doc.admissionNumber ?? '—'}'),
+                Text('Student ID: ${doc.studentId}'),
+                const SizedBox(height: 8),
+                Text(
+                  'Document: ${doc.documentType.replaceAll('_', ' ')}',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 4),
+                Text('Status: ${doc.status}'),
+                if ((doc.reviewNote ?? '').trim().isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Previous note: ${doc.reviewNote}',
+                    style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
+                  ),
+                ],
+                const SizedBox(height: 16),
+                if (!doc.hasFile)
+                  const Text(
+                    'No file attached yet. Upload a file from “Upload Document” or wait for the family to upload.',
+                    style: TextStyle(color: Colors.orange),
+                  )
+                else if (!_canVerifyInUi(doc) &&
+                    doc.status.toUpperCase() == 'READY')
+                  const Text(
+                    'This document is already verified.',
+                    style: TextStyle(color: Colors.green),
+                  )
+                else if (!_canVerifyInUi(doc) &&
+                    doc.status.toUpperCase() == 'FAILED')
+                  const Text(
+                    'This document was rejected. The family may upload again.',
+                    style: TextStyle(color: Colors.red),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Close'),
+          ),
+          if (doc.hasFile)
+            OutlinedButton.icon(
+              onPressed: () async {
+                await _openDocument(doc);
+              },
+              icon: const Icon(Icons.open_in_new, size: 18),
+              label: const Text('View file'),
+            ),
+          if (_canVerifyInUi(doc)) ...[
+            TextButton(
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                _showRejectDialog(doc);
+              },
+              child: const Text('Reject'),
+            ),
+            FilledButton.icon(
+              style: FilledButton.styleFrom(backgroundColor: Colors.green),
+              onPressed: () async {
+                Navigator.of(ctx).pop();
+                await _verify(doc, true);
+              },
+              icon: const Icon(Icons.check_circle_outline, size: 18),
+              label: const Text('Verify (approve)'),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AdminScaffold(
-      title: 'Document Management',
+      title: '',
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AdminSpacing.pagePadding),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Status messages
             if (_error != null)
-              _Banner(
+              Padding(
+                padding: const EdgeInsets.only(bottom: AdminSpacing.sm),
+                child: _Banner(
                   message: _error!,
                   isError: true,
-                  onDismiss: () => setState(() => _error = null)),
+                  onDismiss: () => setState(() => _error = null),
+                ),
+              ),
             if (_success != null)
-              _Banner(
+              Padding(
+                padding: const EdgeInsets.only(bottom: AdminSpacing.sm),
+                child: _Banner(
                   message: _success!,
                   isError: false,
-                  onDismiss: () => setState(() => _success = null)),
-
-            TabBar(
-              controller: _tabController,
-              tabs: const [
-                Tab(text: 'All Documents'),
-                Tab(text: 'Pending Review'),
-                Tab(text: 'Requirements'),
+                  onDismiss: () => setState(() => _success = null),
+                ),
+              ),
+            AdminPageHeader(
+              title: 'Documents',
+              subtitle:
+                  'Review uploads, verify submissions, and manage requirements.',
+              primaryAction: FilledButton.icon(
+                onPressed: _showUploadDialog,
+                icon: const Icon(Icons.upload_file_outlined, size: 18),
+                label: const Text('Upload document'),
+              ),
+              iconActions: [
+                IconButton(
+                  tooltip: 'Refresh',
+                  onPressed: _loading ? null : _loadDocuments,
+                  icon: const Icon(Icons.refresh_rounded),
+                ),
               ],
             ),
-            const SizedBox(height: 8),
+            if (!_loading)
+              Padding(
+                padding: const EdgeInsets.only(bottom: AdminSpacing.sm),
+                child: AdminFilterCard(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+                  headerGap: 6,
+                  onReset: _resetUnifiedFilters,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final w = constraints.maxWidth;
+                      final stack = w < 720;
+                      double fieldW(double preferred) =>
+                          stack ? w.clamp(120.0, double.infinity) : preferred;
+                      final decoTheme = Theme.of(context).copyWith(
+                        visualDensity: VisualDensity.compact,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        inputDecorationTheme:
+                            const InputDecorationTheme(
+                          isDense: true,
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
+                        ),
+                      );
+                      return Theme(
+                        data: decoTheme,
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          crossAxisAlignment: WrapCrossAlignment.start,
+                          children: [
+                            SizedBox(
+                              width: fieldW(200),
+                              child: TextField(
+                                controller: _studentNameSearchCtrl,
+                                textInputAction: TextInputAction.search,
+                                style: const TextStyle(fontSize: 14),
+                                decoration: InputDecoration(
+                                  hintText: 'Search name (optional)',
+                                  isDense: true,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 8,
+                                  ),
+                                  prefixIcon: const Icon(
+                                    Icons.search_rounded,
+                                    size: 20,
+                                  ),
+                                  prefixIconConstraints: const BoxConstraints(
+                                    minWidth: 40,
+                                    maxHeight: 36,
+                                  ),
+                                  border: const OutlineInputBorder(),
+                                ),
+                                onChanged: (_) {
+                                  setState(() => _applyDocumentFilters());
+                                },
+                              ),
+                            ),
+                            SizedBox(
+                              width: fieldW(152),
+                              child: DropdownButtonFormField<String?>(
+                                value: _selectedYearId,
+                                isExpanded: true,
+                                decoration: const InputDecoration(
+                                  labelText: 'Year',
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 8,
+                                  ),
+                                ),
+                                items: [
+                                  const DropdownMenuItem<String?>(
+                                    value: null,
+                                    child: Text('All'),
+                                  ),
+                                  ..._years.map(
+                                    (y) => DropdownMenuItem<String?>(
+                                      value: y['id']?.toString(),
+                                      child: Text(y['name']?.toString() ?? '-'),
+                                    ),
+                                  ),
+                                ],
+                                onChanged: (v) async {
+                                  setState(() {
+                                    _selectedYearId = v;
+                                    _selectedStandardId = null;
+                                    _standards = [];
+                                  });
+                                  ref
+                                      .read(activeAcademicYearProvider.notifier)
+                                      .setYear(v);
+                                  if (v != null && v.isNotEmpty) {
+                                    final standards =
+                                        await _repo.listStandards(v);
+                                    if (!mounted) return;
+                                    setState(() => _standards = standards);
+                                  }
+                                  _loadDocuments();
+                                },
+                              ),
+                            ),
+                            SizedBox(
+                              width: fieldW(140),
+                              child: DropdownButtonFormField<String?>(
+                                value: _selectedStandardId,
+                                isExpanded: true,
+                                decoration: const InputDecoration(
+                                  labelText: 'Class',
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 8,
+                                  ),
+                                ),
+                                items: [
+                                  const DropdownMenuItem<String?>(
+                                    value: null,
+                                    child: Text('All'),
+                                  ),
+                                  ..._standards.map(
+                                    (s) => DropdownMenuItem<String?>(
+                                      value: s['id']?.toString(),
+                                      child: Text(s['name']?.toString() ?? '-'),
+                                    ),
+                                  ),
+                                ],
+                                onChanged: (v) {
+                                  setState(() => _selectedStandardId = v);
+                                  _loadDocuments();
+                                },
+                              ),
+                            ),
+                            SizedBox(
+                              width: fieldW(88),
+                              child: TextField(
+                                controller: _sectionCtrl,
+                                style: const TextStyle(fontSize: 14),
+                                decoration: const InputDecoration(
+                                  labelText: 'Sec.',
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 8,
+                                  ),
+                                ),
+                                onSubmitted: (_) => _loadDocuments(),
+                              ),
+                            ),
+                            SizedBox(
+                              width: fieldW(148),
+                              child: DropdownButtonFormField<String?>(
+                                value: _statusFilter,
+                                isExpanded: true,
+                                decoration: const InputDecoration(
+                                  labelText: 'Status',
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 8,
+                                  ),
+                                ),
+                                items: const [
+                                  DropdownMenuItem<String?>(
+                                    value: null,
+                                    child: Text('All'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'AWAITING_ADMIN',
+                                    child: Text('Awaiting admin'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'PENDING',
+                                    child: Text('Pending'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'PROCESSING',
+                                    child: Text('Processing'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'READY',
+                                    child: Text('Ready'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'FAILED',
+                                    child: Text('Failed'),
+                                  ),
+                                ],
+                                onChanged: (v) {
+                                  setState(() {
+                                    _statusFilter = v;
+                                    _applyDocumentFilters();
+                                  });
+                                },
+                              ),
+                            ),
+                            FilledButton.tonal(
+                              style: FilledButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 8,
+                                ),
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              onPressed: _loadDocuments,
+                              child: const Text('Apply'),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
             Expanded(
-              child: _loading
-                  ? const Center(child: CircularProgressIndicator())
-                  : TabBarView(
-                      controller: _tabController,
-                      children: [
-                        _buildAllDocumentsTab(),
-                        _buildPendingTab(),
-                        _buildRequirementsTab(),
-                      ],
+              child: AdminSurfaceCard(
+                padding: EdgeInsets.zero,
+                clipScroll: true,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Material(
+                      color: AdminColors.surface,
+                      child: TabBar(
+                        controller: _tabController,
+                        tabs: const [
+                          Tab(text: 'All documents'),
+                          Tab(text: 'Pending review'),
+                          Tab(text: 'Requirements'),
+                        ],
+                      ),
                     ),
+                    const Divider(height: 1),
+                    Expanded(
+                      child: _loading
+                          ? const AdminLoadingPlaceholder()
+                          : TabBarView(
+                              controller: _tabController,
+                              children: [
+                                _buildAllDocumentsTab(),
+                                _buildPendingTab(),
+                                _buildRequirementsTab(),
+                              ],
+                            ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ],
         ),
@@ -785,225 +1210,203 @@ class _DocumentManagementScreenState
   // ── Tab 0: All Documents ────────────────────────────────────────────────────
 
   Widget _buildAllDocumentsTab() {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  SizedBox(
-                    width: 220,
-                    child: DropdownButtonFormField<String?>(
-                      value: _selectedYearId,
-                      decoration: const InputDecoration(labelText: 'Academic Year'),
-                      items: [
-                        const DropdownMenuItem<String?>(value: null, child: Text('All Years')),
-                        ..._years.map((y) => DropdownMenuItem<String?>(
-                              value: y['id']?.toString(),
-                              child: Text(y['name']?.toString() ?? '-'),
-                            )),
-                      ],
-                      onChanged: (v) async {
-                        setState(() {
-                          _selectedYearId = v;
-                          _selectedStandardId = null;
-                          _standards = [];
-                        });
-                        ref.read(activeAcademicYearProvider.notifier).setYear(v);
-                        if (v != null && v.isNotEmpty) {
-                          final standards = await _repo.listStandards(v);
-                          if (!mounted) return;
-                          setState(() => _standards = standards);
-                        }
-                        _loadDocuments();
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  SizedBox(
-                    width: 220,
-                    child: DropdownButtonFormField<String?>(
-                      value: _selectedStandardId,
-                      decoration: const InputDecoration(labelText: 'Class'),
-                      items: [
-                        const DropdownMenuItem<String?>(value: null, child: Text('All Classes')),
-                        ..._standards.map((s) => DropdownMenuItem<String?>(
-                              value: s['id']?.toString(),
-                              child: Text(s['name']?.toString() ?? '-'),
-                            )),
-                      ],
-                      onChanged: (v) {
-                        setState(() => _selectedStandardId = v);
-                        _loadDocuments();
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  SizedBox(
-                    width: 140,
-                    child: TextField(
-                      controller: _sectionCtrl,
-                      decoration: const InputDecoration(labelText: 'Section'),
-                      onSubmitted: (_) => _loadDocuments(),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  OutlinedButton(
-                    onPressed: _loadDocuments,
-                    child: const Text('Apply'),
-                  ),
-                  const SizedBox(width: 8),
-                  DropdownButton<String?>(
-                    value: _statusFilter,
-                    hint: const Text('All Status'),
-                    items: const [
-                      DropdownMenuItem<String?>(
-                          value: null, child: Text('All Status')),
-                      DropdownMenuItem(value: 'PENDING', child: Text('Pending')),
-                      DropdownMenuItem(
-                          value: 'PROCESSING', child: Text('Processing')),
-                      DropdownMenuItem(value: 'READY', child: Text('Ready')),
-                      DropdownMenuItem(value: 'FAILED', child: Text('Failed')),
-                    ],
-                    onChanged: (v) {
-                      setState(() => _statusFilter = v);
-                      _loadDocuments();
-                    },
-                  ),
-                  const SizedBox(width: 8),
-                  OutlinedButton.icon(
-                    icon: const Icon(Icons.refresh, size: 14),
-                    label: const Text('Refresh'),
-                    onPressed: _loadDocuments,
-                  ),
-                  const Spacer(),
-                  ElevatedButton.icon(
-                    icon: const Icon(Icons.upload_file_outlined, size: 14),
-                    label: const Text('Upload Document'),
-                    onPressed: _showUploadDialog,
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-        Expanded(child: _buildDocTable(_documents, showActions: true)),
-      ],
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AdminSpacing.md,
+        AdminSpacing.sm,
+        AdminSpacing.md,
+        AdminSpacing.md,
+      ),
+      child: _buildDocTable(_documents, showActions: true),
     );
   }
 
   // ── Tab 1: Pending Review ───────────────────────────────────────────────────
 
   Widget _buildPendingTab() {
-    final pending = _documents
+    // Same raw load as “All documents”, not the status-filtered `_documents` list.
+    var base = List<_Document>.from(_allDocumentsRaw)
+        .where(_documentMatchesStudentNameSearch)
+        .toList(growable: false);
+    // Awaiting admin verification: uploaded (PROCESSING), not yet reviewed.
+    final pending = base
         .where((d) =>
             d.hasFile &&
             (d.reviewedAt == null || d.reviewedAt!.trim().isEmpty) &&
-            (d.status == 'PROCESSING' || d.status == 'PENDING' || d.status == 'READY'))
-        .toList();
+            d.status.toUpperCase() == 'PROCESSING')
+        .toList(growable: false);
 
     if (pending.isEmpty) {
-      return const Center(
-          child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.check_circle_outline, size: 56, color: Colors.green),
-          SizedBox(height: 12),
-          Text('No documents pending review.',
-              style: TextStyle(color: Colors.grey)),
-        ],
-      ));
+      return const AdminEmptyState(
+        icon: Icons.check_circle_outline,
+        title: 'No documents pending review',
+        message: 'Everything in this queue is up to date.',
+      );
     }
 
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.fromLTRB(
+            AdminSpacing.md,
+            AdminSpacing.sm,
+            AdminSpacing.md,
+            AdminSpacing.sm,
+          ),
           child: Text(
-              '${pending.length} document(s) awaiting verification',
-              style: TextStyle(
-                  color: Colors.orange.shade700,
-                  fontWeight: FontWeight.w600)),
+            '${pending.length} awaiting verification',
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  color: AdminColors.textSecondary,
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
         ),
-        Expanded(child: _buildDocTable(pending, showActions: true)),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AdminSpacing.md,
+              0,
+              AdminSpacing.md,
+              AdminSpacing.md,
+            ),
+            child: _buildDocTable(pending, showActions: true),
+          ),
+        ),
       ],
     );
   }
 
   Widget _buildDocTable(List<_Document> docs, {required bool showActions}) {
     if (docs.isEmpty) {
-      return const Center(child: Text('No documents found.'));
+      return const AdminEmptyState(
+        title: 'No documents match these filters',
+        message: 'Adjust filters or refresh to reload.',
+      );
     }
-    return SingleChildScrollView(
-      child: DataTable(
-        headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
-        columns: [
-          const DataColumn(label: Text('Student')),
-          const DataColumn(label: Text('Adm. No.')),
-          const DataColumn(label: Text('Doc Type')),
-          const DataColumn(label: Text('Status')),
-          const DataColumn(label: Text('Has File')),
-          const DataColumn(label: Text('Date')),
-          if (showActions) const DataColumn(label: Text('Actions')),
-        ],
-        rows: docs.map((doc) {
-          return DataRow(cells: [
-            DataCell(Text(doc.studentName ?? '-')),
-            DataCell(Text(doc.admissionNumber ?? '-')),
-            DataCell(Text(doc.documentType.replaceAll('_', ' '))),
-            DataCell(Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+    final rows = docs.asMap().entries.map((entry) {
+      final index = entry.key;
+      final doc = entry.value;
+      final statusLabel = doc.status.toUpperCase() == 'READY'
+          ? 'VERIFIED'
+          : (doc.status.toUpperCase() == 'FAILED'
+              ? 'REJECTED'
+              : doc.status);
+      return DataRow(
+        color: adminDataRowColor(index),
+        cells: [
+          DataCell(Text(doc.studentName ?? '-')),
+          DataCell(Text(doc.admissionNumber ?? '-')),
+          DataCell(Text(doc.documentType.replaceAll('_', ' '))),
+          DataCell(
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
-                color: doc.statusColor.withOpacity(0.12),
-                borderRadius: BorderRadius.circular(10),
+                color: AdminColors.borderSubtle,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: AdminColors.border),
               ),
-              child: Text(doc.status.toUpperCase() == 'READY' ? 'VERIFIED' : (doc.status.toUpperCase() == 'FAILED' ? 'REJECTED' : doc.status),
-                  style: TextStyle(
-                      color: doc.statusColor,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600)),
-            )),
-            DataCell(Icon(
-                doc.hasFile ? Icons.attach_file : Icons.remove,
-                size: 16,
-                color: doc.hasFile ? Colors.green : Colors.grey)),
-            DataCell(Text(_fmtDate(doc.createdAt))),
-            if (showActions)
-              DataCell(Row(
+              child: Text(
+                statusLabel,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: AdminColors.textSecondary,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.2,
+                    ),
+              ),
+            ),
+          ),
+          DataCell(
+            Icon(
+              doc.hasFile ? Icons.attach_file_outlined : Icons.remove_outlined,
+              size: 18,
+              color: doc.hasFile
+                  ? AdminColors.textSecondary
+                  : AdminColors.textMuted,
+            ),
+          ),
+          DataCell(Text(_fmtDate(doc.createdAt))),
+          if (showActions)
+            DataCell(
+              IconButton(
+                tooltip:
+                    _canVerifyInUi(doc) ? 'Review document' : 'View details',
+                icon: Icon(
+                  _canVerifyInUi(doc)
+                      ? Icons.fact_check_outlined
+                      : Icons.visibility_outlined,
+                  size: 20,
+                  color: AdminColors.textSecondary,
+                ),
+                onPressed: () => _showDocumentReviewDialog(doc),
+              ),
+            ),
+          if (showActions)
+            DataCell(
+              Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   if (doc.hasFile)
-                    TextButton.icon(
-                      icon: const Icon(Icons.open_in_new, size: 12),
-                      label: const Text('View',
-                          style: TextStyle(fontSize: 12)),
+                    IconButton(
+                      tooltip: 'Open file',
+                      icon: Icon(
+                        Icons.open_in_new_rounded,
+                        size: 20,
+                        color: AdminColors.textSecondary,
+                      ),
                       onPressed: () => _openDocument(doc),
                     ),
-                  if (doc.hasFile &&
-                      (doc.reviewedAt == null || doc.reviewedAt!.trim().isEmpty) &&
-                      (doc.status == 'PROCESSING' ||
-                          doc.status == 'PENDING' ||
-                          doc.status == 'READY')) ...[
+                  if (_canVerifyInUi(doc)) ...[
                     IconButton(
-                      icon: const Icon(Icons.check_circle_outline,
-                          color: Colors.green, size: 18),
                       tooltip: 'Approve',
+                      icon: Icon(
+                        Icons.check_circle_outline_rounded,
+                        size: 20,
+                        color: AdminColors.primaryAction,
+                      ),
                       onPressed: () => _verify(doc, true),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.cancel_outlined,
-                          color: Colors.red, size: 18),
                       tooltip: 'Reject',
+                      icon: Icon(
+                        Icons.cancel_outlined,
+                        size: 20,
+                        color: AdminColors.textSecondary,
+                      ),
                       onPressed: () => _showRejectDialog(doc),
                     ),
                   ],
                 ],
-              )),
-          ]);
-        }).toList(),
+              ),
+            ),
+        ],
+      );
+    }).toList();
+
+    return SingleChildScrollView(
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: DataTable(
+          headingRowColor: WidgetStateProperty.all(AdminColors.borderSubtle),
+          border: TableBorder(
+            horizontalInside: BorderSide(color: AdminColors.border),
+            top: BorderSide(color: AdminColors.border),
+            bottom: BorderSide(color: AdminColors.border),
+          ),
+          dataRowMinHeight: 40,
+          dataRowMaxHeight: 48,
+          columns: [
+            const DataColumn(label: Text('Student')),
+            const DataColumn(label: Text('Adm. No.')),
+            const DataColumn(label: Text('Doc type')),
+            const DataColumn(label: Text('Status')),
+            const DataColumn(label: Text('File')),
+            const DataColumn(label: Text('Date')),
+            if (showActions) const DataColumn(label: Text('Review')),
+            if (showActions) const DataColumn(label: Text('')),
+          ],
+          rows: rows,
+        ),
       ),
     );
   }
@@ -1012,65 +1415,111 @@ class _DocumentManagementScreenState
 
   Widget _buildRequirementsTab() {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.fromLTRB(
+            AdminSpacing.md,
+            AdminSpacing.md,
+            AdminSpacing.md,
+            AdminSpacing.sm,
+          ),
           child: Row(
             children: [
-              const Text(
-                  'Document types students are required to submit:',
-                  style: TextStyle(color: Colors.grey, fontSize: 13)),
-              const Spacer(),
-              ElevatedButton.icon(
-                icon: const Icon(Icons.edit_outlined, size: 14),
-                label: const Text('Edit Requirements'),
+              Expanded(
+                child: Text(
+                  'Document types students must submit',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AdminColors.textSecondary,
+                        fontSize: 13,
+                      ),
+                ),
+              ),
+              FilledButton.tonal(
                 onPressed: _editRequirements,
+                child: const Text('Edit requirements'),
               ),
             ],
           ),
         ),
         if (_requirements.isEmpty)
           const Expanded(
-              child: Center(
-                  child: Text('No document requirements configured yet.',
-                      style: TextStyle(color: Colors.grey))))
+            child: AdminEmptyState(
+              title: 'No requirements configured',
+              message: 'Add document types to match your school’s policy.',
+            ),
+          )
         else
           Expanded(
-            child: SingleChildScrollView(
-              child: DataTable(
-                headingRowColor:
-                    WidgetStateProperty.all(Colors.grey.shade100),
-                columns: const [
-                  DataColumn(label: Text('Document Type')),
-                  DataColumn(label: Text('Year Scope')),
-                  DataColumn(label: Text('Class Scope')),
-                  DataColumn(label: Text('Mandatory')),
-                  DataColumn(label: Text('Note')),
-                ],
-                rows: _requirements.map((req) {
-                  return DataRow(cells: [
-                    DataCell(Text(
-                        req.documentType.replaceAll('_', ' '))),
-                    DataCell(Text(req.academicYearId ?? 'All Years')),
-                    DataCell(Text(req.standardId ?? 'All Classes')),
-                    DataCell(Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                            req.isMandatory
-                                ? Icons.check_circle_outline
-                                : Icons.radio_button_unchecked,
-                            color: req.isMandatory
-                                ? Colors.green
-                                : Colors.grey,
-                            size: 16),
-                        const SizedBox(width: 4),
-                        Text(req.isMandatory ? 'Yes' : 'No'),
-                      ],
-                    )),
-                    DataCell(Text(req.note ?? '-')),
-                  ]);
-                }).toList(),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AdminSpacing.md,
+                0,
+                AdminSpacing.md,
+                AdminSpacing.md,
+              ),
+              child: SingleChildScrollView(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: DataTable(
+                    headingRowColor:
+                        WidgetStateProperty.all(AdminColors.borderSubtle),
+                    border: TableBorder(
+                      horizontalInside:
+                          BorderSide(color: AdminColors.border),
+                      top: BorderSide(color: AdminColors.border),
+                      bottom: BorderSide(color: AdminColors.border),
+                    ),
+                    dataRowMinHeight: 40,
+                    dataRowMaxHeight: 48,
+                    columns: const [
+                      DataColumn(label: Text('Document type')),
+                      DataColumn(label: Text('Year scope')),
+                      DataColumn(label: Text('Class scope')),
+                      DataColumn(label: Text('Mandatory')),
+                      DataColumn(label: Text('Note')),
+                    ],
+                    rows: _requirements.asMap().entries.map((entry) {
+                      final index = entry.key;
+                      final req = entry.value;
+                      return DataRow(
+                        color: adminDataRowColor(index),
+                        cells: [
+                          DataCell(Text(req.documentType.replaceAll('_', ' '))),
+                          DataCell(Text(req.academicYearId ?? 'All years')),
+                          DataCell(Text(req.standardId ?? 'All classes')),
+                          DataCell(
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  req.isMandatory
+                                      ? Icons.check_circle_outline
+                                      : Icons.radio_button_unchecked,
+                                  color: req.isMandatory
+                                      ? AdminColors.primaryAction
+                                      : AdminColors.textMuted,
+                                  size: 16,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  req.isMandatory ? 'Yes' : 'No',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodySmall
+                                      ?.copyWith(
+                                        color: AdminColors.textPrimary,
+                                      ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          DataCell(Text(req.note ?? '-')),
+                        ],
+                      );
+                    }).toList(),
+                  ),
+                ),
               ),
             ),
           ),

@@ -8,7 +8,10 @@ import '../../../data/models/academics/subject_item.dart';
 import '../../../domains/providers/active_year_provider.dart';
 import '../../../domains/providers/academic_provider.dart';
 import '../../../domains/providers/auth_provider.dart';
+import '../../../core/theme/admin_colors.dart';
 import '../../common/layout/admin_scaffold.dart';
+import '../../common/widgets/admin_layout/admin_page_header.dart';
+import '../../common/widgets/admin_layout/admin_spacing.dart';
 
 class AcademicYearsScreen extends ConsumerStatefulWidget {
   const AcademicYearsScreen({super.key});
@@ -18,9 +21,23 @@ class AcademicYearsScreen extends ConsumerStatefulWidget {
       _AcademicYearsScreenState();
 }
 
-class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen> {
+class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen>
+    with SingleTickerProviderStateMixin {
   int _reloadSeed = 0;
   String? _previewYearId;
+  late TabController _sectionTabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _sectionTabController = TabController(length: 4, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _sectionTabController.dispose();
+    super.dispose();
+  }
 
   Future<_Phase3Data> _loadAll() async {
     final auth = ref.read(authControllerProvider).valueOrNull;
@@ -60,18 +77,48 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen> {
   @override
   Widget build(BuildContext context) {
     return AdminScaffold(
-      title: 'Academic Year & Structure',
+      title: '',
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AdminSpacing.pagePadding),
         child: FutureBuilder<_Phase3Data>(
           key: ValueKey(_reloadSeed),
           future: _loadAll(),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
+              return Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(
+                      width: 32,
+                      height: 32,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AdminColors.primaryAction,
+                      ),
+                    ),
+                    const SizedBox(height: AdminSpacing.md),
+                    Text(
+                      'Loading academic structure…',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: AdminColors.textSecondary,
+                          ),
+                    ),
+                  ],
+                ),
+              );
             }
             if (snapshot.hasError) {
-              return Center(child: Text(snapshot.error.toString()));
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(AdminSpacing.lg),
+                  child: Text(
+                    snapshot.error.toString(),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: AdminColors.textSecondary),
+                  ),
+                ),
+              );
             }
             final data = snapshot.data!;
             final activeYear = data.activeYearId == null
@@ -81,139 +128,74 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen> {
                     ? data.years.where((y) => y.id == _previewYearId).firstOrNull
                     : null) ??
                 activeYear;
-            return ListView(
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Colors.indigo.shade50, Colors.blue.shade50],
+                AdminPageHeader(
+                  title: 'Academic years & structure',
+                  subtitle:
+                      'Configure the active year, classes, sections, and subjects.',
+                  primaryAction: FilledButton.icon(
+                    onPressed: () => _createAcademicYear(data.schoolId),
+                    icon: const Icon(Icons.add_circle_outline, size: 18),
+                    label: const Text('Create year'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AdminColors.primaryAction,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 18,
+                        vertical: 12,
+                      ),
                     ),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.indigo.shade100),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          const Expanded(
-                            child: Text(
-                              'Academic Setup Dashboard',
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ),
-                          ElevatedButton.icon(
-                            onPressed: () => _createAcademicYear(data.schoolId),
-                            icon: const Icon(Icons.add),
-                            label: const Text('Create Academic Year'),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        activeYear == null
-                            ? 'No active academic year. Create and activate one to continue setup.'
-                            : 'Active Year: ${activeYear.name} (${_fmt(activeYear.startDate)} to ${_fmt(activeYear.endDate)})',
-                        style: const TextStyle(
-                          color: Colors.black87,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      Wrap(
-                        spacing: 10,
-                        runSpacing: 10,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          const Text(
-                            'Preview Year:',
-                            style: TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                          SizedBox(
-                            width: 260,
-                            child: DropdownButtonFormField<String>(
-                              value: previewYear?.id,
-                              decoration: const InputDecoration(
-                                border: OutlineInputBorder(),
-                                contentPadding: EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 8,
-                                ),
-                              ),
-                              items: data.years
-                                  .map(
-                                    (y) => DropdownMenuItem<String>(
-                                      value: y.id,
-                                      child: Text(
-                                        '${y.name}${y.isActive ? ' (Active)' : ''}',
-                                      ),
-                                    ),
-                                  )
-                                  .toList(),
-                              onChanged: (v) {
-                                if (v == null) return;
-                                setState(() {
-                                  _previewYearId = v;
-                                  _reloadSeed++;
-                                });
-                              },
-                            ),
-                          ),
-                          OutlinedButton(
-                            onPressed: activeYear == null
-                                ? null
-                                : () {
-                                    setState(() {
-                                      _previewYearId = activeYear.id;
-                                      _reloadSeed++;
-                                    });
-                                  },
-                            child: const Text('Use Active Year'),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
-                      Wrap(
-                        spacing: 10,
-                        runSpacing: 10,
-                        children: [
-                          _StatBadge(
-                            label: 'Academic Years',
-                            value: data.years.length.toString(),
-                            icon: Icons.calendar_month,
-                          ),
-                          _StatBadge(
-                            label: 'Classes',
-                            value: data.standards.length.toString(),
-                            icon: Icons.class_,
-                          ),
-                          _StatBadge(
-                            label: 'Sections',
-                            value: data.sections.length.toString(),
-                            icon: Icons.grid_view_rounded,
-                          ),
-                          _StatBadge(
-                            label: 'Subjects',
-                            value: data.subjects.length.toString(),
-                            icon: Icons.menu_book_rounded,
-                          ),
-                        ],
-                      ),
+                ),
+                _buildHeroStrip(data, activeYear, previewYear),
+                const SizedBox(height: AdminSpacing.sm),
+                Material(
+                  color: AdminColors.surface,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    side: const BorderSide(color: AdminColors.border),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: TabBar(
+                    controller: _sectionTabController,
+                    isScrollable: true,
+                    indicatorColor: AdminColors.primaryAction,
+                    labelColor: AdminColors.primaryAction,
+                    unselectedLabelColor: AdminColors.textSecondary,
+                    dividerColor: Colors.transparent,
+                    tabAlignment: TabAlignment.start,
+                    labelStyle: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    unselectedLabelStyle: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    tabs: [
+                      Tab(text: 'Years (${data.years.length})'),
+                      Tab(text: 'Classes (${data.standards.length})'),
+                      Tab(text: 'Sections (${data.sections.length})'),
+                      Tab(text: 'Subjects (${data.subjects.length})'),
                     ],
                   ),
                 ),
-                const SizedBox(height: 16),
-                _buildYears(data),
-                const SizedBox(height: 16),
-                _buildStandards(data),
-                const SizedBox(height: 16),
-                _buildSections(data),
-                const SizedBox(height: 16),
-                _buildSubjects(data),
+                const Divider(height: 1, color: AdminColors.border),
+                Expanded(
+                  child: TabBarView(
+                    controller: _sectionTabController,
+                    physics: const BouncingScrollPhysics(),
+                    children: [
+                      _tabScroll(_buildYears(data)),
+                      _tabScroll(_buildStandards(data)),
+                      _tabScroll(_buildSections(data)),
+                      _tabScroll(_buildSubjects(data)),
+                    ],
+                  ),
+                ),
               ],
             );
           },
@@ -222,81 +204,251 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen> {
     );
   }
 
+  Widget _tabScroll(Widget child) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.only(top: AdminSpacing.md),
+      child: child,
+    );
+  }
+
+  Widget _buildHeroStrip(
+    _Phase3Data data,
+    AcademicYearItem? activeYear,
+    AcademicYearItem? previewYear,
+  ) {
+    return Card(
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: const BorderSide(color: AdminColors.border),
+      ),
+      color: AdminColors.surface,
+      child: Padding(
+        padding: const EdgeInsets.all(AdminSpacing.md),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              activeYear == null
+                  ? 'No active academic year. Create and activate one to continue setup.'
+                  : 'Active year · ${activeYear.name} · ${_fmt(activeYear.startDate)} – ${_fmt(activeYear.endDate)}',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: AdminColors.textPrimary,
+                    fontWeight: FontWeight.w500,
+                  ),
+            ),
+            const SizedBox(height: AdminSpacing.md),
+            Wrap(
+              spacing: AdminSpacing.sm,
+              runSpacing: AdminSpacing.sm,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text(
+                  'Preview data for',
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        color: AdminColors.textSecondary,
+                      ),
+                ),
+                SizedBox(
+                  width: 260,
+                  child: DropdownButtonFormField<String>(
+                    key: ValueKey(
+                      'preview_year_${previewYear?.id ?? 'none'}_${data.years.length}',
+                    ),
+                    initialValue: previewYear?.id,
+                    decoration: const InputDecoration(
+                      labelText: 'Year',
+                      isDense: true,
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                    ),
+                    items: data.years
+                        .map(
+                          (y) => DropdownMenuItem<String>(
+                            value: y.id,
+                            child: Text(
+                              '${y.name}${y.isActive ? ' · Active' : ''}',
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (v) {
+                      if (v == null) return;
+                      setState(() {
+                        _previewYearId = v;
+                        _reloadSeed++;
+                      });
+                    },
+                  ),
+                ),
+                OutlinedButton(
+                  onPressed: activeYear == null
+                      ? null
+                      : () {
+                          setState(() {
+                            _previewYearId = activeYear.id;
+                            _reloadSeed++;
+                          });
+                        },
+                  child: const Text('Match active year'),
+                ),
+              ],
+            ),
+            const SizedBox(height: AdminSpacing.md),
+            Wrap(
+              spacing: AdminSpacing.sm,
+              runSpacing: AdminSpacing.sm,
+              children: [
+                _StatBadge(
+                  label: 'Years',
+                  value: data.years.length.toString(),
+                  icon: Icons.calendar_month_outlined,
+                ),
+                _StatBadge(
+                  label: 'Classes',
+                  value: data.standards.length.toString(),
+                  icon: Icons.class_outlined,
+                ),
+                _StatBadge(
+                  label: 'Sections',
+                  value: data.sections.length.toString(),
+                  icon: Icons.grid_view_rounded,
+                ),
+                _StatBadge(
+                  label: 'Subjects',
+                  value: data.subjects.length.toString(),
+                  icon: Icons.menu_book_outlined,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildYears(_Phase3Data data) {
     return Card(
+      margin: EdgeInsets.zero,
       elevation: 0,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Colors.grey.shade200),
+        borderRadius: BorderRadius.circular(10),
+        side: const BorderSide(color: AdminColors.border),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AdminSpacing.md),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                const Icon(Icons.calendar_today, size: 18),
+                Icon(Icons.calendar_today_outlined,
+                    size: 18, color: AdminColors.textSecondary),
                 const SizedBox(width: 8),
-                const Expanded(
+                Expanded(
                   child: Text(
-                    '1. Academic Years',
-                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                    'Academic years',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: AdminColors.textPrimary,
+                        ),
                   ),
                 ),
                 TextButton.icon(
                   onPressed: () => _createAcademicYear(data.schoolId),
-                  icon: const Icon(Icons.add),
-                  label: const Text('New Year'),
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('Add year'),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            if (data.years.isEmpty) const Text('No years created yet.'),
-            ...data.years.map(
-              (y) => Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  border: Border.all(
-                    color: y.isActive ? Colors.green.shade200 : Colors.grey.shade300,
-                  ),
-                  borderRadius: BorderRadius.circular(10),
-                  color: y.isActive ? Colors.green.shade50 : Colors.white,
+            const SizedBox(height: AdminSpacing.sm),
+            if (data.years.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Text(
+                  'No years yet. Use Create year above.',
+                  style: TextStyle(color: AdminColors.textSecondary),
                 ),
-                child: Row(
-                  children: [
-                    Icon(
-                      y.isActive ? Icons.check_circle : Icons.radio_button_unchecked,
-                      color: y.isActive ? Colors.green : Colors.grey,
+              )
+            else
+              ...data.years.map(
+                (y) => Container(
+                  margin: const EdgeInsets.only(bottom: AdminSpacing.sm),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: y.isActive
+                          ? AdminColors.primaryAction.withValues(alpha: 0.35)
+                          : AdminColors.border,
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            y.name,
-                            style: const TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                          const SizedBox(height: 2),
-                          Text('${_fmt(y.startDate)} to ${_fmt(y.endDate)}'),
-                        ],
+                    borderRadius: BorderRadius.circular(8),
+                    color: y.isActive
+                        ? AdminColors.primaryAction.withValues(alpha: 0.06)
+                        : AdminColors.surface,
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        y.isActive
+                            ? Icons.check_circle_outline
+                            : Icons.radio_button_unchecked,
+                        color: y.isActive
+                            ? AdminColors.primaryAction
+                            : AdminColors.textMuted,
+                        size: 20,
                       ),
-                    ),
-                    y.isActive
-                        ? Chip(
-                            label: const Text('ACTIVE'),
-                            backgroundColor: Colors.green.shade100,
-                          )
-                        : OutlinedButton(
-                            onPressed: () => _activateYear(data.schoolId, y.id),
-                            child: const Text('Activate'),
-                          ),
-                  ],
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              y.name,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${_fmt(y.startDate)} to ${_fmt(y.endDate)}',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: AdminColors.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      y.isActive
+                          ? Chip(
+                              label: const Text('Active'),
+                              backgroundColor:
+                                  AdminColors.primaryAction.withValues(alpha: 0.12),
+                              side: BorderSide(
+                                color: AdminColors.primaryAction.withValues(
+                                  alpha: 0.4,
+                                ),
+                              ),
+                              labelStyle: TextStyle(
+                                color: AdminColors.primaryAction,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 11,
+                              ),
+                              visualDensity: VisualDensity.compact,
+                            )
+                          : OutlinedButton(
+                              onPressed: () =>
+                                  _activateYear(data.schoolId, y.id),
+                              child: const Text('Activate'),
+                            ),
+                    ],
+                  ),
                 ),
               ),
-            ),
           ],
         ),
       ),
@@ -305,53 +457,72 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen> {
 
   Widget _buildStandards(_Phase3Data data) {
     return Card(
+      margin: EdgeInsets.zero,
       elevation: 0,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Colors.grey.shade200),
+        borderRadius: BorderRadius.circular(10),
+        side: const BorderSide(color: AdminColors.border),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AdminSpacing.md),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                const Expanded(
+                Expanded(
                   child: Text(
-                    '2. Class Setup',
-                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                    'Classes',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: AdminColors.textPrimary,
+                        ),
                   ),
                 ),
-                ElevatedButton(
+                FilledButton.tonal(
                   onPressed: data.activeYearId == null
                       ? null
                       : () =>
                             _createStandard(data.schoolId, data.activeYearId!),
-                  child: const Text('Add Class'),
+                  child: const Text('Add class'),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AdminSpacing.sm),
             if (data.standards.isEmpty)
-              const Text('No classes defined for active year.'),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: data.standards
-                  .map(
-                    (s) => Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(10),
-                        color: Colors.blue.shade50,
-                        border: Border.all(color: Colors.blue.shade100),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                  data.activeYearId == null
+                      ? 'Activate a year first.'
+                      : 'No classes for the preview year.',
+                  style: TextStyle(color: AdminColors.textSecondary),
+                ),
+              )
+            else
+              Wrap(
+                spacing: AdminSpacing.sm,
+                runSpacing: AdminSpacing.sm,
+                children: data.standards
+                    .map(
+                      (s) => Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(8),
+                          color: AdminColors.borderSubtle,
+                          border: Border.all(color: AdminColors.border),
+                        ),
+                        child: Text(
+                          '${s.name} · Level ${s.level}',
+                          style: const TextStyle(fontSize: 13),
+                        ),
                       ),
-                      child: Text('${s.name}  •  Level ${s.level}'),
-                    ),
-                  )
-                  .toList(),
-            ),
+                    )
+                    .toList(),
+              ),
           ],
         ),
       ),
@@ -360,61 +531,90 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen> {
 
   Widget _buildSections(_Phase3Data data) {
     return Card(
+      margin: EdgeInsets.zero,
       elevation: 0,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Colors.grey.shade200),
+        borderRadius: BorderRadius.circular(10),
+        side: const BorderSide(color: AdminColors.border),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AdminSpacing.md),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                const Expanded(
+                Expanded(
                   child: Text(
-                    '3. Sections',
-                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                    'Sections',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: AdminColors.textPrimary,
+                        ),
                   ),
                 ),
-                ElevatedButton(
+                FilledButton.tonal(
                   onPressed: data.activeYearId == null || data.standards.isEmpty
                       ? null
                       : () => _createSection(data),
-                child: const Text('Add Section'),
+                  child: const Text('Add section'),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AdminSpacing.sm),
             if (data.sections.isEmpty)
-              const Text('No sections defined for active year.'),
-            ...data.sections.map((sec) {
-              final std = data.standards
-                  .where((s) => s.id == sec.standardId)
-                  .firstWhere(
-                    (s) => true,
-                    orElse: () => StandardItem(
-                      id: sec.standardId,
-                      name: 'Unknown Class',
-                      level: 0,
-                      schoolId: data.schoolId,
-                    ),
-                  );
-              return Card(
-                margin: const EdgeInsets.only(bottom: 8),
-                color: Colors.orange.shade50,
-                child: ListTile(
-                  dense: true,
-                  title: Text('${std.name} • Section ${sec.name}'),
-                  subtitle: Text(sec.isActive ? 'ACTIVE' : 'INACTIVE'),
-                  trailing: Icon(
-                    sec.isActive ? Icons.check_circle : Icons.pause_circle,
-                    color: sec.isActive ? Colors.green : Colors.grey,
-                  ),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                  data.standards.isEmpty
+                      ? 'Add classes first.'
+                      : 'No sections for the preview year.',
+                  style: TextStyle(color: AdminColors.textSecondary),
                 ),
-              );
-            }),
+              )
+            else
+              ...data.sections.map((sec) {
+                final std = data.standards
+                    .where((s) => s.id == sec.standardId)
+                    .firstWhere(
+                      (s) => true,
+                      orElse: () => StandardItem(
+                        id: sec.standardId,
+                        name: 'Unknown class',
+                        level: 0,
+                        schoolId: data.schoolId,
+                      ),
+                    );
+                return Container(
+                  margin: const EdgeInsets.only(bottom: AdminSpacing.sm),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: AdminColors.border),
+                    borderRadius: BorderRadius.circular(8),
+                    color: AdminColors.surface,
+                  ),
+                  child: ListTile(
+                    dense: true,
+                    title: Text(
+                      '${std.name} · Section ${sec.name}',
+                      style: const TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                    subtitle: Text(
+                      sec.isActive ? 'Active' : 'Inactive',
+                      style: TextStyle(
+                        color: AdminColors.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                    trailing: Icon(
+                      sec.isActive ? Icons.check_circle_outline : Icons.pause_circle_outline,
+                      color: sec.isActive
+                          ? AdminColors.primaryAction
+                          : AdminColors.textMuted,
+                      size: 20,
+                    ),
+                  ),
+                );
+              }),
           ],
         ),
       ),
@@ -423,52 +623,75 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen> {
 
   Widget _buildSubjects(_Phase3Data data) {
     return Card(
+      margin: EdgeInsets.zero,
       elevation: 0,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Colors.grey.shade200),
+        borderRadius: BorderRadius.circular(10),
+        side: const BorderSide(color: AdminColors.border),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AdminSpacing.md),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                const Expanded(
+                Expanded(
                   child: Text(
-                    '4. Subject Master',
-                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                    'Subjects',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: AdminColors.textPrimary,
+                        ),
                   ),
                 ),
-                ElevatedButton(
+                FilledButton.tonal(
                   onPressed: () => _createSubject(data),
-                  child: const Text('Add Subject'),
+                  child: const Text('Add subject'),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            if (data.subjects.isEmpty) const Text('No subjects added yet.'),
-            ...data.subjects.map(
-              (subj) => ListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                leading: CircleAvatar(
-                  radius: 14,
-                  backgroundColor: Colors.purple.shade100,
-                  child: Text(
-                    subj.code.isNotEmpty ? subj.code.characters.first : 'S',
-                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+            const SizedBox(height: AdminSpacing.sm),
+            if (data.subjects.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                  'No subjects yet.',
+                  style: TextStyle(color: AdminColors.textSecondary),
+                ),
+              )
+            else
+              ...data.subjects.map(
+                (subj) => ListTile(
+                  dense: true,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 4),
+                  leading: CircleAvatar(
+                    radius: 16,
+                    backgroundColor: AdminColors.borderSubtle,
+                    foregroundColor: AdminColors.textPrimary,
+                    child: Text(
+                      subj.code.isNotEmpty ? subj.code.characters.first : 'S',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  title: Text(
+                    '${subj.name} (${subj.code})',
+                    style: const TextStyle(fontWeight: FontWeight.w500),
+                  ),
+                  subtitle: Text(
+                    subj.standardId == null || subj.standardId!.isEmpty
+                        ? 'School-wide'
+                        : 'Class-linked',
+                    style: TextStyle(
+                      color: AdminColors.textSecondary,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
-                title: Text('${subj.name} (${subj.code})'),
-                subtitle: Text(
-                  subj.standardId == null || subj.standardId!.isEmpty
-                      ? 'Global Subject'
-                      : 'Class-linked',
-                ),
               ),
-            ),
           ],
         ),
       ),
@@ -815,31 +1038,37 @@ class _StatBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 160,
-      padding: const EdgeInsets.all(10),
+      constraints: const BoxConstraints(minWidth: 132),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.grey.shade300),
+        color: AdminColors.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AdminColors.border),
       ),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 18, color: Colors.indigo),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  value,
-                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-                ),
-                Text(
-                  label,
-                  style: const TextStyle(fontSize: 12, color: Colors.black54),
-                ),
-              ],
-            ),
+          Icon(icon, size: 18, color: AdminColors.textSecondary),
+          const SizedBox(width: 10),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                value,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: AdminColors.textPrimary,
+                    ),
+              ),
+              Text(
+                label,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: AdminColors.textSecondary,
+                      letterSpacing: 0.2,
+                    ),
+              ),
+            ],
           ),
         ],
       ),

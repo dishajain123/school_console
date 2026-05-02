@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/theme/admin_colors.dart';
 import 'sidebar.dart';
 import 'top_bar.dart';
 
@@ -12,12 +13,19 @@ class AdminScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AdminColors.canvas,
       appBar: TopBar(title: title),
       body: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const AdminSidebar(),
-          const VerticalDivider(width: 1),
-          Expanded(child: child),
+          const VerticalDivider(width: 1, color: AdminColors.border),
+          Expanded(
+            child: ColoredBox(
+              color: AdminColors.canvas,
+              child: child,
+            ),
+          ),
         ],
       ),
     );

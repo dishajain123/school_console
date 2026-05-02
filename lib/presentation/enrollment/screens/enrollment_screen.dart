@@ -1,5 +1,4 @@
 // lib/presentation/enrollment/screens/enrollment_screen.dart  [Admin Console]
-// Phase 4: Assign students to class/section per academic year, view class roster.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';

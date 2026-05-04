@@ -13,6 +13,7 @@ import 'dart:html' as html;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/constants/api_constants.dart';
 import '../../../core/network/dio_client.dart';
 import '../../../domains/providers/active_year_provider.dart';
 import '../../../domains/providers/auth_provider.dart';
@@ -26,7 +27,7 @@ class _ReportsRepository {
 
   Future<List<Map<String, dynamic>>> listYears(String schoolId) async {
     final r = await _dio.dio.get<Map<String, dynamic>>(
-      '/academic-years',
+      ApiConstants.academicYears,
       queryParameters: {'school_id': schoolId},
     );
     return ((r.data?['items'] as List?) ?? [])
@@ -37,7 +38,7 @@ class _ReportsRepository {
   Future<List<Map<String, dynamic>>> listStandards(
       String schoolId, String yearId) async {
     final r = await _dio.dio.get<Map<String, dynamic>>(
-      '/masters/standards',
+      ApiConstants.standards,
       queryParameters: {'school_id': schoolId, 'academic_year_id': yearId},
     );
     return ((r.data?['items'] as List?) ?? [])
@@ -49,7 +50,7 @@ class _ReportsRepository {
   Future<Map<String, dynamic>> getOverview({String? yearId}) async {
     try {
       final r = await _dio.dio.get<Map<String, dynamic>>(
-        '/principal-reports/overview',
+        ApiConstants.principalReportsOverview,
         queryParameters: {
           if (yearId != null) 'academic_year_id': yearId,
         },
@@ -68,7 +69,7 @@ class _ReportsRepository {
     String? section,
   }) async {
     final r = await _dio.dio.get<Map<String, dynamic>>(
-      '/principal-reports/details',
+      ApiConstants.principalReportsDetails,
       queryParameters: {
         if (yearId != null) 'academic_year_id': yearId,
         if (metric != null) 'metric': metric,
@@ -85,7 +86,7 @@ class _ReportsRepository {
     String? standardId,
   }) async {
     final r = await _dio.dio.get<Map<String, dynamic>>(
-      '/fees/analytics',
+      ApiConstants.feeAnalytics,
       queryParameters: {
         if (yearId != null) 'academic_year_id': yearId,
         if (standardId != null) 'standard_id': standardId,
@@ -98,7 +99,7 @@ class _ReportsRepository {
   Future<Map<String, dynamic>> getStudentStrength(
       String schoolId, String yearId) async {
     final r = await _dio.dio.get<Map<String, dynamic>>(
-      '/students',
+      ApiConstants.students,
       queryParameters: {
         'academic_year_id': yearId,
         'page': 1,
@@ -110,7 +111,7 @@ class _ReportsRepository {
 
   Future<List<Map<String, dynamic>>> getDefaulters({String? yearId}) async {
     final r = await _dio.dio.get<Map<String, dynamic>>(
-      '/fees/defaulters',
+      ApiConstants.feeDefaulters,
       queryParameters: {
         if (yearId != null) 'academic_year_id': yearId,
       },

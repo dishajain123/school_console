@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 
+import '../../core/constants/api_constants.dart';
 import '../../core/network/dio_client.dart';
 import '../../core/storage/secure_storage.dart';
 import '../models/auth/admin_user.dart';
@@ -17,7 +18,7 @@ class AuthRepository {
     required String password,
   }) async {
     final resp = await _client.dio.post<Map<String, dynamic>>(
-      '/auth/login',
+      ApiConstants.login,
       data: {
         if (email != null && email.isNotEmpty) 'email': email,
         if (phone != null && phone.isNotEmpty) 'phone': phone,
@@ -34,7 +35,7 @@ class AuthRepository {
 
   Future<AdminUser> me({String? accessToken}) async {
     final resp = await _client.dio.get<Map<String, dynamic>>(
-      '/auth/me',
+      ApiConstants.me,
       options: accessToken == null || accessToken.isEmpty
           ? null
           : Options(headers: {'Authorization': 'Bearer $accessToken'}),
@@ -48,7 +49,7 @@ class AuthRepository {
 
   Future<String?> resolveSchoolContext({String? accessToken}) async {
     final resp = await _client.dio.get<Map<String, dynamic>>(
-      '/schools',
+      ApiConstants.schools,
       queryParameters: {'page': 1, 'page_size': 1, 'is_active': true},
       options: accessToken == null || accessToken.isEmpty
           ? null
@@ -70,7 +71,8 @@ class AuthRepository {
   Future<void> logout() async {
     final refresh = await _storage.readRefreshToken();
     try {
-      await _client.dio.post('/auth/logout', data: {'refresh_token': refresh});
+      await _client.dio
+          .post(ApiConstants.logout, data: {'refresh_token': refresh});
     } on DioException {
       // Best effort logout; always clear local session.
     }

@@ -21,6 +21,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
 
+import '../../../core/constants/api_constants.dart';
 import '../../../core/network/dio_client.dart';
 import '../../../core/theme/admin_colors.dart';
 import '../../../domains/providers/active_year_provider.dart';
@@ -181,7 +182,7 @@ class _TeacherAssignmentRepository {
       if (!isNetwork) rethrow;
 
       try {
-        await _dio.dio.get<Map<String, dynamic>>('/health');
+        await _dio.dio.get<Map<String, dynamic>>(ApiConstants.health);
       } catch (_) {
         throw Exception(
           'Cannot reach backend server. Please ensure backend is running at ${_dio.dio.options.baseUrl}.',
@@ -199,7 +200,7 @@ class _TeacherAssignmentRepository {
   ) async {
     final resp = await _withNetworkGuard(
       () => _dio.dio.get<Map<String, dynamic>>(
-        '/teacher-assignments',
+        ApiConstants.teacherAssignments,
         queryParameters: {
           'teacher_id': teacherId,
           if (yearId != null) 'academic_year_id': yearId,
@@ -218,7 +219,7 @@ class _TeacherAssignmentRepository {
   ) async {
     final resp = await _withNetworkGuard(
       () => _dio.dio.get<Map<String, dynamic>>(
-        '/teacher-assignments',
+        ApiConstants.teacherAssignments,
         queryParameters: {
           'standard_id': standardId,
           'section': section,
@@ -237,7 +238,7 @@ class _TeacherAssignmentRepository {
   ) async {
     final resp = await _withNetworkGuard(
       () => _dio.dio.get<Map<String, dynamic>>(
-        '/teacher-assignments',
+        ApiConstants.teacherAssignments,
         queryParameters: {
           'standard_id': standardId,
           if (yearId != null) 'academic_year_id': yearId,
@@ -257,7 +258,7 @@ class _TeacherAssignmentRepository {
     required String academicYearId,
   }) async {
     await _dio.dio.post<dynamic>(
-      '/teacher-assignments',
+      ApiConstants.teacherAssignments,
       data: {
         'teacher_id': teacherId,
         'standard_id': standardId,
@@ -276,7 +277,7 @@ class _TeacherAssignmentRepository {
     required String academicYearId,
   }) async {
     await _dio.dio.patch<dynamic>(
-      '/teacher-assignments/$assignmentId',
+      ApiConstants.teacherAssignmentById(assignmentId),
       data: {
         'standard_id': standardId,
         'section': section,
@@ -287,7 +288,8 @@ class _TeacherAssignmentRepository {
   }
 
   Future<void> delete(String assignmentId) async {
-    await _dio.dio.delete<dynamic>('/teacher-assignments/$assignmentId');
+    await _dio.dio
+        .delete<dynamic>(ApiConstants.teacherAssignmentById(assignmentId));
   }
 
   Future<Map<String, dynamic>> reenrollTeacher({
@@ -297,7 +299,7 @@ class _TeacherAssignmentRepository {
     bool overwriteExisting = false,
   }) async {
     final r = await _dio.dio.post<Map<String, dynamic>>(
-      '/promotions/reenroll-teacher/$teacherId',
+      ApiConstants.promotionReenrollTeacher(teacherId),
       data: {
         'source_year_id': sourceYearId,
         'target_year_id': targetYearId,
@@ -308,7 +310,8 @@ class _TeacherAssignmentRepository {
   }
 
   Future<List<Map<String, dynamic>>> listYears() async {
-    final r = await _dio.dio.get<Map<String, dynamic>>('/academic-years');
+    final r =
+        await _dio.dio.get<Map<String, dynamic>>(ApiConstants.academicYears);
     return ((r.data?['items'] as List?) ?? [])
         .map((e) => Map<String, dynamic>.from(e as Map))
         .toList();
@@ -320,7 +323,7 @@ class _TeacherAssignmentRepository {
     required DateTime endDate,
   }) async {
     final r = await _dio.dio.post<Map<String, dynamic>>(
-      '/academic-years',
+      ApiConstants.academicYears,
       data: {
         'name': name.trim(),
         'start_date': _fmtDate(startDate),
@@ -340,7 +343,7 @@ class _TeacherAssignmentRepository {
   Future<List<_Teacher>> listTeachers() async {
     final r = await _withNetworkGuard(
       () => _dio.dio.get<Map<String, dynamic>>(
-        '/role-profiles',
+        ApiConstants.roleProfiles,
         queryParameters: {'role': 'TEACHER', 'page_size': 100},
       ),
     );
@@ -372,7 +375,7 @@ class _TeacherAssignmentRepository {
   }) async {
     final r = await _withNetworkGuard(
       () => _dio.dio.get<Map<String, dynamic>>(
-        '/enrollments/onboarding-queue',
+        ApiConstants.enrollmentOnboardingQueue,
         queryParameters: {
           'role': 'TEACHER',
           'pending_only': false,
@@ -397,7 +400,7 @@ class _TeacherAssignmentRepository {
     String? customEmployeeId,
   }) async {
     final r = await _dio.dio.post<Map<String, dynamic>>(
-      '/role-profiles/teacher',
+      ApiConstants.roleProfilesTeacher,
       data: {
         'user_id': userId,
         if (customEmployeeId != null && customEmployeeId.trim().isNotEmpty)
@@ -409,7 +412,7 @@ class _TeacherAssignmentRepository {
 
   Future<List<_DropdownItem>> listStandards(String yearId) async {
     final r = await _dio.dio.get<Map<String, dynamic>>(
-      '/masters/standards',
+      ApiConstants.standards,
       queryParameters: {'academic_year_id': yearId},
     );
     return ((r.data?['items'] as List?) ?? []).map((e) {
@@ -426,7 +429,7 @@ class _TeacherAssignmentRepository {
     String yearId,
   ) async {
     final r = await _dio.dio.get<Map<String, dynamic>>(
-      '/masters/sections',
+      ApiConstants.sections,
       queryParameters: {'standard_id': standardId, 'academic_year_id': yearId},
     );
     return ((r.data?['items'] as List?) ?? []).map((e) {
@@ -440,7 +443,7 @@ class _TeacherAssignmentRepository {
 
   Future<List<_DropdownItem>> listSubjects({String? standardId}) async {
     final r = await _dio.dio.get<Map<String, dynamic>>(
-      '/masters/subjects',
+      ApiConstants.subjects,
       queryParameters: {
         'page_size': 200,
         if (standardId != null) 'standard_id': standardId,
@@ -461,7 +464,7 @@ class _TeacherAssignmentRepository {
   }) async {
     final resp = await _withNetworkGuard(
       () => _dio.dio.get<List<dynamic>>(
-        '/leave/balance/teacher/$teacherId',
+        ApiConstants.leaveBalanceTeacher(teacherId),
         queryParameters: {
           if (academicYearId != null) 'academic_year_id': academicYearId,
         },
@@ -479,7 +482,7 @@ class _TeacherAssignmentRepository {
   }) async {
     final resp = await _withNetworkGuard(
       () => _dio.dio.get<Map<String, dynamic>>(
-        '/leave',
+        ApiConstants.leave,
         queryParameters: {
           'teacher_id': teacherId,
           if (academicYearId != null) 'academic_year_id': academicYearId,
@@ -502,7 +505,7 @@ class _TeacherAssignmentRepository {
   }) async {
     final resp = await _withNetworkGuard(
       () => _dio.dio.put<List<dynamic>>(
-        '/leave/balance/teacher/$teacherId',
+        ApiConstants.leaveBalanceTeacher(teacherId),
         data: {
           'allocations': [
             {'leave_type': 'CASUAL', 'total_days': casualDays},

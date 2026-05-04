@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
 
+import '../../../core/constants/api_constants.dart';
 import '../../../core/network/dio_client.dart';
 import '../../../domains/providers/auth_provider.dart';
 import '../../common/layout/admin_scaffold.dart';
@@ -71,7 +72,7 @@ class _AcademicStructureRepository {
 
   Future<List<_Standard>> listStandards({String? academicYearId}) async {
     final resp = await _dio.dio.get<Map<String, dynamic>>(
-      '/masters/standards',
+      ApiConstants.standards,
       queryParameters: {
         if (academicYearId != null) 'academic_year_id': academicYearId,
       },
@@ -93,7 +94,7 @@ class _AcademicStructureRepository {
     String? academicYearId,
   }) async {
     final resp = await _dio.dio.get<Map<String, dynamic>>(
-      '/masters/sections',
+      ApiConstants.sections,
       queryParameters: {
         'standard_id': standardId,
         if (academicYearId != null) 'academic_year_id': academicYearId,
@@ -117,7 +118,7 @@ class _AcademicStructureRepository {
     required String academicYearId,
   }) async {
     await _dio.dio.post<dynamic>(
-      '/masters/standards',
+      ApiConstants.standards,
       data: {
         'name': name.trim(),
         'level': level,
@@ -132,7 +133,7 @@ class _AcademicStructureRepository {
     required String academicYearId,
   }) async {
     await _dio.dio.patch<dynamic>(
-      '/masters/standards/$standardId',
+      ApiConstants.standardById(standardId),
       data: {
         'name': name.trim(),
         'level': level,
@@ -142,7 +143,7 @@ class _AcademicStructureRepository {
   }
 
   Future<void> deleteStandard(String standardId) async {
-    await _dio.dio.delete<dynamic>('/masters/standards/$standardId');
+    await _dio.dio.delete<dynamic>(ApiConstants.standardById(standardId));
   }
 
   Future<void> createSection({
@@ -152,7 +153,7 @@ class _AcademicStructureRepository {
     int? capacity,
   }) async {
     await _dio.dio.post<dynamic>(
-      '/masters/sections',
+      ApiConstants.sections,
       data: {
         'standard_id': standardId,
         'academic_year_id': academicYearId,
@@ -167,7 +168,7 @@ class _AcademicStructureRepository {
     int? capacity,
   }) async {
     await _dio.dio.patch<dynamic>(
-      '/masters/sections/$sectionId',
+      ApiConstants.sectionById(sectionId),
       data: {
         'name': sectionName.trim().toUpperCase(),
         'capacity': capacity,
@@ -176,11 +177,12 @@ class _AcademicStructureRepository {
   }
 
   Future<void> deleteSection(String sectionId) async {
-    await _dio.dio.delete<dynamic>('/masters/sections/$sectionId');
+    await _dio.dio.delete<dynamic>(ApiConstants.sectionById(sectionId));
   }
 
   Future<List<Map<String, dynamic>>> listAcademicYears() async {
-    final resp = await _dio.dio.get<Map<String, dynamic>>('/academic-years');
+    final resp =
+        await _dio.dio.get<Map<String, dynamic>>(ApiConstants.academicYears);
     final items = (resp.data?['items'] as List?) ?? [];
     return items.map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
@@ -191,7 +193,7 @@ class _AcademicStructureRepository {
     required DateTime endDate,
   }) async {
     final resp = await _dio.dio.post<Map<String, dynamic>>(
-      '/academic-years',
+      ApiConstants.academicYears,
       data: {
         'name': name.trim(),
         'start_date': _fmtDate(startDate),
@@ -210,7 +212,7 @@ class _AcademicStructureRepository {
 
   Future<List<_Subject>> listSubjects({String? standardId}) async {
     final resp = await _dio.dio.get<Map<String, dynamic>>(
-      '/masters/subjects',
+      ApiConstants.subjects,
       queryParameters: {if (standardId != null) 'standard_id': standardId},
     );
     final items = (resp.data?['items'] as List?) ?? [];
@@ -231,7 +233,7 @@ class _AcademicStructureRepository {
     required String code,
   }) async {
     await _dio.dio.post<dynamic>(
-      '/masters/subjects',
+      ApiConstants.subjects,
       data: {
         'standard_id': standardId,
         'name': name.trim(),
@@ -246,7 +248,7 @@ class _AcademicStructureRepository {
     required String code,
   }) async {
     await _dio.dio.patch<dynamic>(
-      '/masters/subjects/$subjectId',
+      ApiConstants.subjectById(subjectId),
       data: {
         'standard_id': standardId,
         'name': name.trim(),
@@ -256,7 +258,7 @@ class _AcademicStructureRepository {
   }
 
   Future<void> deleteSubject(String subjectId) async {
-    await _dio.dio.delete<dynamic>('/masters/subjects/$subjectId');
+    await _dio.dio.delete<dynamic>(ApiConstants.subjectById(subjectId));
   }
 
   Future<List<_ClassAssignment>> listTeacherAssignmentsForStandard({
@@ -264,7 +266,7 @@ class _AcademicStructureRepository {
     required String academicYearId,
   }) async {
     final resp = await _dio.dio.get<Map<String, dynamic>>(
-      '/teacher-assignments',
+      ApiConstants.teacherAssignments,
       queryParameters: {
         'standard_id': standardId,
         'academic_year_id': academicYearId,

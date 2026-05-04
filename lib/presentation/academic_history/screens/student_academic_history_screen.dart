@@ -21,7 +21,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/network/dio_client.dart';
+import '../../../core/constants/api_constants.dart';
 import '../../../domains/providers/auth_provider.dart';
 
 // ── Models ────────────────────────────────────────────────────────────────────
@@ -102,7 +102,7 @@ class _StudentAcademicHistoryScreenState
     try {
       final dio = ref.read(dioClientProvider);
       final resp = await dio.dio.get<Map<String, dynamic>>(
-        '/enrollments/history/${widget.studentId}',
+        ApiConstants.enrollmentHistory(widget.studentId),
       );
       final data = resp.data!;
       final historyList = (data['history'] as List?) ?? [];

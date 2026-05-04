@@ -1,3 +1,4 @@
+import '../../core/constants/api_constants.dart';
 import '../../core/network/dio_client.dart';
 import '../models/academics/academic_year_item.dart';
 import '../models/academics/section_item.dart';
@@ -14,7 +15,7 @@ class AcademicRepository {
       return preferredSchoolId;
     }
     final resp = await _client.dio.get<Map<String, dynamic>>(
-      '/schools',
+      ApiConstants.schools,
       queryParameters: {'page': 1, 'page_size': 1},
     );
     final items = (resp.data?['items'] as List?) ?? const <dynamic>[];
@@ -30,7 +31,7 @@ class AcademicRepository {
 
   Future<List<AcademicYearItem>> listYears({String? schoolId}) async {
     final resp = await _client.dio.get<Map<String, dynamic>>(
-      '/academic-years',
+      ApiConstants.academicYears,
       queryParameters: {
         if (schoolId != null && schoolId.isNotEmpty) 'school_id': schoolId,
       },
@@ -53,7 +54,7 @@ class AcademicRepository {
     required String schoolId,
   }) async {
     final resp = await _client.dio.post<Map<String, dynamic>>(
-      '/academic-years',
+      ApiConstants.academicYears,
       queryParameters: {'school_id': schoolId},
       data: {
         'name': name.trim(),
@@ -69,7 +70,7 @@ class AcademicRepository {
     required String schoolId,
   }) async {
     final resp = await _client.dio.patch<Map<String, dynamic>>(
-      '/academic-years/$yearId/activate',
+      ApiConstants.academicYearActivate(yearId),
       queryParameters: {'school_id': schoolId},
     );
     return AcademicYearItem.fromJson(resp.data ?? const {});
@@ -80,7 +81,7 @@ class AcademicRepository {
     String? academicYearId,
   }) async {
     final resp = await _client.dio.get<Map<String, dynamic>>(
-      '/masters/standards',
+      ApiConstants.standards,
       queryParameters: {
         'school_id': schoolId,
         if (academicYearId != null && academicYearId.isNotEmpty)
@@ -104,7 +105,7 @@ class AcademicRepository {
     required String academicYearId,
   }) async {
     final resp = await _client.dio.post<Map<String, dynamic>>(
-      '/masters/standards',
+      ApiConstants.standards,
       queryParameters: {'school_id': schoolId},
       data: {
         'name': name.trim(),
@@ -121,7 +122,7 @@ class AcademicRepository {
     String? standardId,
   }) async {
     final resp = await _client.dio.get<Map<String, dynamic>>(
-      '/masters/sections',
+      ApiConstants.sections,
       queryParameters: {
         'school_id': schoolId,
         if (academicYearId != null && academicYearId.isNotEmpty)
@@ -148,7 +149,7 @@ class AcademicRepository {
     int? capacity,
   }) async {
     final resp = await _client.dio.post<Map<String, dynamic>>(
-      '/masters/sections',
+      ApiConstants.sections,
       queryParameters: {'school_id': schoolId},
       data: {
         'standard_id': standardId,
@@ -165,7 +166,7 @@ class AcademicRepository {
     String? standardId,
   }) async {
     final resp = await _client.dio.get<Map<String, dynamic>>(
-      '/masters/subjects',
+      ApiConstants.subjects,
       queryParameters: {
         'school_id': schoolId,
         if (standardId != null && standardId.isNotEmpty)
@@ -189,7 +190,7 @@ class AcademicRepository {
     String? standardId,
   }) async {
     final resp = await _client.dio.post<Map<String, dynamic>>(
-      '/masters/subjects',
+      ApiConstants.subjects,
       queryParameters: {'school_id': schoolId},
       data: {
         'name': name.trim(),

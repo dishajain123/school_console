@@ -15,6 +15,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
 
+import '../../../core/constants/api_constants.dart';
 import '../../../core/network/dio_client.dart';
 import '../../../core/theme/admin_colors.dart';
 import '../../../domains/providers/active_year_provider.dart';
@@ -120,7 +121,8 @@ class _DocRepository {
   final DioClient _dio;
 
   Future<List<Map<String, dynamic>>> listYears() async {
-    final r = await _dio.dio.get<Map<String, dynamic>>('/academic-years');
+    final r =
+        await _dio.dio.get<Map<String, dynamic>>(ApiConstants.academicYears);
     return ((r.data?['items'] as List?) ?? [])
         .map((e) => Map<String, dynamic>.from(e as Map))
         .toList();
@@ -128,7 +130,7 @@ class _DocRepository {
 
   Future<List<Map<String, dynamic>>> listStandards(String yearId) async {
     final r = await _dio.dio.get<Map<String, dynamic>>(
-      '/masters/standards',
+      ApiConstants.standards,
       queryParameters: {'academic_year_id': yearId},
     );
     return ((r.data?['items'] as List?) ?? [])
@@ -147,7 +149,7 @@ class _DocRepository {
       if (section != null && section.trim().isNotEmpty) 'section': section.trim(),
     };
     final r = await _dio.dio.get<Map<String, dynamic>>(
-      '/documents',
+      ApiConstants.documents,
       queryParameters: query.isEmpty ? null : query,
     );
     return ((r.data?['items'] as List?) ?? [])
@@ -157,7 +159,7 @@ class _DocRepository {
 
   Future<List<_Document>> listStudentDocuments(String studentId) async {
     final r = await _dio.dio.get<Map<String, dynamic>>(
-      '/documents',
+      ApiConstants.documents,
       queryParameters: {'student_id': studentId},
     );
     return ((r.data?['items'] as List?) ?? [])
@@ -167,7 +169,7 @@ class _DocRepository {
 
   Future<String?> getDownloadUrl(String docId) async {
     final r = await _dio.dio.get<Map<String, dynamic>>(
-      '/documents/$docId/download',
+      ApiConstants.documentDownload(docId),
     );
     return r.data?['url'] as String?;
   }
@@ -175,7 +177,7 @@ class _DocRepository {
   Future<void> verifyDocument(String docId,
       {required bool approve, String? reason}) async {
     await _dio.dio.patch<dynamic>(
-      '/documents/$docId/verify',
+      ApiConstants.documentVerify(docId),
       data: {
         'approve': approve,
         if (reason != null && reason.trim().isNotEmpty) 'reason': reason,
@@ -184,7 +186,8 @@ class _DocRepository {
   }
 
   Future<List<_DocRequirement>> getRequirements() async {
-    final r = await _dio.dio.get<Map<String, dynamic>>('/documents/requirements');
+    final r = await _dio.dio
+        .get<Map<String, dynamic>>(ApiConstants.documentRequirements);
     return ((r.data?['items'] as List?) ?? [])
         .map((e) => _DocRequirement.fromJson(Map<String, dynamic>.from(e as Map)))
         .toList();
@@ -192,7 +195,7 @@ class _DocRepository {
 
   Future<void> setRequirements(List<Map<String, dynamic>> items) async {
     await _dio.dio.put<dynamic>(
-      '/documents/requirements',
+      ApiConstants.documentRequirements,
       data: {'items': items},
     );
   }
@@ -214,7 +217,7 @@ class _DocRepository {
           contentType: DioMediaType.parse(contentType)),
     });
     final r = await _dio.dio.post<Map<String, dynamic>>(
-      '/documents/upload',
+      ApiConstants.documentUpload,
       data: formData,
     );
     return _Document.fromJson(r.data ?? {});
@@ -225,7 +228,7 @@ class _DocRepository {
     int pageSize = 100,
   }) async {
     final r = await _dio.dio.get<Map<String, dynamic>>(
-      '/users',
+      ApiConstants.users,
       queryParameters: {'page': page, 'page_size': pageSize},
     );
     return Map<String, dynamic>.from(r.data ?? {});
@@ -237,7 +240,7 @@ class _DocRepository {
     int pageSize = 200,
   }) async {
     final r = await _dio.dio.get<Map<String, dynamic>>(
-      '/students',
+      ApiConstants.students,
       queryParameters: {
         'page': page,
         'page_size': pageSize,

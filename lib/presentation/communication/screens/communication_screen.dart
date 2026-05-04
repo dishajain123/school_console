@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/constants/api_constants.dart';
 import '../../../core/network/dio_client.dart';
 import '../../../domains/providers/active_year_provider.dart';
 import '../../../domains/providers/auth_provider.dart';
@@ -70,7 +71,7 @@ class _CommRepository {
   Future<List<_Announcement>> listAnnouncements(
       {bool includeInactive = true}) async {
     final r = await _dio.dio.get<Map<String, dynamic>>(
-      '/announcements',
+      ApiConstants.announcements,
       queryParameters: {'include_inactive': includeInactive},
     );
     return ((r.data?['items'] as List?) ?? [])
@@ -87,7 +88,7 @@ class _CommRepository {
     String? attachmentKey,
   }) async {
     final r = await _dio.dio.post<Map<String, dynamic>>(
-      '/announcements',
+      ApiConstants.announcements,
       data: {
         'title': title,
         'body': body,
@@ -102,15 +103,17 @@ class _CommRepository {
   }
 
   Future<void> updateAnnouncement(String id, Map<String, dynamic> payload) async {
-    await _dio.dio.patch<dynamic>('/announcements/$id', data: payload);
+    await _dio.dio
+        .patch<dynamic>(ApiConstants.announcementById(id), data: payload);
   }
 
   Future<void> deleteAnnouncement(String id) async {
-    await _dio.dio.delete<dynamic>('/announcements/$id');
+    await _dio.dio.delete<dynamic>(ApiConstants.announcementById(id));
   }
 
   Future<List<Map<String, dynamic>>> listYears() async {
-    final r = await _dio.dio.get<Map<String, dynamic>>('/academic-years');
+    final r =
+        await _dio.dio.get<Map<String, dynamic>>(ApiConstants.academicYears);
     return ((r.data?['items'] as List?) ?? [])
         .map((e) => Map<String, dynamic>.from(e as Map))
         .toList();
@@ -118,7 +121,7 @@ class _CommRepository {
 
   Future<List<_StandardOption>> listStandards({String? academicYearId}) async {
     final r = await _dio.dio.get<Map<String, dynamic>>(
-      '/masters/standards',
+      ApiConstants.standards,
       queryParameters: {
         if (academicYearId != null && academicYearId.isNotEmpty)
           'academic_year_id': academicYearId,

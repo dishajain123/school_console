@@ -4,6 +4,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/constants/api_constants.dart';
 import '../../../core/network/dio_client.dart';
 import '../../../domains/providers/active_year_provider.dart';
 import '../../../domains/providers/auth_provider.dart';
@@ -199,7 +200,7 @@ class _FeeRepository {
 
   Future<List<Map<String, dynamic>>> listYears(String schoolId) async {
     final resp = await _dio.dio.get<Map<String, dynamic>>(
-      '/academic-years',
+      ApiConstants.academicYears,
       queryParameters: {'school_id': schoolId},
     );
     return ((resp.data?['items'] as List?) ?? [])
@@ -212,7 +213,7 @@ class _FeeRepository {
     String academicYearId,
   ) async {
     final resp = await _dio.dio.get<Map<String, dynamic>>(
-      '/masters/standards',
+      ApiConstants.standards,
       queryParameters: {
         'school_id': schoolId,
         'academic_year_id': academicYearId,
@@ -229,7 +230,7 @@ class _FeeRepository {
     required String standardId,
   }) async {
     final resp = await _dio.dio.get<Map<String, dynamic>>(
-      '/masters/sections',
+      ApiConstants.sections,
       queryParameters: {
         'school_id': schoolId,
         'academic_year_id': academicYearId,
@@ -246,7 +247,7 @@ class _FeeRepository {
     String? academicYearId,
   }) async {
     final resp = await _dio.dio.get<dynamic>(
-      '/fees/structures',
+      ApiConstants.feeStructuresList,
       queryParameters: {
         'standard_id': standardId,
         if (academicYearId != null) 'academic_year_id': academicYearId,
@@ -271,7 +272,7 @@ class _FeeRepository {
     List<Map<String, dynamic>>? installmentPlan,
   }) async {
     await _dio.dio.post<dynamic>(
-      '/fees/structures/batch',
+      ApiConstants.feeStructures,
       data: {
         'structures': [
           {
@@ -296,7 +297,7 @@ class _FeeRepository {
     required List<Map<String, dynamic>> structures,
   }) async {
     await _dio.dio.post<dynamic>(
-      '/fees/structures/batch',
+      ApiConstants.feeStructures,
       data: {'structures': structures},
     );
   }
@@ -309,7 +310,7 @@ class _FeeRepository {
     bool? applyToAllClasses,
   }) async {
     await _dio.dio.patch<dynamic>(
-      '/fees/structures/$structureId',
+      ApiConstants.feeStructureById(structureId),
       data: {
         if (amount != null) 'amount': amount,
         if (dueDate != null) 'due_date': dueDate,
@@ -325,7 +326,7 @@ class _FeeRepository {
     bool deleteLinkedEntries = false,
   }) async {
     await _dio.dio.delete<dynamic>(
-      '/fees/structures/$structureId',
+      ApiConstants.feeStructureById(structureId),
       queryParameters: {
         if (deleteLinkedEntries) 'delete_linked_entries': true,
       },
@@ -337,7 +338,7 @@ class _FeeRepository {
     String? academicYearId,
   }) async {
     final resp = await _dio.dio.post<Map<String, dynamic>>(
-      '/fees/ledger/generate',
+      ApiConstants.feeLedgerGenerate,
       data: {
         'standard_id': standardId,
         if (academicYearId != null) 'academic_year_id': academicYearId,
@@ -353,7 +354,7 @@ class _FeeRepository {
     String? paymentCycle,
   }) async {
     final resp = await _dio.dio.post<Map<String, dynamic>>(
-      '/fees/ledger/generate-student',
+      ApiConstants.feeLedgerGenerateStudent,
       data: {
         'student_id': studentId,
         'standard_id': standardId,
@@ -374,7 +375,7 @@ class _FeeRepository {
     String? status,
   }) async {
     final resp = await _dio.dio.get<Map<String, dynamic>>(
-      '/fees/ledger/class-students',
+      ApiConstants.feeLedgerClassStudents,
       queryParameters: {
         'standard_id': standardId,
         if (_isUuid(academicYearId)) 'academic_year_id': academicYearId,
@@ -397,7 +398,7 @@ class _FeeRepository {
     String? transactionRef,
   }) async {
     final resp = await _dio.dio.post<Map<String, dynamic>>(
-      '/fees/payments',
+      ApiConstants.feePayments,
       data: {
         'student_id': studentId,
         'fee_ledger_id': feeLedgerId,
@@ -424,7 +425,7 @@ class _FeeRepository {
     String? transactionRef,
   }) async {
     final resp = await _dio.dio.post<Map<String, dynamic>>(
-      '/fees/payments/allocate',
+      ApiConstants.feePaymentsAllocate,
       data: {
         'student_id': studentId,
         'amount': amount,
@@ -447,7 +448,7 @@ class _FeeRepository {
     String? standardId,
   }) async {
     final resp = await _dio.dio.get<Map<String, dynamic>>(
-      '/fees/analytics',
+      ApiConstants.feeAnalytics,
       queryParameters: {
         if (_isUuid(academicYearId)) 'academic_year_id': academicYearId,
         if (_isUuid(standardId)) 'standard_id': standardId,
@@ -461,7 +462,7 @@ class _FeeRepository {
     String? standardId,
   }) async {
     final resp = await _dio.dio.get<Map<String, dynamic>>(
-      '/fees/defaulters',
+      ApiConstants.feeDefaulters,
       queryParameters: {
         if (_isUuid(academicYearId)) 'academic_year_id': academicYearId,
         if (_isUuid(standardId)) 'standard_id': standardId,

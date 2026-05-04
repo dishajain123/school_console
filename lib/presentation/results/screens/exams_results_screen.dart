@@ -7,6 +7,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/constants/api_constants.dart';
 import '../../../core/network/dio_client.dart';
 import '../../../domains/providers/active_year_provider.dart';
 import '../../../domains/providers/auth_provider.dart';
@@ -118,7 +119,7 @@ class _ResultsRepository {
 
   Future<List<Map<String, dynamic>>> listYears(String schoolId) async {
     final resp = await _dio.dio.get<Map<String, dynamic>>(
-      '/academic-years',
+      ApiConstants.academicYears,
       queryParameters: {'school_id': schoolId},
     );
     return ((resp.data?['items'] as List?) ?? [])
@@ -129,7 +130,7 @@ class _ResultsRepository {
   Future<List<Map<String, dynamic>>> listStandards(
       String schoolId, String academicYearId) async {
     final resp = await _dio.dio.get<Map<String, dynamic>>(
-      '/masters/standards',
+      ApiConstants.standards,
       queryParameters: {
         'school_id': schoolId,
         'academic_year_id': academicYearId,
@@ -146,7 +147,7 @@ class _ResultsRepository {
     String? standardId,
   }) async {
     final resp = await _dio.dio.get<dynamic>(
-      '/results/exams',
+      ApiConstants.resultsExams,
       queryParameters: {
         if (academicYearId != null) 'academic_year_id': academicYearId,
         if (standardId != null) 'standard_id': standardId,
@@ -167,7 +168,7 @@ class _ResultsRepository {
     String? academicYearId,
   }) async {
     final resp = await _dio.dio.post<Map<String, dynamic>>(
-      '/results/exams/bulk',
+      ApiConstants.resultsExamsBulk,
       data: {
         'name': name,
         'apply_to_all_standards': true,
@@ -185,7 +186,7 @@ class _ResultsRepository {
     String? section,
   }) async {
     final resp = await _dio.dio.get<dynamic>(
-      '/results/exams/$examId/distribution',
+      ApiConstants.resultsExamDistribution(examId),
       queryParameters: {
         if (section != null && section.trim().isNotEmpty) 'section': section,
       },
@@ -215,13 +216,13 @@ class _ResultsRepository {
   // PATCH /results/exams/{id}/publish — publish all results (principal only)
   Future<int> publishExam(String examId) async {
     final resp = await _dio.dio.patch<Map<String, dynamic>>(
-      '/results/exams/$examId/publish',
+      ApiConstants.resultsExamPublish(examId),
     );
     return (resp.data?['updated'] as num?)?.toInt() ?? 0;
   }
 
   Future<void> deleteExam(String examId) async {
-    await _dio.dio.delete<dynamic>('/results/exams/$examId');
+    await _dio.dio.delete<dynamic>(ApiConstants.resultsExamDelete(examId));
   }
 }
 

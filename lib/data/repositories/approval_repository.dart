@@ -1,4 +1,5 @@
 // lib/data/repositories/approval_repository.dart  [Admin Console]
+import '../../core/constants/api_constants.dart';
 import '../../core/network/dio_client.dart';
 import '../models/registration/approval_action.dart';
 import '../models/registration/registration_request.dart';
@@ -24,7 +25,7 @@ class ApprovalRepository {
     int pageSize = 100,
   }) async {
     final resp = await _client.dio.get<Map<String, dynamic>>(
-      '/approvals/queue',
+      ApiConstants.approvalsQueue,
       queryParameters: {
         'page': page,
         'page_size': pageSize,
@@ -47,7 +48,7 @@ class ApprovalRepository {
 
   Future<List<RegistrationRequest>> queueByStatus(String status) async {
     final resp = await _client.dio.get<Map<String, dynamic>>(
-      '/approvals/queue',
+      ApiConstants.approvalsQueue,
       queryParameters: {'status': status, 'page': 1, 'page_size': 100},
     );
     final items = ((resp.data?['items'] as List?) ?? const <dynamic>[])
@@ -63,7 +64,7 @@ class ApprovalRepository {
 
   Future<RegistrationRequest> detail(String userId) async {
     final resp = await _client.dio.get<Map<String, dynamic>>(
-      '/approvals/$userId',
+      ApiConstants.approvalUser(userId),
     );
     return RegistrationRequest.fromDetailJson(resp.data ?? {});
   }
@@ -75,7 +76,7 @@ class ApprovalRepository {
     bool overrideValidation = false,
   }) async {
     await _client.dio.post(
-      '/approvals/$userId/decision',
+      ApiConstants.approvalDecision(userId),
       data: {
         'action': action.apiValue,
         if (note != null && note.isNotEmpty) 'note': note,

@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/constants/api_constants.dart';
 import '../../../core/network/dio_client.dart';
 import '../../../core/theme/admin_colors.dart';
 import '../../../domains/providers/auth_provider.dart';
@@ -21,7 +22,7 @@ class _SettingsRepository {
 
   Future<List<Map<String, dynamic>>> getSettings() async {
     final resp = await _dio.dio.get<Map<String, dynamic>>(
-      '/settings',
+      ApiConstants.settings,
     );
     return ((resp.data?['items'] as List?) ?? [])
         .map((e) => Map<String, dynamic>.from(e as Map))
@@ -30,7 +31,7 @@ class _SettingsRepository {
 
   Future<void> updateSettings(List<Map<String, String>> items) async {
     await _dio.dio.patch<dynamic>(
-      '/settings',
+      ApiConstants.settings,
       data: {'items': items},
     );
   }

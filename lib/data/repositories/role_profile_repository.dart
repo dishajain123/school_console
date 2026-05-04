@@ -22,7 +22,7 @@ class RoleProfileRepository {
         ? 1
         : (pageSize > _maxPageSize ? _maxPageSize : pageSize);
     final resp = await _client.dio.get<Map<String, dynamic>>(
-      '/role-profiles',
+      ApiConstants.roleProfiles,
       queryParameters: {
         'role': role,
         'page': page,
@@ -38,7 +38,7 @@ class RoleProfileRepository {
 
   Future<List<Map<String, dynamic>>> listStandards({String? academicYearId}) async {
     final resp = await _client.dio.get<Map<String, dynamic>>(
-      '/masters/standards',
+      ApiConstants.standards,
       queryParameters: {
         if (academicYearId != null && academicYearId.isNotEmpty)
           'academic_year_id': academicYearId,
@@ -54,7 +54,7 @@ class RoleProfileRepository {
     String? academicYearId,
   }) async {
     final resp = await _client.dio.get<Map<String, dynamic>>(
-      '/masters/sections',
+      ApiConstants.sections,
       queryParameters: {
         'standard_id': standardId,
         if (academicYearId != null && academicYearId.isNotEmpty)
@@ -72,7 +72,7 @@ class RoleProfileRepository {
 
   Future<List<Map<String, dynamic>>> listAcademicYears({String? schoolId}) async {
     final resp = await _client.dio.get<Map<String, dynamic>>(
-      '/academic-years',
+      ApiConstants.academicYears,
       queryParameters: {
         if (schoolId != null && schoolId.isNotEmpty) 'school_id': schoolId,
       },
@@ -83,7 +83,8 @@ class RoleProfileRepository {
   }
 
   Future<List<IdentifierConfigItem>> getIdentifierConfigs() async {
-    final resp = await _client.dio.get<List<dynamic>>('/role-profiles/identifier-configs');
+    final resp = await _client.dio
+        .get<List<dynamic>>(ApiConstants.identifierConfigs);
     return (resp.data ?? const <dynamic>[])
         .whereType<Map>()
         .map((e) => IdentifierConfigItem.fromJson(e.map((k, v) => MapEntry(k.toString(), v))))
@@ -99,7 +100,7 @@ class RoleProfileRepository {
     String? schoolId,
   }) async {
     final resp = await _client.dio.post<Map<String, dynamic>>(
-      '/role-profiles/identifier-configs',
+      ApiConstants.identifierConfigs,
       queryParameters: {
         if (schoolId != null && schoolId.isNotEmpty) 'school_id': schoolId,
       },
@@ -144,7 +145,7 @@ class RoleProfileRepository {
     String? customAdmissionNumber,
   }) async {
     final resp = await _client.dio.post<Map<String, dynamic>>(
-      '/role-profiles/student',
+      ApiConstants.roleProfilesStudent,
       data: {
         'user_id': userId,
         'parent_id': parentId,

@@ -1,3 +1,4 @@
+import '../../core/constants/api_constants.dart';
 import '../../core/network/dio_client.dart';
 
 class EnrollmentRepository {
@@ -10,7 +11,7 @@ class EnrollmentRepository {
     String? schoolId,
   }) async {
     final resp = await _client.dio.get<Map<String, dynamic>>(
-      '/academic-years',
+      ApiConstants.academicYears,
       queryParameters: {
         if (schoolId != null && schoolId.isNotEmpty) 'school_id': schoolId,
       },
@@ -25,7 +26,7 @@ class EnrollmentRepository {
     String? academicYearId,
   }) async {
     final resp = await _client.dio.get<Map<String, dynamic>>(
-      '/masters/standards',
+      ApiConstants.standards,
       queryParameters: {
         if (schoolId != null && schoolId.isNotEmpty) 'school_id': schoolId,
         if (academicYearId != null && academicYearId.isNotEmpty)
@@ -43,7 +44,7 @@ class EnrollmentRepository {
     String? academicYearId,
   }) async {
     final resp = await _client.dio.get<Map<String, dynamic>>(
-      '/masters/sections',
+      ApiConstants.sections,
       queryParameters: {
         if (schoolId != null && schoolId.isNotEmpty) 'school_id': schoolId,
         if (standardId != null && standardId.isNotEmpty)
@@ -63,7 +64,7 @@ class EnrollmentRepository {
     String? sectionId,
   }) async {
     final resp = await _client.dio.get<Map<String, dynamic>>(
-      '/enrollments/roster',
+      ApiConstants.enrollmentRoster,
       queryParameters: {
         'standard_id': standardId,
         'academic_year_id': academicYearId,
@@ -81,7 +82,7 @@ class EnrollmentRepository {
     String? rollNumber,
   }) async {
     await _client.dio.post<dynamic>(
-      '/enrollments/mappings',
+      ApiConstants.enrollmentMappings,
       data: {
         'student_id': studentId,
         'standard_id': standardId,
@@ -121,7 +122,7 @@ class EnrollmentRepository {
       qp['section'] = section.trim();
     }
     final resp = await _client.dio.get<Map<String, dynamic>>(
-      '/role-profiles',
+      ApiConstants.roleProfiles,
       queryParameters: qp,
     );
     return ((resp.data?['items'] as List?) ?? [])
@@ -139,14 +140,14 @@ class EnrollmentRepository {
 
   Future<Map<String, dynamic>> getStudentHistory(String studentId) async {
     final resp = await _client.dio.get<Map<String, dynamic>>(
-      '/enrollments/history/$studentId',
+      ApiConstants.enrollmentHistory(studentId),
     );
     return resp.data ?? <String, dynamic>{};
   }
 
   Future<Map<String, dynamic>> getStudentById(String studentId) async {
     final resp = await _client.dio.get<Map<String, dynamic>>(
-      '/students/$studentId',
+      ApiConstants.studentById(studentId),
     );
     return resp.data ?? <String, dynamic>{};
   }
@@ -160,7 +161,7 @@ class EnrollmentRepository {
     String? effectiveDate,
   }) async {
     await _client.dio.post<dynamic>(
-      '/enrollments/mappings/$mappingId/transfer',
+      ApiConstants.enrollmentMappingTransfer(mappingId),
       data: {
         'new_standard_id': newStandardId,
         if (newSectionId != null && newSectionId.isNotEmpty)
@@ -181,14 +182,14 @@ class EnrollmentRepository {
     required String exitReason,
   }) async {
     await _client.dio.post<dynamic>(
-      '/enrollments/mappings/$mappingId/exit',
+      ApiConstants.enrollmentExit(mappingId),
       data: {'status': status, 'left_on': leftOn, 'exit_reason': exitReason},
     );
   }
 
   Future<void> completeMapping(String mappingId, {String? completedOn}) async {
     await _client.dio.post<dynamic>(
-      '/enrollments/mappings/$mappingId/complete',
+      ApiConstants.enrollmentComplete(mappingId),
       data: {
         if (completedOn != null && completedOn.isNotEmpty)
           'completed_on': completedOn,
@@ -203,7 +204,7 @@ class EnrollmentRepository {
     String? sectionId,
   }) async {
     final resp = await _client.dio.get<Map<String, dynamic>>(
-      '/promotions/preview',
+      ApiConstants.promotionPreview,
       queryParameters: {
         'source_year_id': sourceYearId,
         'target_year_id': targetYearId,
@@ -221,7 +222,7 @@ class EnrollmentRepository {
     required List<Map<String, dynamic>> items,
   }) async {
     final resp = await _client.dio.post<Map<String, dynamic>>(
-      '/promotions/execute',
+      ApiConstants.promotionExecute,
       data: {
         'source_year_id': sourceYearId,
         'target_year_id': targetYearId,
@@ -237,7 +238,7 @@ class EnrollmentRepository {
     bool overwriteExisting = false,
   }) async {
     final resp = await _client.dio.post<Map<String, dynamic>>(
-      '/promotions/copy-teacher-assignments',
+      ApiConstants.promotionCopyAssignments,
       data: {
         'source_year_id': sourceYearId,
         'target_year_id': targetYearId,
@@ -256,7 +257,7 @@ class EnrollmentRepository {
     String admissionType = 'READMISSION',
   }) async {
     final resp = await _client.dio.post<Map<String, dynamic>>(
-      '/promotions/reenroll/$studentId',
+      ApiConstants.promotionReenroll(studentId),
       data: {
         'target_year_id': targetYearId,
         'standard_id': standardId,
@@ -271,7 +272,7 @@ class EnrollmentRepository {
 
   Future<Map<String, dynamic>> getRoleProfile(String userId) async {
     final resp = await _client.dio.get<Map<String, dynamic>>(
-      '/role-profiles/$userId',
+      ApiConstants.roleProfileByUserId(userId),
     );
     return resp.data ?? <String, dynamic>{};
   }
@@ -288,7 +289,7 @@ class EnrollmentRepository {
           ? _roleProfilesMaxPageSize
           : (target - items.length);
       final resp = await _client.dio.get<Map<String, dynamic>>(
-        '/role-profiles',
+        ApiConstants.roleProfiles,
         queryParameters: {
           'role': 'PARENT',
           'page': page,
@@ -314,7 +315,7 @@ class EnrollmentRepository {
     String? customAdmissionNumber,
   }) async {
     final resp = await _client.dio.post<Map<String, dynamic>>(
-      '/role-profiles/student',
+      ApiConstants.roleProfilesStudent,
       data: {
         'user_id': userId,
         'parent_id': parentId,
@@ -332,7 +333,7 @@ class EnrollmentRepository {
     String? occupation,
   }) async {
     final resp = await _client.dio.post<Map<String, dynamic>>(
-      '/role-profiles/parent',
+      ApiConstants.roleProfilesParent,
       data: {
         'user_id': userId,
         'relation': relation,
@@ -355,7 +356,7 @@ class EnrollmentRepository {
           ? _roleProfilesMaxPageSize
           : (target - items.length);
       final resp = await _client.dio.get<Map<String, dynamic>>(
-        '/role-profiles',
+        ApiConstants.roleProfiles,
         queryParameters: {
           'role': 'STUDENT',
           'page': page,
@@ -377,7 +378,7 @@ class EnrollmentRepository {
 
   Future<List<String>> getParentChildIds(String parentId) async {
     final resp = await _client.dio.get<Map<String, dynamic>>(
-      '/parents/$parentId/children',
+      ApiConstants.parentChildren(parentId),
     );
     final children = (resp.data?['children'] as List?) ?? const <dynamic>[];
     return children
@@ -392,7 +393,7 @@ class EnrollmentRepository {
     required List<String> studentIds,
   }) async {
     await _client.dio.patch<Map<String, dynamic>>(
-      '/parents/$parentId/children',
+      ApiConstants.parentChildren(parentId),
       data: {'student_ids': studentIds},
     );
   }
@@ -403,7 +404,7 @@ class EnrollmentRepository {
     String? academicYearId,
   }) async {
     final resp = await _client.dio.get<Map<String, dynamic>>(
-      '/enrollments/onboarding-queue',
+      ApiConstants.enrollmentOnboardingQueue,
       queryParameters: {
         if (role != null && role.isNotEmpty) 'role': role,
         'pending_only': pendingOnly,
@@ -422,7 +423,7 @@ class EnrollmentRepository {
     required String academicYearId,
   }) async {
     final resp = await _client.dio.post<Map<String, dynamic>>(
-      '/enrollments/annual-reenroll/$userId',
+      ApiConstants.enrollmentAnnualReenroll(userId),
       data: {'academic_year_id': academicYearId},
     );
     return resp.data ?? <String, dynamic>{};

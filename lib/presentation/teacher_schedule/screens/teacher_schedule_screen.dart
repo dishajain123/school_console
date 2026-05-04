@@ -76,7 +76,7 @@ class _ScheduleRepository {
 
   Future<List<_ClassAssignment>> fetchMine(String? yearId) async {
     final resp = await _dio.dio.get<Map<String, dynamic>>(
-      '${ApiConstants.teacherAssignments}/mine',
+      ApiConstants.teacherAssignmentsMine,
       queryParameters: {
         if (yearId != null) 'academic_year_id': yearId,
       },

@@ -5,6 +5,7 @@
 //        target_user_id, date_from, date_to, q).
 // FIXED: model fields updated to match AuditLogResponse (occurredAt, entityType, etc.).
 
+import '../../core/constants/api_constants.dart';
 import '../../core/network/dio_client.dart';
 import '../models/audit/audit_log.dart';
 
@@ -39,7 +40,7 @@ class AuditRepository {
     if (q != null && q.isNotEmpty) params['q'] = q;
 
     final resp = await _client.dio.get<Map<String, dynamic>>(
-      '/audit-logs',
+      ApiConstants.auditLogs,
       queryParameters: params,
     );
 
@@ -53,7 +54,8 @@ class AuditRepository {
   }
 
   Future<List<String>> listActions() async {
-    final resp = await _client.dio.get<List<dynamic>>('/audit-logs/actions');
+    final resp =
+        await _client.dio.get<List<dynamic>>(ApiConstants.auditLogActions);
     return ((resp.data ?? const <dynamic>[]) as List)
         .map((e) => e.toString())
         .toList();
@@ -61,7 +63,7 @@ class AuditRepository {
 
   Future<List<String>> listEntityTypes() async {
     final resp =
-        await _client.dio.get<List<dynamic>>('/audit-logs/entity-types');
+        await _client.dio.get<List<dynamic>>(ApiConstants.auditLogEntityTypes);
     return ((resp.data ?? const <dynamic>[]) as List)
         .map((e) => e.toString())
         .toList();

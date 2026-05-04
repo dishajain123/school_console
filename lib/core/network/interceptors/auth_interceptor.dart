@@ -102,8 +102,8 @@ class AuthInterceptor extends Interceptor {
   bool _isPublicPath(String path) {
     return path == ApiConstants.login ||
         path == ApiConstants.refresh ||
-        path == '/auth/forgot-password' ||
-        path == '/auth/verify-otp' ||
-        path == '/auth/reset-password';
+        path == ApiConstants.forgotPassword ||
+        path == ApiConstants.verifyOtp ||
+        path == ApiConstants.resetPassword;
   }
 }

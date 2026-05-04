@@ -1,7 +1,7 @@
 // lib/presentation/reports/screens/reports_screen.dart  [Admin Console]
 // Phase 11 — Reporting & Analytics.
 // Tabs: Overview | Fee Collection | Detailed Report
-// PRINCIPAL / TRUSTEE / SUPERADMIN access.
+// PRINCIPAL / TRUSTEE / STAFF_ADMIN access.
 // Export: CSV download via browser for management sharing.
 // APIs used:
 //   GET /principal-reports/overview      — summary KPIs
@@ -15,9 +15,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/constants/api_constants.dart';
 import '../../../core/network/dio_client.dart';
+import '../../../core/theme/admin_colors.dart';
 import '../../../domains/providers/active_year_provider.dart';
 import '../../../domains/providers/auth_provider.dart';
 import '../../common/layout/admin_scaffold.dart';
+import '../../common/widgets/admin_layout/admin_empty_state.dart';
+import '../../common/widgets/admin_layout/admin_filter_card.dart';
+import '../../common/widgets/admin_layout/admin_loading_placeholder.dart';
+import '../../common/widgets/admin_layout/admin_page_header.dart';
+import '../../common/widgets/admin_layout/admin_spacing.dart';
+import '../../common/widgets/admin_layout/admin_table_helpers.dart';
 
 // ── Repository ────────────────────────────────────────────────────────────────
 
@@ -172,6 +179,18 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
   String? get _schoolId =>
       ref.read(authControllerProvider).valueOrNull?.schoolId;
 
+  void _resetReportFilters() {
+    setState(() {
+      _filterStandardId = null;
+      _filterSection = '';
+      _overview = {};
+      _feeData = {};
+      _detailsData = {};
+      _defaulters = [];
+      _error = null;
+    });
+  }
+
   Future<void> _loadYears() async {
     if (_schoolId == null) return;
     setState(() => _loading = true);
@@ -299,44 +318,63 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return AdminScaffold(
-      title: 'Reports & Analytics',
+      title: 'Reports & analytics',
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AdminSpacing.pagePadding),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // ── Global Filter Row ─────────────────────────────────────────
-            _buildFilterRow(),
-            const SizedBox(height: 10),
+            const AdminPageHeader(
+              title: 'Reports & analytics',
+              subtitle:
+                  'Principal KPIs, fee collection, and drill-down exports. '
+                  'Pick year and filters, then Apply to refresh the active tab.',
+            ),
+            AdminFilterCard(
+              onReset: _resetReportFilters,
+              child: _buildFilterRow(),
+            ),
+            const SizedBox(height: AdminSpacing.sm),
 
             if (_error != null)
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(10),
-                margin: const EdgeInsets.only(bottom: 8),
-                decoration: BoxDecoration(
-                  color: Colors.red.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.red.shade200),
+              Padding(
+                padding: const EdgeInsets.only(bottom: AdminSpacing.sm),
+                child: Material(
+                  color: AdminColors.dangerSurface,
+                  borderRadius: BorderRadius.circular(10),
+                  child: Padding(
+                    padding: const EdgeInsets.all(AdminSpacing.md),
+                    child: SelectableText(
+                      _error!,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: AdminColors.danger,
+                      ),
+                    ),
+                  ),
                 ),
-                child: Text(_error!, style: TextStyle(color: Colors.red.shade700)),
               ),
 
             // ── Tabs ──────────────────────────────────────────────────────
             TabBar(
               controller: _tabController,
               isScrollable: true,
+              dividerColor: const Color(0x00000000),
               tabs: const [
                 Tab(text: 'Overview'),
                 Tab(text: 'Fee Collection'),
                 Tab(text: 'Detailed Report'),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AdminSpacing.xs),
             Expanded(
               child: _loading
-                  ? const Center(child: CircularProgressIndicator())
+                  ? const AdminLoadingPlaceholder(
+                      message: 'Loading reports…',
+                      height: 320,
+                    )
                   : TabBarView(
                       controller: _tabController,
                       children: [
@@ -354,8 +392,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
 
   Widget _buildFilterRow() {
     return Wrap(
-      spacing: 12,
-      runSpacing: 8,
+      spacing: AdminSpacing.sm,
+      runSpacing: AdminSpacing.sm,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         SizedBox(
@@ -416,8 +454,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
                 setState(() => _filterSection = v.trim().toUpperCase()),
           ),
         ),
-        ElevatedButton.icon(
-          icon: const Icon(Icons.refresh, size: 14),
+        FilledButton.icon(
+          icon: const Icon(Icons.refresh, size: 18),
           label: const Text('Apply'),
           onPressed: () {
             final i = _tabController.index;
@@ -437,11 +475,14 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
 
   Widget _buildOverviewTab() {
     if (_overview.isEmpty) {
-      return Center(
-        child: ElevatedButton.icon(
-          icon: const Icon(Icons.refresh),
-          label: const Text('Load Overview'),
+      return AdminEmptyState(
+        icon: Icons.dashboard_outlined,
+        title: 'Overview not loaded',
+        message: 'Fetch KPIs for the selected academic year.',
+        action: FilledButton.icon(
           onPressed: _loadOverview,
+          icon: const Icon(Icons.refresh_rounded, size: 18),
+          label: const Text('Load overview'),
         ),
       );
     }
@@ -473,34 +514,39 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
             ),
           ),
           Wrap(
-            spacing: 12,
-            runSpacing: 12,
+            spacing: AdminSpacing.sm,
+            runSpacing: AdminSpacing.sm,
             children: [
               _KpiCard('Student Strength', '$totalStudents',
-                  Icons.how_to_reg_outlined, Colors.blueGrey),
+                  Icons.how_to_reg_outlined, AdminColors.textSecondary),
               _KpiCard('Fees Collected', _fmt(feesPaid),
-                  Icons.payments_outlined, Colors.blue),
+                  Icons.payments_outlined, AdminColors.primaryAction),
               _KpiCard('Avg Results', '${results.toStringAsFixed(1)}%',
-                  Icons.analytics_outlined, results >= 50 ? Colors.green : Colors.orange),
+                  Icons.analytics_outlined,
+                  results >= 50 ? AdminColors.success : const Color(0xFFEA580C)),
               _KpiCard('Students', '$totalStudents',
-                  Icons.people_outline, Colors.blueGrey),
+                  Icons.people_outline, AdminColors.textSecondary),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: AdminSpacing.lg),
           const Text('Summary Table',
               style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
-          const SizedBox(height: 8),
+          const SizedBox(height: AdminSpacing.xs),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: DataTable(
-              headingRowColor:
-                  WidgetStateProperty.all(Colors.grey.shade100),
+              headingRowColor: adminTableHeadingRowColor(),
+              horizontalMargin: AdminSpacing.md,
+              columnSpacing: AdminSpacing.lg,
               columns: rows.first
                   .map((c) => DataColumn(label: Text(c)))
                   .toList(),
-              rows: rows.skip(1).map((row) {
+              rows: rows.skip(1).toList().asMap().entries.map((e) {
+                final row = e.value;
                 return DataRow(
-                    cells: row.map((c) => DataCell(Text(c))).toList());
+                  color: adminDataRowColor(e.key),
+                  cells: row.map((c) => DataCell(Text(c))).toList(),
+                );
               }).toList(),
             ),
           ),
@@ -513,11 +559,16 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
 
   Widget _buildFeeTab() {
     if (_feeData.isEmpty) {
-      return Center(
-          child: ElevatedButton.icon(
-              icon: const Icon(Icons.refresh),
-              label: const Text('Load Fee Analytics'),
-              onPressed: _loadFeeAnalytics));
+      return AdminEmptyState(
+        icon: Icons.payments_outlined,
+        title: 'Fee analytics not loaded',
+        message: 'Load collection breakdown for the selected year and class filter.',
+        action: FilledButton.icon(
+          onPressed: _loadFeeAnalytics,
+          icon: const Icon(Icons.refresh_rounded, size: 18),
+          label: const Text('Load fee analytics'),
+        ),
+      );
     }
 
     final summary = _feeData['summary'] as Map<String, dynamic>? ?? {};
@@ -556,40 +607,48 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
             ),
           ),
           Wrap(
-            spacing: 12,
-            runSpacing: 12,
+            spacing: AdminSpacing.sm,
+            runSpacing: AdminSpacing.sm,
             children: [
               _KpiCard('Collected', _fmt(totalPaid),
-                  Icons.check_circle_outline, Colors.green),
+                  Icons.check_circle_outline, AdminColors.success),
               _KpiCard('Outstanding', _fmt(totalOut),
-                  Icons.pending_outlined, Colors.orange),
+                  Icons.pending_outlined, const Color(0xFFEA580C)),
               _KpiCard('Collection %', '${pct.toStringAsFixed(1)}%',
                   Icons.bar_chart_outlined,
-                  pct >= 80 ? Colors.green : pct >= 50 ? Colors.orange : Colors.red),
+                  pct >= 80
+                      ? AdminColors.success
+                      : pct >= 50
+                          ? const Color(0xFFEA580C)
+                          : AdminColors.danger),
               _KpiCard('Defaulters', '$def',
-                  Icons.warning_amber_outlined, Colors.red),
+                  Icons.warning_amber_outlined, AdminColors.danger),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AdminSpacing.md),
           const Text('Class-wise Fee Collection',
               style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
-          const SizedBox(height: 8),
+          const SizedBox(height: AdminSpacing.xs),
           if (byClass.isEmpty)
-            const Text('No class-wise data.',
-                style: TextStyle(color: Colors.grey))
+            Text('No class-wise data.',
+                style: TextStyle(color: AdminColors.textSecondary))
           else
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: DataTable(
-                headingRowColor:
-                    WidgetStateProperty.all(Colors.grey.shade100),
+                headingRowColor: adminTableHeadingRowColor(),
+                horizontalMargin: AdminSpacing.md,
+                columnSpacing: AdminSpacing.lg,
                 columns: ['Class', 'Students', 'Billed', 'Collected',
                     'Outstanding', 'Defaulters', 'Collection %']
                     .map((c) => DataColumn(label: Text(c)))
                     .toList(),
-                rows: byClass.map((c) {
+                rows: byClass.asMap().entries.map((e) {
+                  final c = e.value;
                   final cpct = (c['collection_percentage'] as num?)?.toDouble() ?? 0;
-                  return DataRow(cells: [
+                  return DataRow(
+                    color: adminDataRowColor(e.key),
+                    cells: [
                     DataCell(Text(c['standard_name']?.toString() ?? '-')),
                     DataCell(Text('${c['total_students'] ?? c['student_count'] ?? 0}')),
                     DataCell(Text(_fmt(c['total_billed'] ?? c['total_billed_amount']))),
@@ -598,9 +657,14 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
                     DataCell(Text('${c['defaulters_count'] ?? 0}')),
                     DataCell(Text('${cpct.toStringAsFixed(1)}%',
                         style: TextStyle(
-                            color: cpct >= 80 ? Colors.green : cpct >= 50 ? Colors.orange : Colors.red,
+                            color: cpct >= 80
+                                ? AdminColors.success
+                                : cpct >= 50
+                                    ? const Color(0xFFEA580C)
+                                    : AdminColors.danger,
                             fontWeight: FontWeight.w600))),
-                  ]);
+                  ],
+                  );
                 }).toList(),
               ),
             ),
@@ -610,23 +674,31 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
                 style: const TextStyle(
                     fontWeight: FontWeight.w700,
                     fontSize: 14,
-                    color: Colors.red)),
-            const SizedBox(height: 8),
+                    color: AdminColors.danger)),
+            const SizedBox(height: AdminSpacing.xs),
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: DataTable(
                 headingRowColor:
-                    WidgetStateProperty.all(Colors.red.shade50),
+                    WidgetStateProperty.all(AdminColors.dangerSurface),
+                horizontalMargin: AdminSpacing.md,
+                columnSpacing: AdminSpacing.lg,
                 columns: ['Adm. No.', 'Name', 'Overdue Entries', 'Total Due', 'Oldest Due']
                     .map((c) => DataColumn(label: Text(c)))
                     .toList(),
-                rows: _defaulters.map((d) => DataRow(cells: [
+                rows: _defaulters.asMap().entries.map((e) {
+                  final d = e.value;
+                  return DataRow(
+                    color: adminDataRowColor(e.key),
+                    cells: [
                       DataCell(Text(d['admission_number']?.toString() ?? '-')),
                       DataCell(Text(d['student_name']?.toString() ?? '-')),
                       DataCell(Text('${d['overdue_ledgers'] ?? 0}')),
                       DataCell(Text(_fmt(d['total_overdue_amount']))),
                       DataCell(Text(d['oldest_due_date']?.toString() ?? '-')),
-                    ])).toList(),
+                    ],
+                  );
+                }).toList(),
               ),
             ),
           ],
@@ -641,12 +713,12 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.only(bottom: AdminSpacing.xs),
           child: Row(
             children: [
               const Text('Metric:',
                   style: TextStyle(fontWeight: FontWeight.w600)),
-              const SizedBox(width: 8),
+              const SizedBox(width: AdminSpacing.xs),
               DropdownButton<String>(
                 value: _selectedDetailMetric,
                 items: const [
@@ -664,18 +736,23 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
                   }
                 },
               ),
-              const SizedBox(width: 8),
-              ElevatedButton.icon(
-                icon: const Icon(Icons.search, size: 14),
+              const SizedBox(width: AdminSpacing.xs),
+              FilledButton.icon(
+                icon: const Icon(Icons.search, size: 18),
                 label: const Text('Load'),
                 onPressed: _loadDetails,
               ),
             ],
           ),
         ),
-        Expanded(child: _detailsData.isEmpty
-            ? const Center(child: Text('Select a metric and click Load.'))
-            : SingleChildScrollView(child: _buildDetailBody())),
+        Expanded(
+            child: _detailsData.isEmpty
+                ? const AdminEmptyState(
+                    icon: Icons.table_chart_outlined,
+                    title: 'No detail loaded',
+                    message: 'Choose Fees paid or Results, then Load.',
+                  )
+                : SingleChildScrollView(child: _buildDetailBody())),
       ],
     );
   }
@@ -706,14 +783,14 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
               onPressed: () => _exportCsv('fees_paid_detail', exportRows),
             ),
           ),
-          Wrap(spacing: 12, children: [
+          Wrap(spacing: AdminSpacing.sm, children: [
             _KpiCard('Total Paid',
                 _fmt((overall['amount'] as num?)?.toDouble() ?? 0),
-                Icons.payments_outlined, Colors.green),
+                Icons.payments_outlined, AdminColors.success),
             _KpiCard('Transactions', '${overall['count'] ?? 0}',
-                Icons.receipt_outlined, Colors.blue),
+                Icons.receipt_outlined, AdminColors.primaryAction),
           ]),
-          const SizedBox(height: 12),
+          const SizedBox(height: AdminSpacing.sm),
           if (byStudent.isNotEmpty) ...[
             const Text('Per-Student Fees',
                 style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
@@ -721,15 +798,24 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: DataTable(
+                headingRowColor: adminTableHeadingRowColor(),
+                horizontalMargin: AdminSpacing.md,
+                columnSpacing: AdminSpacing.lg,
                 columns: ['Adm. No.', 'Paid', 'Transactions']
                     .map((c) => DataColumn(label: Text(c)))
                     .toList(),
-                rows: byStudent.map((s) => DataRow(cells: [
+                rows: byStudent.asMap().entries.map((e) {
+                  final s = e.value;
+                  return DataRow(
+                    color: adminDataRowColor(e.key),
+                    cells: [
                       DataCell(Text(s['admission_number']?.toString() ?? '-')),
                       DataCell(Text(
                           _fmt((s['paid_amount'] as num?)?.toDouble() ?? 0))),
                       DataCell(Text('${s['transactions'] ?? 0}')),
-                    ])).toList(),
+                    ],
+                  );
+                }).toList(),
               ),
             ),
           ],
@@ -762,16 +848,16 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
               onPressed: () => _exportCsv('results_detail', exportRows),
             ),
           ),
-          Wrap(spacing: 12, children: [
+          Wrap(spacing: AdminSpacing.sm, children: [
             _KpiCard('Avg %',
                 '${((overall['value'] as num?)?.toDouble() ?? 0).toStringAsFixed(1)}%',
-                Icons.analytics_outlined, Colors.blue),
+                Icons.analytics_outlined, AdminColors.primaryAction),
             _KpiCard('Students', '${overall['numerator'] ?? 0}',
-                Icons.person_outline, Colors.green),
+                Icons.person_outline, AdminColors.success),
             _KpiCard('Entries', '${overall['denominator'] ?? 0}',
-                Icons.edit_note_outlined, Colors.blueGrey),
+                Icons.edit_note_outlined, AdminColors.textSecondary),
           ]),
-          const SizedBox(height: 12),
+          const SizedBox(height: AdminSpacing.sm),
           if (bySubject.isNotEmpty) ...[
             const Text('Subject-wise Results',
                 style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
@@ -779,20 +865,27 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: DataTable(
+                headingRowColor: adminTableHeadingRowColor(),
+                horizontalMargin: AdminSpacing.md,
+                columnSpacing: AdminSpacing.lg,
                 columns: ['Subject', 'Entries', 'Avg %']
                     .map((c) => DataColumn(label: Text(c)))
                     .toList(),
-                rows: bySubject.map((s) {
+                rows: bySubject.asMap().entries.map((e) {
+                  final s = e.value;
                   final avg =
                       (s['average_percentage'] as num?)?.toDouble() ?? 0;
-                  return DataRow(cells: [
+                  return DataRow(
+                    color: adminDataRowColor(e.key),
+                    cells: [
                     DataCell(Text(s['subject_name']?.toString() ?? '-')),
                     DataCell(Text('${s['entries'] ?? 0}')),
                     DataCell(Text('${avg.toStringAsFixed(1)}%',
                         style: TextStyle(
-                            color: avg >= 50 ? Colors.green : Colors.red,
+                            color: avg >= 50 ? AdminColors.success : AdminColors.danger,
                             fontWeight: FontWeight.w600))),
-                  ]);
+                  ],
+                  );
                 }).toList(),
               ),
             ),
@@ -818,16 +911,16 @@ class _KpiCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: 170,
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(AdminSpacing.sm),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
+        color: color.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withOpacity(0.25)),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
       ),
       child: Row(
         children: [
           Icon(icon, color: color, size: 22),
-          const SizedBox(width: 8),
+          const SizedBox(width: AdminSpacing.xs),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -837,7 +930,7 @@ class _KpiCard extends StatelessWidget {
                         fontSize: 16, fontWeight: FontWeight.w800, color: color)),
                 Text(label,
                     style: const TextStyle(
-                        fontSize: 11, color: Colors.black54)),
+                        fontSize: 11, color: AdminColors.textSecondary)),
               ],
             ),
           ),

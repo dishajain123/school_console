@@ -11,6 +11,11 @@ import '../../../domains/providers/auth_provider.dart';
 import '../../../domains/providers/enrollment_provider.dart';
 import '../../../data/repositories/enrollment_repository.dart';
 import '../../common/layout/admin_scaffold.dart';
+import '../../common/widgets/admin_layout/admin_empty_state.dart';
+import '../../common/widgets/admin_layout/admin_loading_placeholder.dart';
+import '../../common/widgets/admin_layout/admin_page_header.dart';
+import '../../common/widgets/admin_layout/admin_spacing.dart';
+import '../../common/widgets/admin_layout/admin_table_helpers.dart';
 
 // ── Repository ────────────────────────────────────────────────────────────────
 
@@ -1239,12 +1244,27 @@ class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
     return AdminScaffold(
       title: 'Enrollment',
       child: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const AdminLoadingPlaceholder(message: 'Loading enrollment…')
           : Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(AdminSpacing.pagePadding),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  AdminPageHeader(
+                    title: 'Enrollment workspace',
+                    subtitle:
+                        'Onboarding queue and related tools. Queue auto-refreshes every 15s when a year is selected.',
+                    iconActions: [
+                      IconButton(
+                        tooltip: 'Refresh onboarding queue',
+                        onPressed: (_selectedYearId == null ||
+                                _selectedYearId!.trim().isEmpty)
+                            ? null
+                            : () => _loadOnboardingQueue(),
+                        icon: const Icon(Icons.refresh_rounded),
+                      ),
+                    ],
+                  ),
                   Expanded(
                     child: Card(
                       clipBehavior: Clip.antiAlias,
@@ -1424,19 +1444,12 @@ class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
                             if (_onboarding.isNotEmpty)
                               const SizedBox(height: 8),
                             if (_onboarding.isEmpty)
-                              Expanded(
-                                child: Center(
-                                  child: Text(
-                                    'No users in this onboarding view.',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodyLarge
-                                        ?.copyWith(
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .onSurfaceVariant,
-                                        ),
-                                  ),
+                              const Expanded(
+                                child: AdminEmptyState(
+                                  icon: Icons.inbox_outlined,
+                                  title: 'No users in this view',
+                                  message:
+                                      'Choose an academic year or adjust role, status, and search.',
                                 ),
                               )
                             else
@@ -1499,7 +1512,13 @@ class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
                                                     label: Text('Actions'),
                                                   ),
                                                 ],
-                                                rows: pagedRows.map((u) {
+                                                rows: pagedRows
+                                                    .asMap()
+                                                    .entries
+                                                    .map((entry) {
+                                                  final u = entry.value;
+                                                  final rowIndex =
+                                                      start + entry.key;
                                                   final contact =
                                                       _rowContactText(u);
                                                   final identifierText =
@@ -1510,6 +1529,8 @@ class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
                                                       userId.isNotEmpty &&
                                                       _selectedOnboardingUserIds.contains(userId);
                                                   return DataRow(
+                                                    color: adminDataRowColor(
+                                                        rowIndex),
                                                     cells: [
                                                       DataCell(
                                                         Checkbox(
@@ -1650,7 +1671,13 @@ class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
                                                   label: Text('Actions'),
                                                 ),
                                               ],
-                                              rows: pagedRows.map((u) {
+                                              rows: pagedRows
+                                                  .asMap()
+                                                  .entries
+                                                  .map((entry) {
+                                                final u = entry.value;
+                                                final rowIndex =
+                                                    start + entry.key;
                                                 final contact = _rowContactText(
                                                   u,
                                                 );
@@ -1662,6 +1689,8 @@ class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
                                                     userId.isNotEmpty &&
                                                     _selectedOnboardingUserIds.contains(userId);
                                                 return DataRow(
+                                                  color: adminDataRowColor(
+                                                      rowIndex),
                                                   cells: [
                                                     DataCell(
                                                       Checkbox(
@@ -1825,7 +1854,30 @@ class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
                     ),
                   ),
                   if (_error != null)
-                    Text(_error!, style: const TextStyle(color: Colors.red)),
+                    Padding(
+                      padding: const EdgeInsets.only(top: AdminSpacing.sm),
+                      child: Material(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .errorContainer
+                            .withValues(alpha: 0.75),
+                        borderRadius: BorderRadius.circular(10),
+                        child: Padding(
+                          padding: const EdgeInsets.all(AdminSpacing.md),
+                          child: SelectableText(
+                            _error!,
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onErrorContainer,
+                                ),
+                          ),
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),

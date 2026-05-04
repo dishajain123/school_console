@@ -4,6 +4,7 @@ import '../../../core/theme/admin_colors.dart';
 import 'sidebar.dart';
 import 'top_bar.dart';
 
+/// Shell: top app bar + sidebar + main canvas. No routing or data logic.
 class AdminScaffold extends StatelessWidget {
   const AdminScaffold({super.key, required this.title, required this.child});
 
@@ -19,10 +20,16 @@ class AdminScaffold extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const AdminSidebar(),
-          const VerticalDivider(width: 1, color: AdminColors.border),
+          VerticalDivider(
+            width: 1,
+            thickness: 1,
+            color: AdminColors.sidebarDivider,
+          ),
           Expanded(
-            child: ColoredBox(
-              color: AdminColors.canvas,
+            child: DecoratedBox(
+              decoration: const BoxDecoration(
+                color: AdminColors.canvas,
+              ),
               child: child,
             ),
           ),

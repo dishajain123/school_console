@@ -16,26 +16,33 @@ class TopBar extends ConsumerWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
     final label =
         title.trim().isEmpty ? 'Admin Console' : title.trim();
+
     return AppBar(
+      // Bottom hairline comes from [buildAdminTheme] appBarTheme.shape.
       title: Text(
         label,
-        style: Theme.of(context).appBarTheme.titleTextStyle,
-      ),
-      shape: const Border(
-        bottom: BorderSide(color: AdminColors.border, width: 1),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: theme.appBarTheme.titleTextStyle,
       ),
       actions: [
-        IconButton(
-          onPressed: () async {
-            await ref.read(authControllerProvider.notifier).logout();
-            if (context.mounted) context.go(RouteNames.login);
-          },
-          icon: const Icon(Icons.logout_rounded),
-          tooltip: 'Sign out',
-          style: IconButton.styleFrom(
-            foregroundColor: AdminColors.textSecondary,
+        Padding(
+          padding: const EdgeInsets.only(right: 4),
+          child: IconButton(
+            onPressed: () async {
+              await ref.read(authControllerProvider.notifier).logout();
+              if (context.mounted) context.go(RouteNames.login);
+            },
+            icon: const Icon(Icons.logout_rounded),
+            tooltip: 'Sign out',
+            style: IconButton.styleFrom(
+              foregroundColor: AdminColors.textSecondary,
+              highlightColor:
+                  AdminColors.primaryAction.withValues(alpha: 0.12),
+            ),
           ),
         ),
       ],

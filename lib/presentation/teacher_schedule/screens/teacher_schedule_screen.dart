@@ -1,4 +1,4 @@
-// lib/presentation/teacher_schedule/screens/teacher_schedule_screen.dart  [Mobile App]
+// lib/presentation/teacher_schedule/screens/teacher_schedule_screen.dart  [Admin Console]
 // Phase 4 — Teacher Class Schedule / My Assignments.
 // Shows a teacher their current academic year class-subject-section assignments.
 // This directly reflects whatever the admin has assigned via the admin console.
@@ -15,16 +15,21 @@
 //                    created_at, updated_at } ], total }
 //   GET /academic-years — to populate year filter
 //
-// Navigation: pushed from the teacher home screen or via bottom nav.
-// Call: context.push('/my-schedule');
+// Navigation: shell route (sidebar) or deep link.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/api_constants.dart';
 import '../../../core/network/dio_client.dart';
+import '../../../core/theme/admin_colors.dart';
 import '../../../domains/providers/auth_provider.dart';
+import '../../common/layout/admin_scaffold.dart';
+import '../../common/widgets/admin_layout/admin_empty_state.dart';
+import '../../common/widgets/admin_layout/admin_filter_card.dart';
+import '../../common/widgets/admin_layout/admin_loading_placeholder.dart';
+import '../../common/widgets/admin_layout/admin_page_header.dart';
+import '../../common/widgets/admin_layout/admin_spacing.dart';
 
 // ── Models ────────────────────────────────────────────────────────────────────
 
@@ -78,7 +83,7 @@ class _ScheduleRepository {
     final resp = await _dio.dio.get<Map<String, dynamic>>(
       ApiConstants.teacherAssignmentsMine,
       queryParameters: {
-        if (yearId != null) 'academic_year_id': yearId,
+        ...?yearId != null ? {'academic_year_id': yearId} : null,
       },
     );
     final items = (resp.data?['items'] as List?) ?? [];
@@ -163,6 +168,19 @@ class _TeacherScheduleScreenState
     }
   }
 
+  void _resetYearFilter() {
+    final active = _years.firstWhere(
+      (y) => y['is_active'] == true,
+      orElse: () => _years.isNotEmpty ? _years.first : {},
+    );
+    if (active.isEmpty) return;
+    setState(() {
+      _selectedYearId = active['id']?.toString();
+      _selectedYearName = active['name']?.toString();
+    });
+    _load();
+  }
+
   Future<void> _load() async {
     setState(() {
       _loading = true;
@@ -204,117 +222,137 @@ class _TeacherScheduleScreenState
         : null;
     final grouped = _grouped;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('My Class Schedule'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded),
-          onPressed: () {
-            if (context.canPop()) {
-              context.pop();
-            }
-          },
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _load,
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // Year filter
-          if (_years.isNotEmpty)
-            Container(
-              color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Row(
-                children: [
-                  const Text('Academic Year: ',
-                      style: TextStyle(fontWeight: FontWeight.w600)),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: DropdownButton<String>(
-                      value: dropdownYearValue,
-                      isExpanded: true,
-                      underline: const SizedBox.shrink(),
-                      items: _years
-                          .map((y) => DropdownMenuItem<String>(
-                                value: y['id']?.toString(),
-                                child: Text(
-                                  '${y['name']}${y['is_active'] == true ? ' ✓' : ''}',
-                                ),
-                              ))
-                          .toList(),
-                      onChanged: (v) {
-                        final name = _years
-                            .firstWhere(
-                              (y) => y['id']?.toString() == v,
-                              orElse: () => {},
-                            )['name']
-                            ?.toString();
-                        setState(() {
-                          _selectedYearId = v;
-                          _selectedYearName = name;
-                        });
-                        _load();
-                      },
+    return AdminScaffold(
+      title: 'My class schedule',
+      child: Padding(
+        padding: const EdgeInsets.all(AdminSpacing.pagePadding),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AdminPageHeader(
+              title: 'My class schedule',
+              subtitle:
+                  'Assignments for the selected academic year, grouped by class and section.',
+              iconActions: [
+                IconButton(
+                  tooltip: 'Refresh',
+                  onPressed: _load,
+                  icon: const Icon(Icons.refresh_rounded),
+                ),
+              ],
+            ),
+            if (_years.isNotEmpty)
+              AdminFilterCard(
+                onReset: _resetYearFilter,
+                child: DropdownButtonFormField<String?>(
+                  key: ValueKey<String?>(
+                    'ts_year_${dropdownYearValue}_${_years.length}',
+                  ),
+                  initialValue: dropdownYearValue,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Academic year',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
                     ),
                   ),
-                ],
-              ),
-            ),
-
-          // Content
-          Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _error != null
-                    ? _ErrorBody(error: _error!, onRetry: _load)
-                    : _assignments.isEmpty
-                        ? _EmptyBody(yearName: _selectedYearName)
-                        : ListView(
-                            padding: const EdgeInsets.all(16),
-                            children: [
-                              // Summary chip
-                              Wrap(
-                                spacing: 8,
-                                children: [
-                                  Chip(
-                                    label: Text(
-                                        '${grouped.length} class${grouped.length == 1 ? '' : 'es'}'),
-                                    backgroundColor:
-                                        Colors.blue.shade50,
-                                    labelStyle: TextStyle(
-                                        color: Colors.blue.shade700,
-                                        fontSize: 12),
-                                  ),
-                                  Chip(
-                                    label: Text(
-                                        '${_assignments.length} subject${_assignments.length == 1 ? '' : 's'}'),
-                                    backgroundColor:
-                                        Colors.green.shade50,
-                                    labelStyle: TextStyle(
-                                        color: Colors.green.shade700,
-                                        fontSize: 12),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
-
-                              // Grouped cards
-                              ...grouped.entries.map(
-                                (entry) => _ClassCard(
-                                  classSection: entry.key,
-                                  subjects: entry.value,
-                                ),
-                              ),
-                            ],
+                  items: _years
+                      .map(
+                        (y) => DropdownMenuItem<String?>(
+                          value: y['id']?.toString(),
+                          child: Text(
+                            '${y['name']}${y['is_active'] == true ? ' • Active' : ''}',
                           ),
-          ),
-        ],
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (v) {
+                    final name = _years
+                        .firstWhere(
+                          (y) => y['id']?.toString() == v,
+                          orElse: () => {},
+                        )['name']
+                        ?.toString();
+                    setState(() {
+                      _selectedYearId = v;
+                      _selectedYearName = name;
+                    });
+                    _load();
+                  },
+                ),
+              ),
+            if (_years.isNotEmpty) const SizedBox(height: AdminSpacing.sm),
+            Expanded(
+              child: _loading
+                  ? const AdminLoadingPlaceholder(
+                      message: 'Loading your schedule…',
+                      height: 320,
+                    )
+                  : _error != null
+                      ? _ErrorBody(error: _error!, onRetry: _load)
+                      : _assignments.isEmpty
+                          ? AdminEmptyState(
+                              icon: Icons.calendar_today_outlined,
+                              title: 'No assignments',
+                              message: _selectedYearName != null
+                                  ? 'No assignments found for $_selectedYearName. Pick another year or ask an administrator.'
+                                  : 'No assignments found. Ask an administrator to assign you to classes.',
+                            )
+                          : ListView(
+                              padding: const EdgeInsets.only(
+                                bottom: AdminSpacing.lg,
+                              ),
+                              children: [
+                                Wrap(
+                                  spacing: AdminSpacing.sm,
+                                  runSpacing: AdminSpacing.sm,
+                                  children: [
+                                    Chip(
+                                      label: Text(
+                                        '${grouped.length} class${grouped.length == 1 ? '' : 'es'}',
+                                      ),
+                                      backgroundColor: AdminColors.primarySubtle,
+                                      side: const BorderSide(
+                                        color: AdminColors.border,
+                                      ),
+                                      labelStyle: const TextStyle(
+                                        color: AdminColors.primaryPressed,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    Chip(
+                                      label: Text(
+                                        '${_assignments.length} subject${_assignments.length == 1 ? '' : 's'}',
+                                      ),
+                                      backgroundColor: AdminColors.success
+                                          .withValues(alpha: 0.1),
+                                      side: const BorderSide(
+                                        color: AdminColors.border,
+                                      ),
+                                      labelStyle: const TextStyle(
+                                        color: AdminColors.success,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: AdminSpacing.md),
+                                ...grouped.entries.map(
+                                  (entry) => _ClassCard(
+                                    classSection: entry.key,
+                                    subjects: entry.value,
+                                  ),
+                                ),
+                              ],
+                            ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -332,90 +370,103 @@ class _ClassCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      elevation: 2,
-      shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      margin: const EdgeInsets.only(bottom: AdminSpacing.sm),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: const BorderSide(color: AdminColors.border),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(
-                horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.primaryContainer,
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(12),
-                topRight: Radius.circular(12),
+              horizontal: AdminSpacing.md,
+              vertical: AdminSpacing.sm,
+            ),
+            decoration: const BoxDecoration(
+              color: AdminColors.primarySubtle,
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(10),
+                topRight: Radius.circular(10),
               ),
             ),
             child: Row(
               children: [
-                Icon(Icons.class_outlined,
-                    size: 18,
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onPrimaryContainer),
-                const SizedBox(width: 8),
-                Text(
-                  classSection,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 15,
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onPrimaryContainer,
+                const Icon(
+                  Icons.class_outlined,
+                  size: 18,
+                  color: AdminColors.primaryPressed,
+                ),
+                const SizedBox(width: AdminSpacing.sm),
+                Expanded(
+                  child: Text(
+                    classSection,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                      color: AdminColors.textPrimary,
+                    ),
                   ),
                 ),
-                const Spacer(),
                 Container(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 8, vertical: 2),
+                    horizontal: AdminSpacing.sm,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.3),
+                    color: AdminColors.surface.withValues(alpha: 0.65),
                     borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: AdminColors.primaryAction.withValues(alpha: 0.2),
+                    ),
                   ),
                   child: Text(
                     '${subjects.length} subject${subjects.length == 1 ? '' : 's'}',
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 11,
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onPrimaryContainer,
+                      color: AdminColors.primaryPressed,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
               ],
             ),
           ),
-
-          // Subject rows
           ...subjects.map(
             (s) => ListTile(
               dense: true,
               leading: CircleAvatar(
                 radius: 16,
-                backgroundColor:
-                    Theme.of(context).colorScheme.secondaryContainer,
+                backgroundColor: AdminColors.rowStripe,
                 child: Text(
-                  s.subjectCode.substring(0,
-                      s.subjectCode.length > 2 ? 2 : s.subjectCode.length),
-                  style: TextStyle(
+                  s.subjectCode.substring(
+                    0,
+                    s.subjectCode.length > 2 ? 2 : s.subjectCode.length,
+                  ),
+                  style: const TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.bold,
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSecondaryContainer,
+                    color: AdminColors.primaryAction,
                   ),
                 ),
               ),
-              title: Text(s.subjectName,
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w600, fontSize: 14)),
-              subtitle: Text('Code: ${s.subjectCode}',
-                  style: const TextStyle(fontSize: 12)),
+              title: Text(
+                s.subjectName,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                  color: AdminColors.textPrimary,
+                ),
+              ),
+              subtitle: Text(
+                'Code: ${s.subjectCode}',
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AdminColors.textSecondary,
+                ),
+              ),
             ),
           ),
         ],
@@ -424,39 +475,7 @@ class _ClassCard extends StatelessWidget {
   }
 }
 
-// ── Empty & Error states ──────────────────────────────────────────────────────
-
-class _EmptyBody extends StatelessWidget {
-  const _EmptyBody({this.yearName});
-  final String? yearName;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.assignment_ind_outlined,
-              size: 64, color: Colors.grey),
-          const SizedBox(height: 16),
-          Text(
-            yearName != null
-                ? 'No assignments found for $yearName.'
-                : 'No assignments found.',
-            style: const TextStyle(color: Colors.grey, fontSize: 16),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Contact your administrator to assign you to a class.',
-            style: TextStyle(color: Colors.grey, fontSize: 13),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-    );
-  }
-}
+// ── Error state ─────────────────────────────────────────────────────────────
 
 class _ErrorBody extends StatelessWidget {
   const _ErrorBody({required this.error, required this.onRetry});
@@ -468,22 +487,56 @@ class _ErrorBody extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.error_outline, size: 48, color: Colors.red),
-            const SizedBox(height: 12),
-            Text(error,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.red)),
-            const SizedBox(height: 16),
-            OutlinedButton.icon(
-              icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
-              onPressed: onRetry,
+        padding: const EdgeInsets.all(AdminSpacing.lg),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: Material(
+            color: AdminColors.dangerSurface,
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.all(AdminSpacing.md),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.error_outline_rounded,
+                        color: AdminColors.danger,
+                        size: 28,
+                      ),
+                      const SizedBox(width: AdminSpacing.sm),
+                      Text(
+                        'Could not load schedule',
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              color: AdminColors.textPrimary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AdminSpacing.sm),
+                  SelectableText(
+                    error,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AdminColors.danger,
+                          height: 1.4,
+                        ),
+                  ),
+                  const SizedBox(height: AdminSpacing.md),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: FilledButton.icon(
+                      icon: const Icon(Icons.refresh_rounded, size: 18),
+                      label: const Text('Retry'),
+                      onPressed: onRetry,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ],
+          ),
         ),
       ),
     );

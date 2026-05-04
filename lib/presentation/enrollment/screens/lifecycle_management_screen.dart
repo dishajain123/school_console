@@ -28,10 +28,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/theme/admin_colors.dart';
 import '../../../domains/providers/auth_provider.dart';
 import '../../../domains/providers/enrollment_provider.dart';
 import '../../../data/repositories/enrollment_repository.dart';
 import '../../common/layout/admin_scaffold.dart';
+import '../../common/widgets/admin_layout/admin_loading_placeholder.dart';
+import '../../common/widgets/admin_layout/admin_page_header.dart';
+import '../../common/widgets/admin_layout/admin_spacing.dart';
 
 // ── Local models ──────────────────────────────────────────────────────────────
 
@@ -1276,71 +1280,105 @@ class _LifecycleManagementScreenState
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return AdminScaffold(
-      title: 'Student Lifecycle Management',
+      title: 'Student lifecycle',
       child: _actionLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Padding(
+              padding: EdgeInsets.all(AdminSpacing.pagePadding),
+              child: AdminLoadingPlaceholder(
+                message: 'Applying enrollment change…',
+                height: 320,
+              ),
+            )
           : SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(AdminSpacing.pagePadding),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  const AdminPageHeader(
+                    title: 'Student lifecycle',
+                    subtitle:
+                        'Search a person, view enrollment, transfer, withdraw, '
+                        'complete year, or re-enroll. Changes sync to the mobile app.',
+                  ),
                   // ── Info banner ──────────────────────────────────────────
-                  Container(
-                    padding: const EdgeInsets.all(12),
+                  DecoratedBox(
                     decoration: BoxDecoration(
-                      color: Colors.blue.shade50,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.blue.shade200),
+                      color: AdminColors.primarySubtle,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: AdminColors.primaryAction.withValues(alpha: 0.22),
+                      ),
                     ),
-                    child: const Row(
-                      children: [
-                        Icon(Icons.info_outline,
-                            color: Colors.blue, size: 20),
-                        SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Admin is the single source of truth. All actions here '
-                            'are immediately reflected in the mobile app.',
-                            style: TextStyle(fontSize: 13, color: Colors.blue),
+                    child: Padding(
+                      padding: const EdgeInsets.all(AdminSpacing.md),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.info_outline_rounded,
+                            color: AdminColors.primaryAction,
+                            size: 20,
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: AdminSpacing.sm),
+                          Expanded(
+                            child: Text(
+                              'Admin is the single source of truth. All actions here '
+                              'are immediately reflected in the mobile app.',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: AdminColors.textPrimary,
+                                height: 1.35,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: AdminSpacing.md),
 
                   if (_error != null)
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      margin: const EdgeInsets.only(bottom: 12),
-                      decoration: BoxDecoration(
-                        color: Colors.red.shade50,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.red.shade200),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: AdminSpacing.md),
+                      child: Material(
+                        color: AdminColors.dangerSurface,
+                        borderRadius: BorderRadius.circular(10),
+                        child: Padding(
+                          padding: const EdgeInsets.all(AdminSpacing.md),
+                          child: SelectableText(
+                            _error!,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: AdminColors.danger,
+                            ),
+                          ),
+                        ),
                       ),
-                      child: Text(_error!,
-                          style:
-                              TextStyle(color: Colors.red.shade700)),
                     ),
 
                   if (_successMsg != null)
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      margin: const EdgeInsets.only(bottom: 12),
-                      decoration: BoxDecoration(
-                        color: Colors.green.shade50,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.green.shade200),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: AdminSpacing.md),
+                      child: Material(
+                        color: AdminColors.success.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(10),
+                        child: Padding(
+                          padding: const EdgeInsets.all(AdminSpacing.md),
+                          child: SelectableText(
+                            _successMsg!,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: AdminColors.success,
+                            ),
+                          ),
+                        ),
                       ),
-                      child: Text(_successMsg!,
-                          style: TextStyle(color: Colors.green.shade700)),
                     ),
 
                   // ── Search ───────────────────────────────────────────────
                   Card(
                     child: Padding(
-                      padding: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.all(AdminSpacing.md),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [

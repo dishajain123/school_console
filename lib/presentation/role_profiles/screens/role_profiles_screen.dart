@@ -2,11 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
 
+import '../../../core/theme/admin_colors.dart';
 import '../../../data/models/role_profiles/role_profile_item.dart';
 import '../../../domains/providers/active_year_provider.dart';
 import '../../../domains/providers/auth_provider.dart';
 import '../../../domains/providers/role_profile_provider.dart';
 import '../../common/layout/admin_scaffold.dart';
+import '../../common/widgets/admin_layout/admin_empty_state.dart';
+import '../../common/widgets/admin_layout/admin_filter_card.dart';
+import '../../common/widgets/admin_layout/admin_loading_placeholder.dart';
+import '../../common/widgets/admin_layout/admin_page_header.dart';
+import '../../common/widgets/admin_layout/admin_spacing.dart';
 import '../../common/widgets/data_table_widget.dart';
 
 class RoleProfilesScreen extends ConsumerStatefulWidget {
@@ -101,6 +107,27 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
     } catch (_) {}
   }
 
+  void _resetFilters() {
+    _searchController.clear();
+    final preferredYearId = ref.read(activeAcademicYearProvider);
+    final preferred =
+        _years.where((y) => y['id']?.toString() == preferredYearId).toList();
+    final active = _years.where((y) => y['is_active'] == true).toList();
+    setState(() {
+      _page = 1;
+      _selectedStandardId = null;
+      _selectedSection = null;
+      _sections = const [];
+      _selectedYearId = preferred.isNotEmpty
+          ? preferred.first['id']?.toString()
+          : active.isNotEmpty
+              ? active.first['id']?.toString()
+              : (_years.isNotEmpty ? _years.first['id']?.toString() : null);
+    });
+    ref.read(activeAcademicYearProvider.notifier).setYear(_selectedYearId);
+    _loadStandards();
+  }
+
   Future<void> _loadSectionsForStandard(String standardId) async {
     final repository = ref.read(roleProfileRepositoryProvider);
     try {
@@ -121,40 +148,75 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
     final repository = ref.watch(roleProfileRepositoryProvider);
 
     return AdminScaffold(
-      title: 'Role Profiles',
+      title: 'Role profiles',
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AdminSpacing.pagePadding),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            TabBar(
-              controller: _tabController,
-              tabs: const [
-                Tab(text: 'Students'),
-                Tab(text: 'Teachers'),
-                Tab(text: 'Parents'),
-                Tab(text: 'Principals'),
-                Tab(text: 'Trustees'),
-              ],
+            const AdminPageHeader(
+              title: 'Role profiles',
+              subtitle:
+                  'Browse people by role, narrow students with class and section, then search or paginate.',
             ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
+            Material(
+              color: AdminColors.surface,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+                side: const BorderSide(color: AdminColors.border),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: TabBar(
+                controller: _tabController,
+                isScrollable: true,
+                indicatorColor: AdminColors.primaryAction,
+                labelColor: AdminColors.primaryAction,
+                unselectedLabelColor: AdminColors.textSecondary,
+                dividerColor: const Color(0x00000000),
+                tabAlignment: TabAlignment.start,
+                labelStyle: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+                unselectedLabelStyle: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+                tabs: const [
+                  Tab(text: 'Students'),
+                  Tab(text: 'Teachers'),
+                  Tab(text: 'Parents'),
+                  Tab(text: 'Principals'),
+                  Tab(text: 'Trustees'),
+                ],
+              ),
+            ),
+            const SizedBox(height: AdminSpacing.sm),
+            AdminFilterCard(
+              onReset: _resetFilters,
               child: Wrap(
-                spacing: 12,
-                runSpacing: 12,
+                spacing: AdminSpacing.sm,
+                runSpacing: AdminSpacing.sm,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   SizedBox(
                     width: 220,
-                    child: DropdownButtonFormField<String>(
-                      value: _selectedYearId,
+                    child: DropdownButtonFormField<String?>(
+                      key: ValueKey<String?>(
+                          'rp_year_${_selectedYearId ?? 'null'}_${_years.length}'),
+                      initialValue: _selectedYearId,
                       decoration: const InputDecoration(
                         labelText: 'Academic Year',
+                        isDense: true,
                         border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 8,
+                        ),
                       ),
                       items: _years
                           .map(
-                            (y) => DropdownMenuItem<String>(
+                            (y) => DropdownMenuItem<String?>(
                               value: y['id']?.toString(),
                               child: Text(y['name']?.toString() ?? '-'),
                             ),
@@ -168,7 +230,9 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
                           _sections = const [];
                           _page = 1;
                         });
-                        ref.read(activeAcademicYearProvider.notifier).setYear(value);
+                        ref
+                            .read(activeAcademicYearProvider.notifier)
+                            .setYear(value);
                         await _loadStandards();
                       },
                     ),
@@ -178,24 +242,37 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
                     child: TextField(
                       controller: _searchController,
                       decoration: const InputDecoration(
-                        hintText: 'Search by name, email, phone or identifier...',
-                        prefixIcon: Icon(Icons.search),
+                        hintText:
+                            'Search by name, email, phone or identifier…',
+                        isDense: true,
+                        prefixIcon: Icon(Icons.search, size: 20),
                         border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 8,
+                        ),
                       ),
                     ),
                   ),
                   if (_isStudentTab)
                     SizedBox(
                       width: 220,
-                      child: DropdownButtonFormField<String>(
-                        value: _selectedStandardId,
+                      child: DropdownButtonFormField<String?>(
+                        key: ValueKey<String?>(
+                            'rp_std_${_selectedStandardId ?? 'null'}_${_standards.length}'),
+                        initialValue: _selectedStandardId,
                         decoration: const InputDecoration(
                           labelText: 'Class',
+                          isDense: true,
                           border: OutlineInputBorder(),
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
                         ),
                         items: _standards
                             .map(
-                              (s) => DropdownMenuItem<String>(
+                              (s) => DropdownMenuItem<String?>(
                                 value: s['id']?.toString(),
                                 child: Text(s['name']?.toString() ?? '-'),
                               ),
@@ -217,15 +294,22 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
                   if (_isStudentTab)
                     SizedBox(
                       width: 180,
-                      child: DropdownButtonFormField<String>(
-                        value: _selectedSection,
+                      child: DropdownButtonFormField<String?>(
+                        key: ValueKey<String?>(
+                            'rp_sec_${_selectedSection ?? 'null'}_${_sections.length}'),
+                        initialValue: _selectedSection,
                         decoration: const InputDecoration(
                           labelText: 'Section',
+                          isDense: true,
                           border: OutlineInputBorder(),
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
                         ),
                         items: _sections
                             .map(
-                              (s) => DropdownMenuItem<String>(
+                              (s) => DropdownMenuItem<String?>(
                                 value: s,
                                 child: Text(s),
                               ),
@@ -242,7 +326,7 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
                 ],
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: AdminSpacing.sm),
             Expanded(
               child: FutureBuilder<RoleProfileListData>(
                 future: repository.listProfiles(
@@ -258,13 +342,74 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
                 ),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
+                    return const AdminLoadingPlaceholder(
+                      message: 'Loading profiles…',
+                      height: 320,
+                    );
                   }
                   if (snapshot.hasError) {
                     return Center(
-                      child: Text(
-                        _readableError(snapshot.error),
-                        textAlign: TextAlign.center,
+                      child: Padding(
+                        padding: const EdgeInsets.all(AdminSpacing.lg),
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 520),
+                          child: Material(
+                            color: AdminColors.dangerSurface,
+                            borderRadius: BorderRadius.circular(8),
+                            child: Padding(
+                              padding: const EdgeInsets.all(AdminSpacing.md),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        Icons.error_outline_rounded,
+                                        color: AdminColors.danger,
+                                        size: 28,
+                                      ),
+                                      const SizedBox(width: AdminSpacing.sm),
+                                      Text(
+                                        'Could not load profiles',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .titleSmall
+                                            ?.copyWith(
+                                              color: AdminColors.textPrimary,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: AdminSpacing.sm),
+                                  SelectableText(
+                                    _readableError(snapshot.error),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall
+                                        ?.copyWith(
+                                          color: AdminColors.danger,
+                                          height: 1.4,
+                                        ),
+                                  ),
+                                  const SizedBox(height: AdminSpacing.md),
+                                  Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: FilledButton.icon(
+                                      icon: const Icon(
+                                        Icons.refresh_rounded,
+                                        size: 18,
+                                      ),
+                                      label: const Text('Retry'),
+                                      onPressed: () => setState(() {}),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
                     );
                   }
@@ -272,7 +417,12 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
                   final data = snapshot.data;
                   final items = data?.items ?? const <RoleProfileItem>[];
                   if (items.isEmpty) {
-                    return const Center(child: Text('No role profiles found'));
+                    return const AdminEmptyState(
+                      icon: Icons.people_outline,
+                      title: 'No profiles match',
+                      message:
+                          'Change role tab, filters, or search, then try again.',
+                    );
                   }
 
                   return AdminDataTable(

@@ -9,9 +9,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/constants/api_constants.dart';
 import '../../../core/network/dio_client.dart';
+import '../../../core/theme/admin_colors.dart';
 import '../../../domains/providers/active_year_provider.dart';
 import '../../../domains/providers/auth_provider.dart';
 import '../../common/layout/admin_scaffold.dart';
+import '../../common/widgets/admin_layout/admin_empty_state.dart';
+import '../../common/widgets/admin_layout/admin_filter_card.dart';
+import '../../common/widgets/admin_layout/admin_loading_placeholder.dart';
+import '../../common/widgets/admin_layout/admin_page_header.dart';
+import '../../common/widgets/admin_layout/admin_spacing.dart';
+import '../../common/widgets/admin_layout/admin_table_helpers.dart';
 
 // ── Models ────────────────────────────────────────────────────────────────────
 
@@ -105,9 +112,9 @@ class _ResultStudent {
   }
 
   Color get percentageColor {
-    if (overallPercentage >= 75) return Colors.green;
-    if (overallPercentage >= 50) return Colors.orange;
-    return Colors.red;
+    if (overallPercentage >= 75) return AdminColors.success;
+    if (overallPercentage >= 50) return const Color(0xFFEA580C);
+    return AdminColors.danger;
   }
 }
 
@@ -273,12 +280,23 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
   String? get _schoolId =>
       ref.read(authControllerProvider).valueOrNull?.schoolId;
 
+  void _resetExamFilters() {
+    setState(() {
+      _selectedStandardId = null;
+      _selectedExam = null;
+      _distribution = [];
+      _distributionError = null;
+      _error = null;
+      _success = null;
+    });
+  }
+
   bool get _canPublish {
     final user = ref.read(authControllerProvider).valueOrNull;
     if (user == null) return false;
     final role = user.role.toUpperCase();
     return role == 'PRINCIPAL' ||
-        role == 'SUPERADMIN' ||
+        role == 'STAFF_ADMIN' ||
         user.permissions.contains('result:publish');
   }
 
@@ -287,7 +305,7 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
     if (user == null) return false;
     final role = user.role.toUpperCase();
     return role == 'PRINCIPAL' ||
-        role == 'SUPERADMIN' ||
+        role == 'STAFF_ADMIN' ||
         user.permissions.contains('result:create');
   }
 
@@ -395,11 +413,13 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
           TextButton(
               onPressed: () => Navigator.of(ctx).pop(false),
               child: const Text('Cancel')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: AdminColors.success,
+              foregroundColor: AdminColors.textOnPrimary,
+            ),
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Publish',
-                style: TextStyle(color: Colors.white)),
+            child: const Text('Publish'),
           ),
         ],
       ),
@@ -439,10 +459,13 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
             onPressed: () => Navigator.of(ctx).pop(false),
             child: const Text('Cancel'),
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: AdminColors.danger,
+              foregroundColor: AdminColors.textOnPrimary,
+            ),
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Delete', style: TextStyle(color: Colors.white)),
+            child: const Text('Delete'),
           ),
         ],
       ),
@@ -545,7 +568,8 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
                   alignment: Alignment.centerLeft,
                   child: Text(
                     'Creates this exam for all classes in the selected academic year.',
-                    style: TextStyle(fontSize: 12, color: Colors.black54),
+                    style: TextStyle(
+                        fontSize: 12, color: AdminColors.textSecondary),
                   ),
                 ),
               ],
@@ -637,19 +661,27 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return AdminScaffold(
-      title: 'Exams & Results',
+      title: 'Exams & results',
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AdminSpacing.pagePadding),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // ── Filters ──────────────────────────────────────────────────
-            Wrap(
-              spacing: 12,
-              runSpacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
+            const AdminPageHeader(
+              title: 'Exams & results',
+              subtitle:
+                  'Load exams for the year, publish when ready, and review mark distribution per exam.',
+            ),
+            AdminFilterCard(
+              onReset: _resetExamFilters,
+              child: Wrap(
+                spacing: AdminSpacing.sm,
+                runSpacing: AdminSpacing.sm,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
                 SizedBox(
                   width: 180,
                   child: DropdownButtonFormField<String>(
@@ -700,15 +732,18 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
                     }),
                   ),
                 ),
-                ElevatedButton.icon(
+                FilledButton.icon(
                   icon: _loading
-                      ? const SizedBox(
+                      ? SizedBox(
                           width: 14,
                           height: 14,
                           child: CircularProgressIndicator(
-                              strokeWidth: 2, color: Colors.white))
-                      : const Icon(Icons.search, size: 16),
-                  label: const Text('Load Exams'),
+                            strokeWidth: 2,
+                            color: theme.colorScheme.onPrimary,
+                          ),
+                        )
+                      : const Icon(Icons.search, size: 18),
+                  label: const Text('Load exams'),
                   onPressed: _loading ? null : _loadExams,
                 ),
                 if (_canCreateExam)
@@ -717,41 +752,51 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
                     label: const Text('Create Exam (All Classes)'),
                     onPressed: _openCreateExamDialog,
                   ),
-              ],
+                ],
+              ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: AdminSpacing.sm),
 
             // ── Status messages ──────────────────────────────────────────
             if (_error != null)
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(10),
-                margin: const EdgeInsets.only(bottom: 8),
-                decoration: BoxDecoration(
-                  color: Colors.red.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.red.shade200),
+              Padding(
+                padding: const EdgeInsets.only(bottom: AdminSpacing.sm),
+                child: Material(
+                  color: AdminColors.dangerSurface,
+                  borderRadius: BorderRadius.circular(10),
+                  child: Padding(
+                    padding: const EdgeInsets.all(AdminSpacing.md),
+                    child: SelectableText(
+                      _error!,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: AdminColors.danger,
+                      ),
+                    ),
+                  ),
                 ),
-                child: Text(_error!,
-                    style: TextStyle(color: Colors.red.shade700)),
               ),
             if (_success != null)
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(10),
-                margin: const EdgeInsets.only(bottom: 8),
-                decoration: BoxDecoration(
-                  color: Colors.green.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.green.shade200),
+              Padding(
+                padding: const EdgeInsets.only(bottom: AdminSpacing.sm),
+                child: Material(
+                  color: AdminColors.success.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(10),
+                  child: Padding(
+                    padding: const EdgeInsets.all(AdminSpacing.md),
+                    child: SelectableText(
+                      _success!,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: AdminColors.success,
+                      ),
+                    ),
+                  ),
                 ),
-                child: Text(_success!,
-                    style: TextStyle(color: Colors.green.shade700)),
               ),
 
             // ── Tabs ─────────────────────────────────────────────────────
             TabBar(
               controller: _tabController,
+              dividerColor: const Color(0x00000000),
               tabs: [
                 const Tab(text: 'Exam List'),
                 Tab(
@@ -760,7 +805,7 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
                         : 'Distribution'),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AdminSpacing.xs),
 
             Expanded(
               child: TabBarView(
@@ -781,13 +826,17 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
 
   Widget _buildExamListTab() {
     if (_exams.isEmpty && !_loading) {
-      return const Center(
-          child: Text(
-              'No exams found. Select year and click Load Exams.'));
+      return const AdminEmptyState(
+        icon: Icons.quiz_outlined,
+        title: 'No exams loaded',
+        message: 'Pick academic year (and optional class), then Load exams.',
+      );
     }
     return SingleChildScrollView(
       child: DataTable(
-        headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
+        headingRowColor: adminTableHeadingRowColor(),
+        horizontalMargin: AdminSpacing.md,
+        columnSpacing: AdminSpacing.lg,
         columns: [
           const DataColumn(label: Text('Exam Name')),
           const DataColumn(label: Text('Class')),
@@ -797,78 +846,83 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
           const DataColumn(label: Text('Status')),
           const DataColumn(label: Text('Actions')),
         ],
-        rows: _exams.map((exam) {
+        rows: _exams.asMap().entries.map((entry) {
+          final rowIndex = entry.key;
+          final exam = entry.value;
           final isPublished = exam.isPublished;
-          return DataRow(cells: [
-            DataCell(Text(exam.name,
-                style: const TextStyle(fontWeight: FontWeight.w600))),
-            DataCell(Text(exam.standardName ?? '-')),
-            DataCell(Text(exam.examType ?? '-')),
-            DataCell(Text(exam.startDate ?? '-')),
-            DataCell(Text(exam.endDate ?? '-')),
-            DataCell(Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: isPublished
-                    ? Colors.green.shade50
-                    : Colors.orange.shade50,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                isPublished ? 'Published' : 'Unpublished',
-                style: TextStyle(
-                    color: isPublished
-                        ? Colors.green.shade700
-                        : Colors.orange.shade700,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600),
-              ),
-            )),
-            DataCell(Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextButton.icon(
-                  icon: const Icon(Icons.bar_chart_outlined, size: 14),
-                  label: const Text('View',
-                      style: TextStyle(fontSize: 12)),
-                  onPressed: () => _loadDistribution(exam),
+          return DataRow(
+            color: adminDataRowColor(rowIndex),
+            cells: [
+              DataCell(Text(exam.name,
+                  style: const TextStyle(fontWeight: FontWeight.w600))),
+              DataCell(Text(exam.standardName ?? '-')),
+              DataCell(Text(exam.examType ?? '-')),
+              DataCell(Text(exam.startDate ?? '-')),
+              DataCell(Text(exam.endDate ?? '-')),
+              DataCell(Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: isPublished
+                      ? AdminColors.success.withValues(alpha: 0.1)
+                      : const Color(0xFFEA580C).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                if (_canEdit(exam))
+                child: Text(
+                  isPublished ? 'Published' : 'Unpublished',
+                  style: TextStyle(
+                      color: isPublished
+                          ? AdminColors.success
+                          : const Color(0xFFEA580C),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600),
+                ),
+              )),
+              DataCell(Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
                   TextButton.icon(
-                    icon: Icon(Icons.publish_outlined,
-                        size: 14,
-                        color: isPublished
-                            ? Colors.grey
-                            : Colors.green),
-                    label: Text(
-                      isPublished ? 'Published' : 'Publish',
-                      style: TextStyle(
-                          fontSize: 12,
+                    icon: const Icon(Icons.bar_chart_outlined, size: 14),
+                    label: const Text('View',
+                        style: TextStyle(fontSize: 12)),
+                    onPressed: () => _loadDistribution(exam),
+                  ),
+                  if (_canEdit(exam))
+                    TextButton.icon(
+                      icon: Icon(Icons.publish_outlined,
+                          size: 14,
                           color: isPublished
-                              ? Colors.grey
-                              : Colors.green),
+                              ? AdminColors.textMuted
+                              : AdminColors.success),
+                      label: Text(
+                        isPublished ? 'Published' : 'Publish',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: isPublished
+                                ? AdminColors.textMuted
+                                : AdminColors.success),
+                      ),
+                      onPressed: isPublished
+                          ? null
+                          : () => _publishExam(exam),
                     ),
-                    onPressed: isPublished
-                        ? null
-                        : () => _publishExam(exam),
-                  ),
-                if (_canCreateExam)
-                  TextButton.icon(
-                    icon: const Icon(
-                      Icons.delete_outline,
-                      size: 14,
-                      color: Colors.red,
+                  if (_canCreateExam)
+                    TextButton.icon(
+                      icon: const Icon(
+                        Icons.delete_outline,
+                        size: 14,
+                        color: AdminColors.danger,
+                      ),
+                      label: const Text(
+                        'Delete',
+                        style: TextStyle(fontSize: 12, color: AdminColors.danger),
+                      ),
+                      onPressed: () => _deleteExam(exam),
                     ),
-                    label: const Text(
-                      'Delete',
-                      style: TextStyle(fontSize: 12, color: Colors.red),
-                    ),
-                    onPressed: () => _deleteExam(exam),
-                  ),
-              ],
-            )),
-          ]);
+                ],
+              )),
+            ],
+          );
         }).toList(),
       ),
     );
@@ -880,33 +934,43 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
 
   Widget _buildDistributionTab() {
     if (_selectedExam == null) {
-      return const Center(
-          child: Text(
-              'Select an exam from the list and click View.'));
+      return const AdminEmptyState(
+        icon: Icons.insights_outlined,
+        title: 'No exam selected',
+        message: 'Open the Exam list tab, pick an exam, then View.',
+      );
     }
     if (_distributionLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return const AdminLoadingPlaceholder(
+        message: 'Loading distribution…',
+        height: 280,
+      );
     }
     if (_distributionError != null) {
+      final theme = Theme.of(context);
       return Center(
         child: Padding(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.all(AdminSpacing.lg),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.error_outline, size: 48, color: Colors.red.shade400),
-              const SizedBox(height: 12),
+              Icon(Icons.error_outline,
+                  size: 48, color: AdminColors.danger.withValues(alpha: 0.85)),
+              const SizedBox(height: AdminSpacing.sm),
               Text(
                 'Could not load distribution',
-                style: Theme.of(context).textTheme.titleMedium,
+                style: theme.textTheme.titleMedium,
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: AdminSpacing.xs),
               SelectableText(
                 _distributionError!,
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey.shade800, fontSize: 13),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: AdminColors.textSecondary,
+                  fontSize: 13,
+                ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: AdminSpacing.md),
               FilledButton.icon(
                 onPressed: () => _loadDistribution(_selectedExam!),
                 icon: const Icon(Icons.refresh),
@@ -918,8 +982,11 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
       );
     }
     if (_distribution.isEmpty) {
-      return const Center(
-          child: Text('No results entered for this exam yet.'));
+      return const AdminEmptyState(
+        icon: Icons.edit_note_outlined,
+        title: 'No marks yet',
+        message: 'No results have been entered for this exam.',
+      );
     }
 
     final sorted = List<_ResultStudent>.from(_distribution)
@@ -938,27 +1005,27 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
       children: [
         // Summary
         Padding(
-          padding: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.only(bottom: AdminSpacing.sm),
           child: Wrap(
-            spacing: 12,
+            spacing: AdminSpacing.sm,
             children: [
               Chip(
                   label: Text('Total: ${sorted.length}'),
-                  backgroundColor: Colors.grey.shade200),
+                  backgroundColor: AdminColors.borderSubtle),
               Chip(
                   label: Text(
                       'Avg: ${avg.toStringAsFixed(1)}%'),
                   backgroundColor: avg >= 60
-                      ? Colors.green.shade100
-                      : Colors.orange.shade100),
+                      ? AdminColors.success.withValues(alpha: 0.12)
+                      : const Color(0xFFEA580C).withValues(alpha: 0.12)),
               Chip(
                   label:
                       Text('Passed (≥35%): $passCount'),
-                  backgroundColor: Colors.green.shade100),
+                  backgroundColor: AdminColors.success.withValues(alpha: 0.12)),
               Chip(
                   label: Text(
                       'Failed: ${sorted.length - passCount}'),
-                  backgroundColor: Colors.red.shade100),
+                  backgroundColor: AdminColors.dangerSurface),
             ],
           ),
         ),
@@ -966,8 +1033,9 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
         Expanded(
           child: SingleChildScrollView(
             child: DataTable(
-              headingRowColor:
-                  WidgetStateProperty.all(Colors.grey.shade100),
+              headingRowColor: adminTableHeadingRowColor(),
+              horizontalMargin: AdminSpacing.md,
+              columnSpacing: AdminSpacing.lg,
               columns: const [
                 DataColumn(label: Text('#')),
                 DataColumn(label: Text('Adm. No.')),
@@ -980,11 +1048,13 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
               rows: sorted.asMap().entries.map((entry) {
                 final rank = entry.key + 1;
                 final s = entry.value;
-                return DataRow(cells: [
+                return DataRow(
+                  color: adminDataRowColor(entry.key),
+                  cells: [
                   DataCell(Text('$rank',
                       style: const TextStyle(
                           fontWeight: FontWeight.w600,
-                          color: Colors.grey))),
+                          color: AdminColors.textMuted))),
                   DataCell(Text(s.admissionNumber)),
                   DataCell(Text(s.studentName)),
                   DataCell(Text(s.section ?? '-')),
@@ -1007,7 +1077,8 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
                       ),
                     ),
                   ),
-                ]);
+                ],
+                );
               }).toList(),
             ),
           ),

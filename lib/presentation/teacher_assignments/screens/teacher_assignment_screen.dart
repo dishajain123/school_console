@@ -1,6 +1,6 @@
 // lib/presentation/teacher_assignments/screens/teacher_assignment_screen.dart  [Admin Console]
 // Phase 4 — Teacher Assignment Management.
-// PRINCIPAL / SUPERADMIN: assign teachers to subject + class + section per academic year,
+// PRINCIPAL / STAFF_ADMIN: assign teachers to subject + class + section per academic year,
 // view all assignments, update reassignments, delete assignments.
 // History: each assignment is tied to an academic_year_id. Old-year assignments remain
 // in the database as long as they are not explicitly deleted, forming per-year history.
@@ -27,6 +27,7 @@ import '../../../core/theme/admin_colors.dart';
 import '../../../domains/providers/active_year_provider.dart';
 import '../../../domains/providers/auth_provider.dart';
 import '../../common/layout/admin_scaffold.dart';
+import '../../common/widgets/admin_layout/admin_empty_state.dart';
 import '../../common/widgets/admin_layout/admin_filter_card.dart';
 import '../../common/widgets/admin_layout/admin_page_header.dart';
 import '../../common/widgets/admin_layout/admin_spacing.dart';
@@ -595,7 +596,7 @@ class _TeacherAssignmentScreenState
     if (user == null) return false;
     final role = user.role.toUpperCase();
     return role == 'PRINCIPAL' ||
-        role == 'SUPERADMIN' ||
+        role == 'STAFF_ADMIN' ||
         user.permissions.contains('teacher_assignment:manage');
   }
 
@@ -840,10 +841,13 @@ class _TeacherAssignmentScreenState
             onPressed: () => Navigator.of(ctx).pop(false),
             child: const Text('Cancel'),
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: AdminColors.danger,
+              foregroundColor: AdminColors.textOnPrimary,
+            ),
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Remove', style: TextStyle(color: Colors.white)),
+            child: const Text('Remove'),
           ),
         ],
       ),
@@ -887,15 +891,18 @@ class _TeacherAssignmentScreenState
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   // Teacher
-                  DropdownButtonFormField<String>(
-                    value: selTeacherId,
+                  DropdownButtonFormField<String?>(
+                    key: ValueKey(
+                      'dlg_ct_${selTeacherId}_${selStandardId}_${sectionOptions.length}_${subjectOptions.length}',
+                    ),
+                    initialValue: selTeacherId,
                     decoration: const InputDecoration(
                       labelText: 'Teacher *',
                       border: OutlineInputBorder(),
                     ),
                     items: _teachers
                         .map(
-                          (t) => DropdownMenuItem<String>(
+                          (t) => DropdownMenuItem<String?>(
                             value: t.id,
                             child: Text(
                               t.hasProfile
@@ -909,15 +916,18 @@ class _TeacherAssignmentScreenState
                   ),
                   const SizedBox(height: 12),
                   // Class
-                  DropdownButtonFormField<String>(
-                    value: selStandardId,
+                  DropdownButtonFormField<String?>(
+                    key: ValueKey(
+                      'dlg_cs_${selStandardId}_${sectionOptions.length}',
+                    ),
+                    initialValue: selStandardId,
                     decoration: const InputDecoration(
                       labelText: 'Class *',
                       border: OutlineInputBorder(),
                     ),
                     items: _standards
                         .map(
-                          (s) => DropdownMenuItem<String>(
+                          (s) => DropdownMenuItem<String?>(
                             value: s.id,
                             child: Text(s.name),
                           ),
@@ -946,15 +956,18 @@ class _TeacherAssignmentScreenState
                   ),
                   const SizedBox(height: 12),
                   // Section
-                  DropdownButtonFormField<String>(
-                    value: selSection,
+                  DropdownButtonFormField<String?>(
+                    key: ValueKey(
+                      'dlg_csec_${selSection}_${sectionOptions.length}',
+                    ),
+                    initialValue: selSection,
                     decoration: const InputDecoration(
                       labelText: 'Section *',
                       border: OutlineInputBorder(),
                     ),
                     items: sectionOptions
                         .map(
-                          (s) => DropdownMenuItem<String>(
+                          (s) => DropdownMenuItem<String?>(
                             value: s.id,
                             child: Text(s.name),
                           ),
@@ -966,15 +979,18 @@ class _TeacherAssignmentScreenState
                   ),
                   const SizedBox(height: 12),
                   // Subject
-                  DropdownButtonFormField<String>(
-                    value: selSubjectId,
+                  DropdownButtonFormField<String?>(
+                    key: ValueKey(
+                      'dlg_csub_${selSubjectId}_${subjectOptions.length}',
+                    ),
+                    initialValue: selSubjectId,
                     decoration: const InputDecoration(
                       labelText: 'Subject *',
                       border: OutlineInputBorder(),
                     ),
                     items: subjectOptions
                         .map(
-                          (s) => DropdownMenuItem<String>(
+                          (s) => DropdownMenuItem<String?>(
                             value: s.id,
                             child: Text(s.name),
                           ),
@@ -1104,15 +1120,16 @@ class _TeacherAssignmentScreenState
                   'This copies this teacher\'s class-section-subject assignments from source year to target year. You can edit rows after copy.',
                 ),
                 const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  value: sourceYearId.isEmpty ? null : sourceYearId,
+                DropdownButtonFormField<String?>(
+                  key: ValueKey('re_src_${sourceYearId}_${_years.length}'),
+                  initialValue: sourceYearId.isEmpty ? null : sourceYearId,
                   decoration: const InputDecoration(
                     labelText: 'Source Academic Year',
                     border: OutlineInputBorder(),
                   ),
                   items: _years
                       .map(
-                        (y) => DropdownMenuItem<String>(
+                        (y) => DropdownMenuItem<String?>(
                           value: y['id']?.toString(),
                           child: Text(y['name']?.toString() ?? ''),
                         ),
@@ -1135,8 +1152,9 @@ class _TeacherAssignmentScreenState
                   },
                 ),
                 const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  value: targetYearId.isEmpty ? null : targetYearId,
+                DropdownButtonFormField<String?>(
+                  key: ValueKey('re_tgt_${targetYearId}_$sourceYearId'),
+                  initialValue: targetYearId.isEmpty ? null : targetYearId,
                   decoration: const InputDecoration(
                     labelText: 'Target Academic Year',
                     border: OutlineInputBorder(),
@@ -1144,7 +1162,7 @@ class _TeacherAssignmentScreenState
                   items: _years
                       .where((y) => y['id']?.toString() != sourceYearId)
                       .map(
-                        (y) => DropdownMenuItem<String>(
+                        (y) => DropdownMenuItem<String?>(
                           value: y['id']?.toString(),
                           child: Text(y['name']?.toString() ?? ''),
                         ),
@@ -1249,7 +1267,8 @@ class _TeacherAssignmentScreenState
                 children: [
                   // Year
                   DropdownButtonFormField<String>(
-                    value: selYearId,
+                    key: ValueKey('ed_y_$selYearId'),
+                    initialValue: selYearId,
                     decoration: const InputDecoration(
                       labelText: 'Academic Year *',
                       border: OutlineInputBorder(),
@@ -1268,7 +1287,8 @@ class _TeacherAssignmentScreenState
                   const SizedBox(height: 12),
                   // Class
                   DropdownButtonFormField<String>(
-                    value: selStandardId,
+                    key: ValueKey('ed_std_${selStandardId}_$selYearId'),
+                    initialValue: selStandardId,
                     decoration: const InputDecoration(
                       labelText: 'Class *',
                       border: OutlineInputBorder(),
@@ -1301,8 +1321,11 @@ class _TeacherAssignmentScreenState
                   ),
                   const SizedBox(height: 12),
                   // Section
-                  DropdownButtonFormField<String>(
-                    value: sectionOptions.any((s) => s.id == selSection)
+                  DropdownButtonFormField<String?>(
+                    key: ValueKey(
+                      'ed_sec_${selSection}_${sectionOptions.map((e) => e.id).join(',')}',
+                    ),
+                    initialValue: sectionOptions.any((s) => s.id == selSection)
                         ? selSection
                         : null,
                     decoration: const InputDecoration(
@@ -1311,7 +1334,7 @@ class _TeacherAssignmentScreenState
                     ),
                     items: sectionOptions
                         .map(
-                          (s) => DropdownMenuItem<String>(
+                          (s) => DropdownMenuItem<String?>(
                             value: s.id,
                             child: Text(s.name),
                           ),
@@ -1325,7 +1348,8 @@ class _TeacherAssignmentScreenState
                   const SizedBox(height: 12),
                   // Subject
                   DropdownButtonFormField<String>(
-                    value: selSubjectId,
+                    key: ValueKey('ed_sub_${selSubjectId}_${subjects.length}'),
+                    initialValue: selSubjectId,
                     decoration: const InputDecoration(
                       labelText: 'Subject *',
                       border: OutlineInputBorder(),
@@ -1643,7 +1667,7 @@ class _TeacherAssignmentScreenState
                       label: const Text('Assign teacher'),
                       style: FilledButton.styleFrom(
                         backgroundColor: AdminColors.primaryAction,
-                        foregroundColor: Colors.white,
+                        foregroundColor: AdminColors.textOnPrimary,
                         padding: const EdgeInsets.symmetric(
                           horizontal: 18,
                           vertical: 12,
@@ -1684,8 +1708,10 @@ class _TeacherAssignmentScreenState
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  DropdownButtonFormField<String>(
-                    value: _selectedYearId,
+                  DropdownButtonFormField<String?>(
+                    key: ValueKey<String?>(
+                        'ta_year_${_selectedYearId}_${_years.length}'),
+                    initialValue: _selectedYearId,
                     decoration: const InputDecoration(
                       labelText: 'Academic year',
                       isDense: true,
@@ -1698,7 +1724,7 @@ class _TeacherAssignmentScreenState
                       final items =
                           _years
                               .map(
-                                (y) => DropdownMenuItem<String>(
+                                (y) => DropdownMenuItem<String?>(
                                   value: y['id']?.toString(),
                                   child: Text(
                                     '${y['name']}${y['is_active'] == true ? ' • Active' : ''}',
@@ -1708,7 +1734,7 @@ class _TeacherAssignmentScreenState
                               .toList()
                             ..insert(
                               0,
-                              const DropdownMenuItem<String>(
+                              const DropdownMenuItem<String?>(
                                 value: null,
                                 child: Text('All years'),
                               ),
@@ -1788,31 +1814,16 @@ class _TeacherAssignmentScreenState
             // ── Assignments table ─────────────────────────────────────────
             Expanded(
               child: _assignments.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.assignment_ind_outlined,
-                            size: 56,
-                            color: Colors.grey.shade400,
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            'Choose year and filters, then tap 🔍 Load.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Colors.grey.shade700,
-                              fontSize: 14,
-                            ),
-                          ),
-                        ],
-                      ),
+                  ? const AdminEmptyState(
+                      icon: Icons.assignment_ind_outlined,
+                      title: 'No assignments loaded',
+                      message:
+                          'Choose year and filters, then tap Load (🔍) to fetch rows for this tab.',
                     )
                   : SingleChildScrollView(
                       child: DataTable(
                         headingRowColor: WidgetStateProperty.all(
-                          Colors.grey.shade100,
+                          AdminColors.rowStripe,
                         ),
                         columns: [
                           const DataColumn(label: Text('Teacher')),
@@ -1852,7 +1863,7 @@ class _TeacherAssignmentScreenState
                                         icon: const Icon(
                                           Icons.edit_outlined,
                                           size: 18,
-                                          color: Colors.blue,
+                                          color: AdminColors.primaryAction,
                                         ),
                                         tooltip: 'Edit',
                                         onPressed: () => _showEditDialog(a),
@@ -1861,7 +1872,7 @@ class _TeacherAssignmentScreenState
                                         icon: const Icon(
                                           Icons.delete_outline,
                                           size: 18,
-                                          color: Colors.red,
+                                          color: AdminColors.danger,
                                         ),
                                         tooltip: 'Remove',
                                         onPressed: () =>
@@ -1895,8 +1906,11 @@ class _TeacherAssignmentScreenState
         .where((t) => _teacherAssignedBySelectionId[t.id] == true)
         .length;
 
-    final teacherDropdown = DropdownButtonFormField<String>(
-      value: _selectedTeacherId,
+    final teacherDropdown = DropdownButtonFormField<String?>(
+      key: ValueKey<String?>(
+        'ta_teacher_${_selectedTeacherId}_${_visibleTeachers.length}_$_teacherStatusFilter',
+      ),
+      initialValue: _selectedTeacherId,
       decoration: const InputDecoration(
         labelText: 'Teacher',
         isDense: true,
@@ -1905,7 +1919,7 @@ class _TeacherAssignmentScreenState
       isExpanded: true,
       items: teachers
           .map(
-            (t) => DropdownMenuItem<String>(
+            (t) => DropdownMenuItem<String?>(
               value: t.id,
               child: Text(
                 t.hasProfile
@@ -2117,8 +2131,11 @@ class _TeacherAssignmentScreenState
               children: [
                 SizedBox(
                   width: narrow ? double.infinity : 220,
-                  child: DropdownButtonFormField<String>(
-                    value: _filterStandardId,
+                  child: DropdownButtonFormField<String?>(
+                    key: ValueKey<String?>(
+                      'ta_fstd_${_filterStandardId}_${_standards.length}',
+                    ),
+                    initialValue: _filterStandardId,
                     decoration: const InputDecoration(
                       labelText: 'Class',
                       isDense: true,
@@ -2126,7 +2143,7 @@ class _TeacherAssignmentScreenState
                     isExpanded: true,
                     items: _standards
                         .map(
-                          (s) => DropdownMenuItem<String>(
+                          (s) => DropdownMenuItem<String?>(
                             value: s.id,
                             child: Text(s.name),
                           ),
@@ -2150,7 +2167,17 @@ class _TeacherAssignmentScreenState
                 SizedBox(
                   width: narrow ? double.infinity : 180,
                   child: DropdownButtonFormField<String>(
-                    value: _filterSection,
+                    key: ValueKey<String>(
+                      'ta_fsec_${_filterSection}_${_filterSections.length}_$_filterStandardId',
+                    ),
+                    initialValue: () {
+                      if (_filterSection == null || _filterSection!.isEmpty) {
+                        return '';
+                      }
+                      return _filterSections.any((s) => s.id == _filterSection)
+                          ? _filterSection!
+                          : '';
+                    }(),
                     decoration: const InputDecoration(
                       labelText: 'Section',
                       isDense: true,
@@ -2228,33 +2255,46 @@ class _Banner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = isError ? Colors.red : Colors.green;
+    final bg = isError
+        ? AdminColors.dangerSurface
+        : AdminColors.success.withValues(alpha: 0.1);
+    final border = isError
+        ? AdminColors.danger.withValues(alpha: 0.28)
+        : AdminColors.success.withValues(alpha: 0.35);
+    final iconColor = isError ? AdminColors.danger : AdminColors.success;
+    final textColor =
+        isError ? AdminColors.textPrimary : AdminColors.textPrimary;
+    final dismissColor = AdminColors.textMuted;
+
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      margin: const EdgeInsets.only(bottom: AdminSpacing.sm),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AdminSpacing.sm,
+        vertical: 10,
+      ),
       decoration: BoxDecoration(
-        color: color.shade50,
+        color: bg,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: color.shade200),
+        border: Border.all(color: border),
       ),
       child: Row(
         children: [
           Icon(
             isError ? Icons.error_outline : Icons.check_circle_outline,
-            color: color.shade700,
+            color: iconColor,
             size: 16,
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: AdminSpacing.sm),
           Expanded(
             child: Text(
               message,
-              style: TextStyle(fontSize: 13, color: color.shade800),
+              style: TextStyle(fontSize: 13, color: textColor, height: 1.35),
             ),
           ),
           GestureDetector(
             onTap: onDismiss,
-            child: Icon(Icons.close, size: 14, color: color.shade400),
+            child: Icon(Icons.close, size: 14, color: dismissColor),
           ),
         ],
       ),

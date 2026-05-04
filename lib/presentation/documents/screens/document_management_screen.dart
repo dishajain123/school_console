@@ -3,7 +3,7 @@
 // Staff Admin manages all student documents: list, verify/reject, set requirements, upload.
 // APIs used:
 //   GET  /documents?student_id={id}    — list student documents
-//   GET  /documents                    — list all school documents (admin only)
+//   GET  /documents?status_filter=…   — list documents (all | requested | pending | approved | rejected)
 //   PATCH /documents/{id}/verify       — approve or reject a document
 //   GET  /documents/requirements       — get school document requirements
 //   PUT  /documents/requirements       — set/update requirements
@@ -63,15 +63,15 @@ class _Document {
   Color get statusColor {
     switch (status.toUpperCase()) {
       case 'READY':
-        return Colors.green;
+        return AdminColors.success;
       case 'PROCESSING':
-        return Colors.orange;
+        return const Color(0xFFEA580C);
       case 'PENDING':
-        return Colors.blue;
+        return AdminColors.primaryAction;
       case 'FAILED':
-        return Colors.red;
+        return AdminColors.danger;
       default:
-        return Colors.grey;
+        return AdminColors.textMuted;
     }
   }
 
@@ -142,11 +142,14 @@ class _DocRepository {
     String? academicYearId,
     String? standardId,
     String? section,
+    String? statusFilter,
   }) async {
     final query = <String, dynamic>{
       if (academicYearId != null && academicYearId.trim().isNotEmpty) 'academic_year_id': academicYearId,
       if (standardId != null && standardId.trim().isNotEmpty) 'standard_id': standardId,
       if (section != null && section.trim().isNotEmpty) 'section': section.trim(),
+      if (statusFilter != null && statusFilter.trim().isNotEmpty)
+        'status_filter': statusFilter.trim().toLowerCase(),
     };
     final r = await _dio.dio.get<Map<String, dynamic>>(
       ApiConstants.documents,
@@ -157,10 +160,17 @@ class _DocRepository {
         .toList();
   }
 
-  Future<List<_Document>> listStudentDocuments(String studentId) async {
+  Future<List<_Document>> listStudentDocuments(
+    String studentId, {
+    String? statusFilter,
+  }) async {
     final r = await _dio.dio.get<Map<String, dynamic>>(
       ApiConstants.documents,
-      queryParameters: {'student_id': studentId},
+      queryParameters: {
+        'student_id': studentId,
+        if (statusFilter != null && statusFilter.trim().isNotEmpty)
+          'status_filter': statusFilter.trim().toLowerCase(),
+      },
     );
     return ((r.data?['items'] as List?) ?? [])
         .map((e) => _Document.fromJson(Map<String, dynamic>.from(e as Map)))
@@ -270,8 +280,10 @@ class _DocumentManagementScreenState
   late final TabController _tabController;
   late final _DocRepository _repo;
 
-  /// Full list from last API load (unfiltered). Used for Pending Review + student filter.
+  /// Main table: last API load for the selected workflow filter (server-side).
   List<_Document> _allDocumentsRaw = [];
+  /// Always loaded with `status_filter=pending` for the Pending review tab.
+  List<_Document> _pendingReviewDocs = [];
   List<_Document> _documents = [];
   List<_DocRequirement> _requirements = [];
   List<Map<String, dynamic>> _years = [];
@@ -287,7 +299,8 @@ class _DocumentManagementScreenState
   final TextEditingController _sectionCtrl = TextEditingController();
   final TextEditingController _studentNameSearchCtrl = TextEditingController();
 
-  String? _statusFilter;
+  /// null = all; otherwise backend `DocumentWorkflowFilter` value.
+  String? _workflowStatusFilter;
   bool _loading = false;
   String? _error;
   String? _success;
@@ -374,26 +387,16 @@ class _DocumentManagementScreenState
       _studentNameSearchCtrl.clear();
       _selectedStandardId = null;
       _sectionCtrl.clear();
-      _statusFilter = null;
+      _workflowStatusFilter = null;
     });
     _loadDocuments();
   }
 
   void _applyDocumentFilters() {
-    var list = List<_Document>.from(_allDocumentsRaw);
-    list = list.where(_documentMatchesStudentNameSearch).toList(growable: false);
-    if (_statusFilter == null) {
-      _documents = list;
-    } else if (_statusFilter == 'AWAITING_ADMIN') {
-      _documents = list
-          .where((d) =>
-              d.status.toUpperCase() == 'PENDING' && !d.hasFile)
-          .toList(growable: false);
-    } else {
-      _documents = list
-          .where((d) => d.status.toUpperCase() == _statusFilter)
-          .toList(growable: false);
-    }
+    final list = List<_Document>.from(_allDocumentsRaw)
+        .where(_documentMatchesStudentNameSearch)
+        .toList(growable: false);
+    _documents = list;
   }
 
   bool _canVerifyInUi(_Document doc) {
@@ -409,14 +412,28 @@ class _DocumentManagementScreenState
       _error = null;
     });
     try {
-      final docs = await _repo.listAllDocuments(
-        academicYearId: _selectedYearId,
-        standardId: _selectedStandardId,
-        section: _sectionCtrl.text,
-      );
+      final year = _selectedYearId;
+      final std = _selectedStandardId;
+      final sec = _sectionCtrl.text;
+      final wf = _workflowStatusFilter;
+      final pair = await Future.wait([
+        _repo.listAllDocuments(
+          academicYearId: year,
+          standardId: std,
+          section: sec,
+          statusFilter: wf,
+        ),
+        _repo.listAllDocuments(
+          academicYearId: year,
+          standardId: std,
+          section: sec,
+          statusFilter: 'pending',
+        ),
+      ]);
       if (!mounted) return;
       setState(() {
-        _allDocumentsRaw = docs;
+        _allDocumentsRaw = pair[0];
+        _pendingReviewDocs = pair[1];
         _applyDocumentFilters();
       });
     } catch (e) {
@@ -483,11 +500,13 @@ class _DocumentManagementScreenState
           TextButton(
               onPressed: () => Navigator.of(ctx).pop(false),
               child: const Text('Cancel')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: AdminColors.danger,
+              foregroundColor: AdminColors.textOnPrimary,
+            ),
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Reject',
-                style: TextStyle(color: Colors.white)),
+            child: const Text('Reject'),
           ),
         ],
       ),
@@ -785,7 +804,7 @@ class _DocumentManagementScreenState
                                 onPressed: editableItems.length <= 1
                                     ? null
                                     : () => setDialog(() => editableItems.removeAt(index)),
-                                icon: const Icon(Icons.delete_outline, color: Colors.red),
+                                icon: const Icon(Icons.delete_outline, color: AdminColors.danger),
                               ),
                             ],
                           ),
@@ -941,26 +960,27 @@ class _DocumentManagementScreenState
                   const SizedBox(height: 8),
                   Text(
                     'Previous note: ${doc.reviewNote}',
-                    style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
+                    style: TextStyle(
+                        color: AdminColors.textSecondary, fontSize: 13),
                   ),
                 ],
                 const SizedBox(height: 16),
                 if (!doc.hasFile)
-                  const Text(
+                  Text(
                     'No file attached yet. Upload a file from “Upload Document” or wait for the family to upload.',
-                    style: TextStyle(color: Colors.orange),
+                    style: TextStyle(color: const Color(0xFFEA580C)),
                   )
                 else if (!_canVerifyInUi(doc) &&
                     doc.status.toUpperCase() == 'READY')
                   const Text(
                     'This document is already verified.',
-                    style: TextStyle(color: Colors.green),
+                    style: TextStyle(color: AdminColors.success),
                   )
                 else if (!_canVerifyInUi(doc) &&
                     doc.status.toUpperCase() == 'FAILED')
                   const Text(
                     'This document was rejected. The family may upload again.',
-                    style: TextStyle(color: Colors.red),
+                    style: TextStyle(color: AdminColors.danger),
                   ),
               ],
             ),
@@ -981,7 +1001,7 @@ class _DocumentManagementScreenState
             ),
           if (_canVerifyInUi(doc)) ...[
             TextButton(
-              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              style: TextButton.styleFrom(foregroundColor: AdminColors.danger),
               onPressed: () {
                 Navigator.of(ctx).pop();
                 _showRejectDialog(doc);
@@ -989,7 +1009,10 @@ class _DocumentManagementScreenState
               child: const Text('Reject'),
             ),
             FilledButton.icon(
-              style: FilledButton.styleFrom(backgroundColor: Colors.green),
+              style: FilledButton.styleFrom(
+                backgroundColor: AdminColors.success,
+                foregroundColor: AdminColors.textOnPrimary,
+              ),
               onPressed: () async {
                 Navigator.of(ctx).pop();
                 await _verify(doc, true);
@@ -1006,7 +1029,7 @@ class _DocumentManagementScreenState
   @override
   Widget build(BuildContext context) {
     return AdminScaffold(
-      title: '',
+      title: 'Documents',
       child: Padding(
         padding: const EdgeInsets.all(AdminSpacing.pagePadding),
         child: Column(
@@ -1201,7 +1224,7 @@ class _DocumentManagementScreenState
                             SizedBox(
                               width: fieldW(148),
                               child: DropdownButtonFormField<String?>(
-                                value: _statusFilter,
+                                value: _workflowStatusFilter,
                                 isExpanded: true,
                                 decoration: const InputDecoration(
                                   labelText: 'Status',
@@ -1216,32 +1239,26 @@ class _DocumentManagementScreenState
                                     value: null,
                                     child: Text('All'),
                                   ),
-                                  DropdownMenuItem(
-                                    value: 'AWAITING_ADMIN',
-                                    child: Text('Awaiting admin'),
+                                  DropdownMenuItem<String?>(
+                                    value: 'requested',
+                                    child: Text('Requested'),
                                   ),
-                                  DropdownMenuItem(
-                                    value: 'PENDING',
+                                  DropdownMenuItem<String?>(
+                                    value: 'pending',
                                     child: Text('Pending'),
                                   ),
-                                  DropdownMenuItem(
-                                    value: 'PROCESSING',
-                                    child: Text('Processing'),
+                                  DropdownMenuItem<String?>(
+                                    value: 'approved',
+                                    child: Text('Approved'),
                                   ),
-                                  DropdownMenuItem(
-                                    value: 'READY',
-                                    child: Text('Ready'),
-                                  ),
-                                  DropdownMenuItem(
-                                    value: 'FAILED',
-                                    child: Text('Failed'),
+                                  DropdownMenuItem<String?>(
+                                    value: 'rejected',
+                                    child: Text('Rejected'),
                                   ),
                                 ],
                                 onChanged: (v) {
-                                  setState(() {
-                                    _statusFilter = v;
-                                    _applyDocumentFilters();
-                                  });
+                                  setState(() => _workflowStatusFilter = v);
+                                  _loadDocuments();
                                 },
                               ),
                             ),
@@ -1324,16 +1341,8 @@ class _DocumentManagementScreenState
   // ── Tab 1: Pending Review ───────────────────────────────────────────────────
 
   Widget _buildPendingTab() {
-    // Same raw load as “All documents”, not the status-filtered `_documents` list.
-    var base = List<_Document>.from(_allDocumentsRaw)
+    final pending = List<_Document>.from(_pendingReviewDocs)
         .where(_documentMatchesStudentNameSearch)
-        .toList(growable: false);
-    // Awaiting admin verification: uploaded (PROCESSING), not yet reviewed.
-    final pending = base
-        .where((d) =>
-            d.hasFile &&
-            (d.reviewedAt == null || d.reviewedAt!.trim().isEmpty) &&
-            d.status.toUpperCase() == 'PROCESSING')
         .toList(growable: false);
 
     if (pending.isEmpty) {
@@ -1487,7 +1496,7 @@ class _DocumentManagementScreenState
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: DataTable(
-          headingRowColor: WidgetStateProperty.all(AdminColors.borderSubtle),
+          headingRowColor: adminTableHeadingRowColor(),
           border: TableBorder(
             horizontalInside: BorderSide(color: AdminColors.border),
             top: BorderSide(color: AdminColors.border),
@@ -1562,8 +1571,7 @@ class _DocumentManagementScreenState
                 child: SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: DataTable(
-                    headingRowColor:
-                        WidgetStateProperty.all(AdminColors.borderSubtle),
+                    headingRowColor: adminTableHeadingRowColor(),
                     border: TableBorder(
                       horizontalInside:
                           BorderSide(color: AdminColors.border),
@@ -1629,13 +1637,24 @@ class _DocumentManagementScreenState
 
   Widget _buildUsersTab() {
     if (_usersListError != null) {
+      final theme = Theme.of(context);
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(AdminSpacing.md),
-          child: Text(
-            _usersListError!,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.red, fontSize: 13),
+          child: Material(
+            color: AdminColors.dangerSurface,
+            borderRadius: BorderRadius.circular(10),
+            child: Padding(
+              padding: const EdgeInsets.all(AdminSpacing.md),
+              child: SelectableText(
+                _usersListError!,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: AdminColors.danger,
+                  fontSize: 13,
+                ),
+              ),
+            ),
           ),
         ),
       );
@@ -1701,8 +1720,7 @@ class _DocumentManagementScreenState
               scrollDirection: Axis.horizontal,
               child: SingleChildScrollView(
                 child: DataTable(
-                  headingRowColor:
-                      WidgetStateProperty.all(AdminColors.borderSubtle),
+                  headingRowColor: adminTableHeadingRowColor(),
                   border: TableBorder(
                     horizontalInside: BorderSide(color: AdminColors.border),
                     top: BorderSide(color: AdminColors.border),
@@ -1734,7 +1752,9 @@ class _DocumentManagementScreenState
                           Icon(
                             active ? Icons.check_circle_outline : Icons.cancel_outlined,
                             size: 16,
-                            color: active ? Colors.green : AdminColors.textMuted,
+                            color: active
+                                ? AdminColors.success
+                                : AdminColors.textMuted,
                           ),
                         ),
                       ],
@@ -1772,25 +1792,40 @@ class _Banner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = isError ? Colors.red : Colors.green;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      margin: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(
-        color: color.shade50,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.shade200),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-              child: Text(message,
-                  style: TextStyle(color: color.shade700, fontSize: 13))),
-          GestureDetector(
-              onTap: onDismiss,
-              child: Icon(Icons.close, size: 14, color: color.shade400)),
-        ],
+    final theme = Theme.of(context);
+    return Material(
+      color: isError
+          ? AdminColors.dangerSurface
+          : AdminColors.success.withValues(alpha: 0.1),
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AdminSpacing.md,
+          vertical: AdminSpacing.sm,
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: SelectableText(
+                message,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: isError ? AdminColors.danger : AdminColors.success,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              tooltip: 'Dismiss',
+              onPressed: onDismiss,
+              icon: Icon(
+                Icons.close_rounded,
+                size: 18,
+                color: AdminColors.textMuted,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

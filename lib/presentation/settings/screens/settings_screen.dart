@@ -1,5 +1,5 @@
 // lib/presentation/settings/screens/settings_screen.dart  [Admin Console]
-// Phase 5: Settings module — school configuration, admin management (SUPERADMIN only).
+// Phase 5: Settings module — school configuration, admin management (STAFF_ADMIN only).
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -70,7 +70,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool get _canManageSettings {
     final user = ref.read(authControllerProvider).valueOrNull;
     if (user == null) return false;
-    if (user.role.toUpperCase() == 'SUPERADMIN') return true;
+    if (user.role.toUpperCase() == 'STAFF_ADMIN') return true;
     return user.permissions.contains('settings:manage');
   }
 
@@ -147,7 +147,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             onPressed: () => Navigator.of(ctx).pop(),
             child: const Text('Cancel'),
           ),
-          ElevatedButton(
+          FilledButton(
             onPressed: () async {
               keyInput = key;
               valueInput = valueCtrl.text;
@@ -165,7 +165,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return AdminScaffold(
-      title: '',
+      title: 'Settings',
       child: Padding(
         padding: const EdgeInsets.all(AdminSpacing.pagePadding),
         child: Column(
@@ -185,25 +185,27 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             if (_error != null)
               Padding(
                 padding: const EdgeInsets.only(bottom: AdminSpacing.md),
-                child: Card(
-                  color: AdminColors.surface,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    side: BorderSide(color: AdminColors.border),
-                  ),
+                child: Material(
+                  color: AdminColors.dangerSurface,
+                  borderRadius: BorderRadius.circular(10),
                   child: Padding(
                     padding: const EdgeInsets.all(AdminSpacing.md),
                     child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(Icons.error_outline,
-                            color: AdminColors.textSecondary, size: 20),
+                        Icon(
+                          Icons.error_outline_rounded,
+                          color: AdminColors.danger,
+                          size: 20,
+                        ),
                         const SizedBox(width: AdminSpacing.sm),
                         Expanded(
-                          child: Text(
+                          child: SelectableText(
                             _error!,
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: AdminColors.textPrimary,
-                                ),
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(color: AdminColors.danger),
                           ),
                         ),
                         TextButton(
@@ -217,7 +219,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             Expanded(
               child: _loading
-                  ? const AdminLoadingPlaceholder()
+                  ? const AdminLoadingPlaceholder(
+                      message: 'Loading settings…',
+                      height: 280,
+                    )
                   : SingleChildScrollView(
                       child: ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 760),
@@ -315,7 +320,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                           const NeverScrollableScrollPhysics(),
                                       itemCount: _settings.length,
                                       separatorBuilder: (_, _) =>
-                                          const Divider(height: 1),
+                                          const Divider(
+                                            height: 1,
+                                            color: AdminColors.border,
+                                          ),
                                       itemBuilder: (context, index) {
                                         final item = _settings[index];
                                         final key = _settingKey(item);

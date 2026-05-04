@@ -2,6 +2,9 @@
 class RouteNames {
   static const String login = '/login';
 
+  /// Signed-in landing (sidebar home).
+  static const String dashboard = '/dashboard';
+
   // Phase 1 — Approvals & Audit
   static const String approvals = '/approvals';
   static const String approvalDetail = '/approvals/:userId';

@@ -5,10 +5,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/theme/admin_colors.dart';
 import '../../../data/models/registration/approval_action.dart';
 import '../../../data/models/registration/registration_request.dart';
 import '../../../domains/providers/approval_provider.dart';
 import '../../common/layout/admin_scaffold.dart';
+import '../../common/widgets/admin_layout/admin_empty_state.dart';
+import '../../common/widgets/admin_layout/admin_filter_card.dart';
+import '../../common/widgets/admin_layout/admin_loading_placeholder.dart';
+import '../../common/widgets/admin_layout/admin_page_header.dart';
+import '../../common/widgets/admin_layout/admin_spacing.dart';
+import '../../common/widgets/admin_layout/admin_surface_card.dart';
 import '../widgets/approval_table.dart';
 
 class ApprovalQueueScreen extends ConsumerStatefulWidget {
@@ -50,6 +57,17 @@ class _ApprovalQueueScreenState extends ConsumerState<ApprovalQueueScreen> {
         q: _searchCtrl.text.trim().isEmpty ? null : _searchCtrl.text.trim(),
       );
 
+  void _resetFilters() {
+    setState(() {
+      _status = null;
+      _role = null;
+      _source = null;
+      _searchCtrl.clear();
+    });
+  }
+
+  void _applyFilters() => setState(() {});
+
   Future<void> _runBulkAction(
     List<RegistrationRequest> items,
     ApprovalActionType action,
@@ -83,7 +101,7 @@ class _ApprovalQueueScreenState extends ConsumerState<ApprovalQueueScreen> {
               onPressed: () => Navigator.of(context).pop(false),
               child: const Text('Cancel'),
             ),
-            ElevatedButton(
+            FilledButton(
               onPressed: () => Navigator.of(context).pop(true),
               child: const Text('Confirm'),
             ),
@@ -103,7 +121,7 @@ class _ApprovalQueueScreenState extends ConsumerState<ApprovalQueueScreen> {
               onPressed: () => Navigator.of(context).pop(false),
               child: const Text('Cancel'),
             ),
-            ElevatedButton(
+            FilledButton(
               onPressed: () => Navigator.of(context).pop(true),
               child: const Text('Approve'),
             ),
@@ -154,64 +172,101 @@ class _ApprovalQueueScreenState extends ConsumerState<ApprovalQueueScreen> {
     return AdminScaffold(
       title: 'Approval Queue',
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AdminSpacing.pagePadding),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _searchCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Search name/email/phone',
-                      prefixIcon: Icon(Icons.search),
-                    ),
-                    onSubmitted: (_) => setState(() {}),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                DropdownButton<String?>(
-                  value: _status,
-                  hint: const Text('Status'),
-                  items: const [
-                    DropdownMenuItem<String?>(value: null, child: Text('All')),
-                    DropdownMenuItem<String?>(
-                        value: 'PENDING_APPROVAL', child: Text('Pending')),
-                    DropdownMenuItem<String?>(
-                        value: 'ACTIVE', child: Text('Approved')),
-                    DropdownMenuItem<String?>(value: 'ON_HOLD', child: Text('On Hold')),
-                    DropdownMenuItem<String?>(value: 'REJECTED', child: Text('Rejected')),
-                  ],
-                  onChanged: (v) => setState(() => _status = v),
-                ),
-                const SizedBox(width: 8),
-                DropdownButton<String?>(
-                  value: _role,
-                  hint: const Text('Role'),
-                  items: const [
-                    DropdownMenuItem<String?>(value: null, child: Text('All')),
-                    DropdownMenuItem<String?>(value: 'STUDENT', child: Text('Student')),
-                    DropdownMenuItem<String?>(value: 'PARENT', child: Text('Parent')),
-                    DropdownMenuItem<String?>(value: 'TEACHER', child: Text('Teacher')),
-                    DropdownMenuItem<String?>(value: 'PRINCIPAL', child: Text('Principal')),
-                    DropdownMenuItem<String?>(value: 'TRUSTEE', child: Text('Trustee')),
-                  ],
-                  onChanged: (v) => setState(() => _role = v),
-                ),
-                const SizedBox(width: 8),
-                IconButton(
-                  tooltip: 'Apply filters',
-                  onPressed: () => setState(() {}),
-                  icon: const Icon(Icons.filter_alt),
-                ),
+            AdminPageHeader(
+              title: 'Approval queue',
+              subtitle:
+                  'Search, filter, and act on registration requests. Refreshes every 10s.',
+              iconActions: [
                 IconButton(
                   tooltip: 'Refresh',
-                  onPressed: () => ref.invalidate(approvalQueueFilteredProvider(_query)),
-                  icon: const Icon(Icons.refresh),
+                  onPressed: () =>
+                      ref.invalidate(approvalQueueFilteredProvider(_query)),
+                  icon: const Icon(Icons.refresh_rounded),
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            AdminFilterCard(
+              onReset: _resetFilters,
+              child: Wrap(
+                spacing: AdminSpacing.sm,
+                runSpacing: AdminSpacing.sm,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  SizedBox(
+                    width: 280,
+                    child: TextField(
+                      controller: _searchCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Search name, email, or phone',
+                        prefixIcon: Icon(Icons.search_rounded),
+                      ),
+                      onSubmitted: (_) => _applyFilters(),
+                    ),
+                  ),
+                  DropdownButton<String?>(
+                    value: _status,
+                    hint: const Text('Status'),
+                    items: const [
+                      DropdownMenuItem<String?>(value: null, child: Text('All')),
+                      DropdownMenuItem<String?>(
+                        value: 'PENDING_APPROVAL',
+                        child: Text('Pending'),
+                      ),
+                      DropdownMenuItem<String?>(
+                        value: 'ACTIVE',
+                        child: Text('Approved'),
+                      ),
+                      DropdownMenuItem<String?>(
+                        value: 'ON_HOLD',
+                        child: Text('On hold'),
+                      ),
+                      DropdownMenuItem<String?>(
+                        value: 'REJECTED',
+                        child: Text('Rejected'),
+                      ),
+                    ],
+                    onChanged: (v) => setState(() => _status = v),
+                  ),
+                  DropdownButton<String?>(
+                    value: _role,
+                    hint: const Text('Role'),
+                    items: const [
+                      DropdownMenuItem<String?>(value: null, child: Text('All')),
+                      DropdownMenuItem<String?>(
+                        value: 'STUDENT',
+                        child: Text('Student'),
+                      ),
+                      DropdownMenuItem<String?>(
+                        value: 'PARENT',
+                        child: Text('Parent'),
+                      ),
+                      DropdownMenuItem<String?>(
+                        value: 'TEACHER',
+                        child: Text('Teacher'),
+                      ),
+                      DropdownMenuItem<String?>(
+                        value: 'PRINCIPAL',
+                        child: Text('Principal'),
+                      ),
+                      DropdownMenuItem<String?>(
+                        value: 'TRUSTEE',
+                        child: Text('Trustee'),
+                      ),
+                    ],
+                    onChanged: (v) => setState(() => _role = v),
+                  ),
+                  TextButton(
+                    onPressed: _applyFilters,
+                    child: const Text('Apply'),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: AdminSpacing.md),
             Expanded(
               child: queue.when(
                 data: (items) {
@@ -220,77 +275,126 @@ class _ApprovalQueueScreenState extends ConsumerState<ApprovalQueueScreen> {
                           e.status == 'PENDING_APPROVAL' ||
                           e.status == 'ON_HOLD')
                       .toList();
-                  return Column(
-                    children: [
-                      Row(
-                        children: [
-                          Text('Selected: ${_selectedUserIds.length}'),
-                          const SizedBox(width: 12),
-                          ElevatedButton.icon(
-                            onPressed: (_selectedUserIds.isEmpty || _bulkLoading)
-                                ? null
-                                : () => _runBulkAction(
-                                      selectableItems,
-                                      ApprovalActionType.approve,
-                                    ),
-                            icon: const Icon(Icons.check_circle_outline),
-                            label: const Text('Approve Selected'),
-                          ),
-                          const SizedBox(width: 8),
-                          OutlinedButton.icon(
-                            onPressed: (_selectedUserIds.isEmpty || _bulkLoading)
-                                ? null
-                                : () => _runBulkAction(
-                                      selectableItems,
-                                      ApprovalActionType.reject,
-                                    ),
-                            icon: const Icon(Icons.cancel_outlined),
-                            label: const Text('Reject Selected'),
-                          ),
-                          const SizedBox(width: 8),
-                          if (_bulkLoading)
-                            const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Expanded(
-                        child: ApprovalTable(
-                          items: items,
-                          selectedUserIds: _selectedUserIds,
-                          onToggleSelect: (userId, selected) {
-                            setState(() {
-                              if (selected) {
-                                _selectedUserIds.add(userId);
-                              } else {
-                                _selectedUserIds.remove(userId);
-                              }
-                            });
-                          },
-                          onToggleSelectAll: (selected) {
-                            setState(() {
-                              if (selected) {
-                                _selectedUserIds
-                                  ..clear()
-                                  ..addAll(
-                                    selectableItems.map((e) => e.userId),
-                                  );
-                              } else {
-                                _selectedUserIds.clear();
-                              }
-                            });
-                          },
-                          onOpen: (item) => context.go('/approvals/${item.userId}'),
+
+                  if (items.isEmpty) {
+                    return AdminSurfaceCard(
+                      padding: const EdgeInsets.all(AdminSpacing.lg),
+                      child: AdminEmptyState(
+                        icon: Icons.verified_user_outlined,
+                        title: 'No requests match filters',
+                        message:
+                            'Try clearing search or filters to see more results.',
+                        action: OutlinedButton.icon(
+                          onPressed: _resetFilters,
+                          icon: const Icon(Icons.restart_alt_rounded, size: 18),
+                          label: const Text('Reset filters'),
                         ),
                       ),
-                    ],
+                    );
+                  }
+
+                  return AdminSurfaceCard(
+                    padding: const EdgeInsets.all(AdminSpacing.md),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Wrap(
+                          spacing: AdminSpacing.sm,
+                          runSpacing: AdminSpacing.sm,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Text(
+                              'Selected: ${_selectedUserIds.length}',
+                              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                                    color: AdminColors.textSecondary,
+                                  ),
+                            ),
+                            FilledButton.icon(
+                              onPressed: (_selectedUserIds.isEmpty || _bulkLoading)
+                                  ? null
+                                  : () => _runBulkAction(
+                                        selectableItems,
+                                        ApprovalActionType.approve,
+                                      ),
+                              icon: const Icon(Icons.check_circle_outline_rounded,
+                                  size: 18),
+                              label: const Text('Approve selected'),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed: (_selectedUserIds.isEmpty || _bulkLoading)
+                                  ? null
+                                  : () => _runBulkAction(
+                                        selectableItems,
+                                        ApprovalActionType.reject,
+                                      ),
+                              icon: const Icon(Icons.cancel_outlined, size: 18),
+                              label: const Text('Reject selected'),
+                            ),
+                            if (_bulkLoading)
+                              const SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: AdminSpacing.sm),
+                        const Divider(
+                          height: 1,
+                          color: AdminColors.borderSubtle,
+                        ),
+                        const SizedBox(height: AdminSpacing.sm),
+                        Expanded(
+                          child: ApprovalTable(
+                            items: items,
+                            selectedUserIds: _selectedUserIds,
+                            onToggleSelect: (userId, selected) {
+                              setState(() {
+                                if (selected) {
+                                  _selectedUserIds.add(userId);
+                                } else {
+                                  _selectedUserIds.remove(userId);
+                                }
+                              });
+                            },
+                            onToggleSelectAll: (selected) {
+                              setState(() {
+                                if (selected) {
+                                  _selectedUserIds
+                                    ..clear()
+                                    ..addAll(
+                                      selectableItems.map((e) => e.userId),
+                                    );
+                                } else {
+                                  _selectedUserIds.clear();
+                                }
+                              });
+                            },
+                            onOpen: (item) =>
+                                context.go('/approvals/${item.userId}'),
+                          ),
+                        ),
+                      ],
+                    ),
                   );
                 },
-                loading: () => const Center(child: CircularProgressIndicator()),
-                error: (e, _) => Center(child: Text(e.toString())),
+                loading: () => const AdminLoadingPlaceholder(
+                  message: 'Loading queue…',
+                ),
+                error: (e, _) => AdminSurfaceCard(
+                  padding: const EdgeInsets.all(AdminSpacing.lg),
+                  child: AdminEmptyState(
+                    icon: Icons.error_outline_rounded,
+                    title: 'Could not load queue',
+                    message: e.toString(),
+                    action: FilledButton.icon(
+                      onPressed: () =>
+                          ref.invalidate(approvalQueueFilteredProvider(_query)),
+                      icon: const Icon(Icons.refresh_rounded, size: 18),
+                      label: const Text('Retry'),
+                    ),
+                  ),
+                ),
               ),
             ),
           ],

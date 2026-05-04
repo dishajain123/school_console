@@ -1,3 +1,8 @@
+// lib/presentation/academics/screens/academic_years_screen.dart  [Admin Console]
+// Phase 3: Academic Years and Structure management.
+// Displays the school's academic year structure:
+//   years, classes, sections, subjects.
+// Only PRINCIPAL and STAFF_ADMIN can create/edit; STAFF with settings:manage can view.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -10,6 +15,8 @@ import '../../../domains/providers/academic_provider.dart';
 import '../../../domains/providers/auth_provider.dart';
 import '../../../core/theme/admin_colors.dart';
 import '../../common/layout/admin_scaffold.dart';
+import '../../common/widgets/admin_layout/admin_empty_state.dart';
+import '../../common/widgets/admin_layout/admin_loading_placeholder.dart';
 import '../../common/widgets/admin_layout/admin_page_header.dart';
 import '../../common/widgets/admin_layout/admin_spacing.dart';
 
@@ -77,7 +84,7 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen>
   @override
   Widget build(BuildContext context) {
     return AdminScaffold(
-      title: '',
+      title: 'Academic years',
       child: Padding(
         padding: const EdgeInsets.all(AdminSpacing.pagePadding),
         child: FutureBuilder<_Phase3Data>(
@@ -85,37 +92,29 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen>
           future: _loadAll(),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
-              return Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const SizedBox(
-                      width: 32,
-                      height: 32,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: AdminColors.primaryAction,
-                      ),
-                    ),
-                    const SizedBox(height: AdminSpacing.md),
-                    Text(
-                      'Loading academic structure…',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: AdminColors.textSecondary,
-                          ),
-                    ),
-                  ],
-                ),
+              return const AdminLoadingPlaceholder(
+                message: 'Loading academic structure…',
+                height: 360,
               );
             }
             if (snapshot.hasError) {
+              final theme = Theme.of(context);
               return Center(
                 child: Padding(
                   padding: const EdgeInsets.all(AdminSpacing.lg),
-                  child: Text(
-                    snapshot.error.toString(),
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: AdminColors.textSecondary),
+                  child: Material(
+                    color: AdminColors.dangerSurface,
+                    borderRadius: BorderRadius.circular(10),
+                    child: Padding(
+                      padding: const EdgeInsets.all(AdminSpacing.md),
+                      child: SelectableText(
+                        snapshot.error.toString(),
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: AdminColors.danger,
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               );
@@ -142,7 +141,7 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen>
                     label: const Text('Create year'),
                     style: FilledButton.styleFrom(
                       backgroundColor: AdminColors.primaryAction,
-                      foregroundColor: Colors.white,
+                      foregroundColor: AdminColors.textOnPrimary,
                       padding: const EdgeInsets.symmetric(
                         horizontal: 18,
                         vertical: 12,
@@ -165,7 +164,7 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen>
                     indicatorColor: AdminColors.primaryAction,
                     labelColor: AdminColors.primaryAction,
                     unselectedLabelColor: AdminColors.textSecondary,
-                    dividerColor: Colors.transparent,
+                    dividerColor: const Color(0x00000000),
                     tabAlignment: TabAlignment.start,
                     labelStyle: const TextStyle(
                       fontSize: 13,
@@ -367,11 +366,12 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen>
             ),
             const SizedBox(height: AdminSpacing.sm),
             if (data.years.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Text(
-                  'No years yet. Use Create year above.',
-                  style: TextStyle(color: AdminColors.textSecondary),
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: AdminSpacing.sm),
+                child: AdminEmptyState(
+                  icon: Icons.event_busy_outlined,
+                  title: 'No academic years yet',
+                  message: 'Use Create year in the header to add your first year.',
                 ),
               )
             else
@@ -491,12 +491,15 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen>
             const SizedBox(height: AdminSpacing.sm),
             if (data.standards.isEmpty)
               Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Text(
-                  data.activeYearId == null
-                      ? 'Activate a year first.'
-                      : 'No classes for the preview year.',
-                  style: TextStyle(color: AdminColors.textSecondary),
+                padding: const EdgeInsets.symmetric(vertical: AdminSpacing.sm),
+                child: AdminEmptyState(
+                  icon: Icons.class_outlined,
+                  title: data.activeYearId == null
+                      ? 'Activate a year first'
+                      : 'No classes for this preview',
+                  message: data.activeYearId == null
+                      ? 'Create and activate an academic year, then add classes.'
+                      : 'Add classes for the selected preview year, or switch year above.',
                 ),
               )
             else
@@ -564,12 +567,15 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen>
             const SizedBox(height: AdminSpacing.sm),
             if (data.sections.isEmpty)
               Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Text(
-                  data.standards.isEmpty
-                      ? 'Add classes first.'
-                      : 'No sections for the preview year.',
-                  style: TextStyle(color: AdminColors.textSecondary),
+                padding: const EdgeInsets.symmetric(vertical: AdminSpacing.sm),
+                child: AdminEmptyState(
+                  icon: Icons.grid_view_outlined,
+                  title: data.standards.isEmpty
+                      ? 'Add classes first'
+                      : 'No sections for this preview',
+                  message: data.standards.isEmpty
+                      ? 'Sections are created per class after classes exist.'
+                      : 'Use Add section or pick another preview year.',
                 ),
               )
             else
@@ -653,11 +659,12 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen>
             ),
             const SizedBox(height: AdminSpacing.sm),
             if (data.subjects.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Text(
-                  'No subjects yet.',
-                  style: TextStyle(color: AdminColors.textSecondary),
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: AdminSpacing.sm),
+                child: AdminEmptyState(
+                  icon: Icons.menu_book_outlined,
+                  title: 'No subjects yet',
+                  message: 'Add subjects with Add subject — they can be school-wide or class-linked.',
                 ),
               )
             else

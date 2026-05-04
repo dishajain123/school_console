@@ -7,7 +7,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../domains/providers/auth_provider.dart';
 import '../../../domains/providers/enrollment_provider.dart';
 import '../../../data/repositories/enrollment_repository.dart';
+import '../../../core/theme/admin_colors.dart';
 import '../../common/layout/admin_scaffold.dart';
+import '../../common/widgets/admin_layout/admin_empty_state.dart';
+import '../../common/widgets/admin_layout/admin_filter_card.dart';
+import '../../common/widgets/admin_layout/admin_page_header.dart';
+import '../../common/widgets/admin_layout/admin_spacing.dart';
+import '../../common/widgets/admin_layout/admin_table_helpers.dart';
 
 // ── Models ────────────────────────────────────────────────────────────────────
 
@@ -185,8 +191,9 @@ class _ClassRosterScreenState extends ConsumerState<ClassRosterScreen> {
   }
 
   Future<void> _onStandardChanged(String? standardId) async {
-    if (_schoolId == null || _selectedYearId == null || standardId == null)
+    if (_schoolId == null || _selectedYearId == null || standardId == null) {
       return;
+    }
     setState(() {
       _selectedStandardId = standardId;
       _selectedSectionId = null;
@@ -207,6 +214,21 @@ class _ClassRosterScreenState extends ConsumerState<ClassRosterScreen> {
     } finally {
       setState(() => _loading = false);
     }
+  }
+
+  void _resetRosterFilters() {
+    setState(() {
+      _selectedYearId = null;
+      _selectedStandardId = null;
+      _selectedSectionId = null;
+      _standards = [];
+      _sections = [];
+      _roster = [];
+      _error = null;
+      _activeCount = 0;
+      _leftCount = 0;
+      _totalEnrolled = 0;
+    });
   }
 
   Future<void> _loadRoster() async {
@@ -268,205 +290,236 @@ class _ClassRosterScreenState extends ConsumerState<ClassRosterScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return AdminScaffold(
-      title: 'Class Roster',
+      title: 'Class roster',
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AdminSpacing.pagePadding),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // ── Filter Row ───────────────────────────────────────────────
-            Wrap(
-              spacing: 12,
-              runSpacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                SizedBox(
-                  width: 200,
-                  child: DropdownButtonFormField<String>(
-                    decoration: const InputDecoration(
-                      labelText: 'Academic Year',
-                      border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                    ),
-                    value: _selectedYearId,
-                    items: _years
-                        .map(
-                          (y) => DropdownMenuItem<String>(
-                            value: y['id']?.toString(),
-                            child: Text(y['name']?.toString() ?? ''),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: _onYearChanged,
-                  ),
-                ),
-                SizedBox(
-                  width: 180,
-                  child: DropdownButtonFormField<String>(
-                    decoration: const InputDecoration(
-                      labelText: 'Class',
-                      border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                    ),
-                    value: _selectedStandardId,
-                    items: _standards
-                        .map(
-                          (s) => DropdownMenuItem<String>(
-                            value: s['id']?.toString(),
-                            child: Text(s['name']?.toString() ?? ''),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: _onStandardChanged,
-                  ),
-                ),
-                SizedBox(
-                  width: 160,
-                  child: DropdownButtonFormField<String?>(
-                    decoration: const InputDecoration(
-                      labelText: 'Section',
-                      border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                    ),
-                    value: _selectedSectionId,
-                    items: [
-                      const DropdownMenuItem<String?>(
-                        value: null,
-                        child: Text('All Sections'),
-                      ),
-                      ..._sections.map(
-                        (s) => DropdownMenuItem<String?>(
-                          value: s['id']?.toString(),
-                          child: Text('Section ${s['name']?.toString() ?? ''}'),
+            const AdminPageHeader(
+              title: 'Class roster',
+              subtitle:
+                  'Load enrolled students for a class, section, and academic year.',
+            ),
+            AdminFilterCard(
+              onReset: _resetRosterFilters,
+              child: Wrap(
+                spacing: AdminSpacing.sm,
+                runSpacing: AdminSpacing.sm,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  SizedBox(
+                    width: 200,
+                    child: DropdownButtonFormField<String>(
+                      decoration: const InputDecoration(
+                        labelText: 'Academic year',
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
                         ),
                       ),
-                    ],
-                    onChanged: (v) => setState(() => _selectedSectionId = v),
+                      value: _selectedYearId,
+                      items: _years
+                          .map(
+                            (y) => DropdownMenuItem<String>(
+                              value: y['id']?.toString(),
+                              child: Text(y['name']?.toString() ?? ''),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: _onYearChanged,
+                    ),
                   ),
-                ),
-                ElevatedButton.icon(
-                  icon: _loading
-                      ? const SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
+                  SizedBox(
+                    width: 180,
+                    child: DropdownButtonFormField<String>(
+                      decoration: const InputDecoration(
+                        labelText: 'Class',
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                      ),
+                      value: _selectedStandardId,
+                      items: _standards
+                          .map(
+                            (s) => DropdownMenuItem<String>(
+                              value: s['id']?.toString(),
+                              child: Text(s['name']?.toString() ?? ''),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: _onStandardChanged,
+                    ),
+                  ),
+                  SizedBox(
+                    width: 160,
+                    child: DropdownButtonFormField<String?>(
+                      decoration: const InputDecoration(
+                        labelText: 'Section',
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                      ),
+                      value: _selectedSectionId,
+                      items: [
+                        const DropdownMenuItem<String?>(
+                          value: null,
+                          child: Text('All sections'),
+                        ),
+                        ..._sections.map(
+                          (s) => DropdownMenuItem<String?>(
+                            value: s['id']?.toString(),
+                            child:
+                                Text('Section ${s['name']?.toString() ?? ''}'),
                           ),
-                        )
-                      : const Icon(Icons.search),
-                  label: const Text('Load Roster'),
-                  onPressed: (_loading || _selectedStandardId == null)
-                      ? null
-                      : _loadRoster,
-                ),
-              ],
+                        ),
+                      ],
+                      onChanged: (v) => setState(() => _selectedSectionId = v),
+                    ),
+                  ),
+                  FilledButton.icon(
+                    icon: _loading
+                        ? SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: theme.colorScheme.onPrimary,
+                            ),
+                          )
+                        : const Icon(Icons.search_rounded, size: 18),
+                    label: const Text('Load roster'),
+                    onPressed: (_loading || _selectedStandardId == null)
+                        ? null
+                        : _loadRoster,
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 12),
-
-            // ── Error ────────────────────────────────────────────────────
+            const SizedBox(height: AdminSpacing.md),
             if (_error != null)
               Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(_error!, style: const TextStyle(color: Colors.red)),
+                padding: const EdgeInsets.only(bottom: AdminSpacing.sm),
+                child: Material(
+                  color: theme.colorScheme.errorContainer
+                      .withValues(alpha: 0.75),
+                  borderRadius: BorderRadius.circular(10),
+                  child: Padding(
+                    padding: const EdgeInsets.all(AdminSpacing.md),
+                    child: SelectableText(
+                      _error!,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onErrorContainer,
+                      ),
+                    ),
+                  ),
+                ),
               ),
-
-            // ── Summary Chips ────────────────────────────────────────────
             if (_roster.isNotEmpty)
               Padding(
-                padding: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.only(bottom: AdminSpacing.sm),
                 child: Wrap(
-                  spacing: 8,
+                  spacing: AdminSpacing.sm,
+                  runSpacing: AdminSpacing.sm,
                   children: [
                     Chip(
                       label: Text('Total: $_totalEnrolled'),
-                      backgroundColor: Colors.grey.shade200,
+                      backgroundColor: AdminColors.borderSubtle,
                     ),
                     Chip(
                       label: Text('Active: $_activeCount'),
-                      backgroundColor: Colors.green.shade100,
+                      backgroundColor:
+                          AdminColors.success.withValues(alpha: 0.12),
                     ),
                     Chip(
                       label: Text('Left: $_leftCount'),
-                      backgroundColor: Colors.red.shade100,
+                      backgroundColor:
+                          AdminColors.danger.withValues(alpha: 0.10),
                     ),
                   ],
                 ),
               ),
-
-            // ── Roster Table ─────────────────────────────────────────────
             Expanded(
               child: _roster.isEmpty && !_loading
-                  ? const Center(
-                      child: Text('Select a class and click Load Roster.'),
+                  ? const AdminEmptyState(
+                      icon: Icons.groups_outlined,
+                      title: 'No roster loaded',
+                      message:
+                          'Pick academic year, class, optional section, then Load roster.',
                     )
-                  : SingleChildScrollView(
-                      child: DataTable(
-                        headingRowColor: WidgetStateProperty.all(
-                          Colors.grey.shade100,
-                        ),
-                        columns: const [
-                          DataColumn(label: Text('Admission #')),
-                          DataColumn(label: Text('Name')),
-                          DataColumn(label: Text('Roll No.')),
-                          DataColumn(label: Text('Section')),
-                          DataColumn(label: Text('Parent')),
-                          DataColumn(label: Text('Behaviour')),
-                          DataColumn(label: Text('Status')),
-                          DataColumn(label: Text('Joined On')),
-                        ],
-                        rows: _roster.map((s) {
-                          final statusColor = s.status == 'ACTIVE'
-                              ? Colors.green
-                              : s.status == 'LEFT' || s.status == 'TRANSFERRED'
-                              ? Colors.red
-                              : Colors.orange;
-                          return DataRow(
-                            cells: [
-                              DataCell(Text(s.admissionNumber ?? '-')),
-                              DataCell(Text(s.studentName ?? '-')),
-                              DataCell(Text(s.rollNumber ?? '-')),
-                              DataCell(Text(s.sectionName ?? '-')),
-                              DataCell(
-                                Text(s.parentName ?? s.parentPhone ?? '-'),
-                              ),
-                              DataCell(
-                                Text(_formatBehaviour(s.latestBehaviour)),
-                              ),
-                              DataCell(
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: statusColor.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Text(
-                                    s.status,
-                                    style: TextStyle(
-                                      color: statusColor,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600,
+                  : Card(
+                      margin: EdgeInsets.zero,
+                      clipBehavior: Clip.antiAlias,
+                      child: SingleChildScrollView(
+                        child: DataTable(
+                          headingRowColor: adminTableHeadingRowColor(),
+                          horizontalMargin: AdminSpacing.md,
+                          columnSpacing: AdminSpacing.lg,
+                          columns: const [
+                            DataColumn(label: Text('Admission #')),
+                            DataColumn(label: Text('Name')),
+                            DataColumn(label: Text('Roll No.')),
+                            DataColumn(label: Text('Section')),
+                            DataColumn(label: Text('Parent')),
+                            DataColumn(label: Text('Behaviour')),
+                            DataColumn(label: Text('Status')),
+                            DataColumn(label: Text('Joined on')),
+                          ],
+                          rows: _roster.asMap().entries.map((entry) {
+                            final i = entry.key;
+                            final s = entry.value;
+                            final statusColor = s.status == 'ACTIVE'
+                                ? AdminColors.success
+                                : s.status == 'LEFT' ||
+                                        s.status == 'TRANSFERRED'
+                                    ? AdminColors.danger
+                                    : AdminColors.textSecondary;
+                            return DataRow(
+                              color: adminDataRowColor(i),
+                              cells: [
+                                DataCell(Text(s.admissionNumber ?? '-')),
+                                DataCell(Text(s.studentName ?? '-')),
+                                DataCell(Text(s.rollNumber ?? '-')),
+                                DataCell(Text(s.sectionName ?? '-')),
+                                DataCell(
+                                  Text(s.parentName ?? s.parentPhone ?? '-'),
+                                ),
+                                DataCell(
+                                  Text(_formatBehaviour(s.latestBehaviour)),
+                                ),
+                                DataCell(
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: AdminSpacing.sm,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: statusColor.withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Text(
+                                      s.status,
+                                      style: TextStyle(
+                                        color: statusColor,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                     ),
                                   ),
                                 ),
-                              ),
-                              DataCell(Text(s.joinedOn ?? '-')),
-                            ],
-                          );
-                        }).toList(),
+                                DataCell(Text(s.joinedOn ?? '-')),
+                              ],
+                            );
+                          }).toList(),
+                        ),
                       ),
                     ),
             ),

@@ -6,9 +6,10 @@ import 'package:go_router/go_router.dart';
 import '../../../core/constants/brand_constants.dart';
 import '../../../core/constants/route_constants.dart';
 import '../../../core/theme/admin_colors.dart';
-import '../widgets/school_brand_logo.dart';
 import '../../../data/models/auth/admin_user.dart';
 import '../../../domains/providers/auth_provider.dart';
+import '../widgets/admin_layout/admin_spacing.dart';
+import '../widgets/school_brand_logo.dart';
 
 class _NavItem {
   const _NavItem({
@@ -26,35 +27,37 @@ class _NavItem {
 
 // Full ordered list — indices referenced by _itemsForUser() below.
 const _allItems = [
-  // 0 — Approvals
+  // 0 — Dashboard
+  _NavItem(icon: Icons.dashboard_outlined, selectedIcon: Icons.dashboard, label: 'Dashboard', route: RouteNames.dashboard),
+  // 1 — Approvals
   _NavItem(icon: Icons.verified_user_outlined, selectedIcon: Icons.verified_user, label: 'Approvals', route: RouteNames.approvals),
-  // 1 — Enrollment (roster view)
+  // 2 — Enrollment (roster view)
   _NavItem(icon: Icons.how_to_reg_outlined, selectedIcon: Icons.how_to_reg, label: 'Enrollment', route: RouteNames.enrollment),
-  // 2 — Student Lifecycle (Phase 14/15) — unified transfer/exit/re-enroll
+  // 3 — Student Lifecycle (Phase 14/15) — unified transfer/exit/re-enroll
   _NavItem(icon: Icons.manage_accounts_outlined, selectedIcon: Icons.manage_accounts, label: 'Lifecycle', route: RouteNames.lifecycleManagement),
-  // 3 — Teacher Assignments (Phase 4)
+  // 4 — Teacher Assignments (Phase 4)
   _NavItem(icon: Icons.assignment_ind_outlined, selectedIcon: Icons.assignment_ind, label: 'Teacher Assign.', route: RouteNames.teacherAssignments),
-  // 4 — Promotion (Phase 7)
+  // 5 — Promotion (Phase 7)
   _NavItem(icon: Icons.trending_up_outlined, selectedIcon: Icons.trending_up, label: 'Promotion', route: RouteNames.promotion),
-  // 5 — Classes/Sections
+  // 6 — Classes/Sections
   _NavItem(icon: Icons.class_outlined, selectedIcon: Icons.class_, label: 'Classes', route: RouteNames.academicStructure),
-  // 6 — Academic Years
+  // 7 — Academic Years
   _NavItem(icon: Icons.account_tree_outlined, selectedIcon: Icons.account_tree, label: 'Acad. Years', route: RouteNames.academics),
-  // 7 — Role Profiles
+  // 8 — Role Profiles
   _NavItem(icon: Icons.badge_outlined, selectedIcon: Icons.badge, label: 'Profiles', route: RouteNames.roleProfiles),
-  // 8 — Fees (Phase 8)
+  // 9 — Fees (Phase 8)
   _NavItem(icon: Icons.payments_outlined, selectedIcon: Icons.payments, label: 'Fees', route: RouteNames.fees),
-  // 9 — Exams & Results (Phase 10)
+  // 10 — Exams & Results (Phase 10)
   _NavItem(icon: Icons.analytics_outlined, selectedIcon: Icons.analytics, label: 'Results', route: RouteNames.examsResults),
-  // 10 — Reports & Analytics (Phase 11)
+  // 11 — Reports & Analytics (Phase 11)
   _NavItem(icon: Icons.bar_chart_outlined, selectedIcon: Icons.bar_chart, label: 'Reports', route: RouteNames.reports),
-  // 11 — Audit Log
-  _NavItem(icon: Icons.history_toggle_off, selectedIcon: Icons.history, label: 'Audit Log', route: RouteNames.audit),
   // 12 — Communication (Phase 12)
   _NavItem(icon: Icons.campaign_outlined, selectedIcon: Icons.campaign, label: 'Communication', route: RouteNames.communication),
   // 13 — Documents (Phase 13)
   _NavItem(icon: Icons.folder_outlined, selectedIcon: Icons.folder, label: 'Documents', route: RouteNames.documents),
-  // 14 — Settings
+  // 14 — Audit Log (after Documents, before Settings)
+  _NavItem(icon: Icons.history_toggle_off, selectedIcon: Icons.history, label: 'Audit Log', route: RouteNames.audit),
+  // 15 — Settings
   _NavItem(icon: Icons.settings_outlined, selectedIcon: Icons.settings, label: 'Settings', route: RouteNames.settings),
 ];
 
@@ -68,12 +71,13 @@ List<_NavItem> _itemsForUser(AdminUser user) {
     if (item != null) list.add(item);
   }
 
-  // SUPERADMIN sees everything
-  if (role == 'SUPERADMIN') return _allItems;
+  // Staff Admin (web console) sees full navigation for the school.
+  if (role == 'STAFF_ADMIN') return _allItems;
 
   // TRUSTEE: read-only — Reports, Fees view, Results view
   if (role == 'TRUSTEE') {
     return [
+      byRoute[RouteNames.dashboard]!,
       byRoute[RouteNames.reports]!,
       byRoute[RouteNames.fees]!,
       byRoute[RouteNames.examsResults]!,
@@ -81,6 +85,7 @@ List<_NavItem> _itemsForUser(AdminUser user) {
   }
 
   final visible = <_NavItem>[];
+  addRoute(visible, RouteNames.dashboard);
 
   // Approvals
   if (role == 'PRINCIPAL' || user.canReview) {
@@ -125,11 +130,6 @@ List<_NavItem> _itemsForUser(AdminUser user) {
     addRoute(visible, RouteNames.reports);
   }
 
-  // Audit Log
-  if (role == 'PRINCIPAL' || user.canReview) {
-    addRoute(visible, RouteNames.audit);
-  }
-
   // Communication — PRINCIPAL or announcement:create
   if (role == 'PRINCIPAL' || perms.contains('announcement:create')) {
     addRoute(visible, RouteNames.communication);
@@ -138,6 +138,11 @@ List<_NavItem> _itemsForUser(AdminUser user) {
   // Documents — PRINCIPAL or document:manage
   if (role == 'PRINCIPAL' || perms.contains('document:manage')) {
     addRoute(visible, RouteNames.documents);
+  }
+
+  // Audit Log — after Documents, before Settings
+  if (role == 'PRINCIPAL' || user.canReview) {
+    addRoute(visible, RouteNames.audit);
   }
 
   // Settings — only users who can manage settings
@@ -215,7 +220,7 @@ class AdminSidebar extends ConsumerWidget {
     );
     final selectedIndex = _resolveSelectedIndex(items, location);
 
-    const railWidth = 268.0;
+    const railWidth = 276.0;
 
     return SizedBox(
       width: railWidth,
@@ -225,12 +230,17 @@ class AdminSidebar extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(14, 18, 12, 12),
+              padding: const EdgeInsets.fromLTRB(
+                AdminSpacing.md,
+                AdminSpacing.lg,
+                AdminSpacing.sm,
+                AdminSpacing.md,
+              ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  SchoolBrandLogo(height: 50, borderRadius: 10),
-                  const SizedBox(width: 12),
+                  SchoolBrandLogo(height: 48, borderRadius: 10),
+                  const SizedBox(width: AdminSpacing.sm),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -253,7 +263,7 @@ class AdminSidebar extends ConsumerWidget {
                                     letterSpacing: 0.15,
                                   ),
                         ),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: AdminSpacing.sm),
                         Text(
                           'Console',
                           style:
@@ -281,69 +291,132 @@ class AdminSidebar extends ConsumerWidget {
                 ],
               ),
             ),
-            const Divider(height: 1, color: AdminColors.borderSubtle),
+            const Divider(
+              height: 1,
+              thickness: 1,
+              color: AdminColors.sidebarDivider,
+            ),
             Expanded(
               child: ListView.builder(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                padding: const EdgeInsets.fromLTRB(
+                  AdminSpacing.xs,
+                  AdminSpacing.sm,
+                  AdminSpacing.xs,
+                  AdminSpacing.md,
+                ),
                 itemCount: items.length,
                 itemBuilder: (context, i) {
                   final item = items[i];
                   final selected = i == selectedIndex;
                   return Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Material(
-                      color: selected
-                          ? AdminColors.primaryAction.withValues(alpha: 0.08)
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(10),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(10),
-                        hoverColor:
-                            AdminColors.primaryAction.withValues(alpha: 0.06),
-                        onTap: () => context.go(item.route),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 11,
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                selected ? item.selectedIcon : item.icon,
-                                size: 20,
-                                color: selected
-                                    ? AdminColors.primaryAction
-                                    : AdminColors.textSecondary,
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  item.label,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .labelLarge
-                                      ?.copyWith(
-                                        fontSize: 13,
-                                        fontWeight: selected
-                                            ? FontWeight.w600
-                                            : FontWeight.w500,
-                                        color: selected
-                                            ? AdminColors.primaryAction
-                                            : AdminColors.textPrimary,
-                                      ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
+                    padding: const EdgeInsets.only(bottom: AdminSpacing.xs),
+                    child: _SidebarNavTile(
+                      item: item,
+                      selected: selected,
+                      onTap: () => context.go(item.route),
                     ),
                   );
                 },
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SidebarNavTile extends StatelessWidget {
+  const _SidebarNavTile({
+    required this.item,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final _NavItem item;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: onTap,
+        hoverColor: AdminColors.primaryAction.withValues(alpha: 0.06),
+        splashColor: AdminColors.primaryAction.withValues(alpha: 0.08),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          decoration: BoxDecoration(
+            color: selected
+                ? AdminColors.primarySubtle.withValues(alpha: 0.85)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: selected
+                  ? AdminColors.primaryAction.withValues(alpha: 0.18)
+                  : Colors.transparent,
+              width: 1,
+            ),
+          ),
+          child: IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOutCubic,
+                  width: selected ? 3 : 0,
+                  margin: const EdgeInsets.symmetric(vertical: 10),
+                  decoration: BoxDecoration(
+                    color: AdminColors.primaryAction,
+                    borderRadius: const BorderRadius.horizontal(
+                      right: Radius.circular(2),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AdminSpacing.sm,
+                      vertical: 11,
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          selected ? item.selectedIcon : item.icon,
+                          size: 20,
+                          color: selected
+                              ? AdminColors.primaryAction
+                              : AdminColors.textSecondary,
+                        ),
+                        const SizedBox(width: AdminSpacing.sm),
+                        Expanded(
+                          child: Text(
+                            item.label,
+                            style: theme.textTheme.labelLarge?.copyWith(
+                              fontSize: 13,
+                              fontWeight: selected
+                                  ? FontWeight.w600
+                                  : FontWeight.w500,
+                              letterSpacing: selected ? -0.1 : 0,
+                              color: selected
+                                  ? AdminColors.primaryAction
+                                  : AdminColors.textPrimary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

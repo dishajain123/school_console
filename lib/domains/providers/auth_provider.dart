@@ -47,7 +47,7 @@ class AuthController extends StateNotifier<AsyncValue<AdminUser?>> {
           .timeout(const Duration(seconds: 12));
       var resolvedUser = user;
       if ((resolvedUser.schoolId == null || resolvedUser.schoolId!.isEmpty) &&
-          resolvedUser.role.toUpperCase() == 'SUPERADMIN') {
+          resolvedUser.role.toUpperCase() == 'STAFF_ADMIN') {
         try {
           final schoolId =
               await _repo.resolveSchoolContext(accessToken: token.accessToken);
@@ -55,6 +55,14 @@ class AuthController extends StateNotifier<AsyncValue<AdminUser?>> {
             resolvedUser = resolvedUser.copyWith(schoolId: schoolId);
           }
         } catch (_) {}
+      }
+      if (resolvedUser.role.toUpperCase() != 'STAFF_ADMIN') {
+        await _storage.clearTokens();
+        state = AsyncError(
+          'This web console is only for Staff Admin (school office). Other roles use the mobile app.',
+          StackTrace.current,
+        );
+        return;
       }
       state = AsyncData(resolvedUser);
     } on TimeoutException catch (_, st) {
@@ -130,13 +138,18 @@ class AuthController extends StateNotifier<AsyncValue<AdminUser?>> {
     try {
       var user = await _repo.me(accessToken: token);
       if ((user.schoolId == null || user.schoolId!.isEmpty) &&
-          user.role.toUpperCase() == 'SUPERADMIN') {
+          user.role.toUpperCase() == 'STAFF_ADMIN') {
         try {
           final schoolId = await _repo.resolveSchoolContext(accessToken: token);
           if (schoolId != null && schoolId.isNotEmpty) {
             user = user.copyWith(schoolId: schoolId);
           }
         } catch (_) {}
+      }
+      if (user.role.toUpperCase() != 'STAFF_ADMIN') {
+        await _storage.clearTokens();
+        state = const AsyncData(null);
+        return;
       }
       state = AsyncData(user);
     } catch (_) {

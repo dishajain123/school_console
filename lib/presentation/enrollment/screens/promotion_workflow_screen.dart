@@ -1,16 +1,22 @@
 // lib/presentation/enrollment/screens/promotion_workflow_screen.dart  [Admin Console]
 // Phase 7 — Bulk Promotion Workflow Screen.
-// PRINCIPAL / SUPERADMIN: preview all students eligible for promotion, assign
+// PRINCIPAL / STAFF_ADMIN: preview all students eligible for promotion, assign
 // decisions (PROMOTE / REPEAT / GRADUATE / SKIP) and execute in bulk.
 // Previous year mappings become read-only terminal states after execution.
 // User identity, admission numbers, and parent links are NEVER recreated.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/theme/admin_colors.dart';
 import '../../../domains/providers/auth_provider.dart';
 import '../../../domains/providers/enrollment_provider.dart';
 import '../../../data/repositories/enrollment_repository.dart';
 import '../../common/layout/admin_scaffold.dart';
+import '../../common/widgets/admin_layout/admin_loading_placeholder.dart';
+import '../../common/widgets/admin_layout/admin_page_header.dart';
+import '../../common/widgets/admin_layout/admin_spacing.dart';
+import '../../common/widgets/admin_layout/admin_surface_card.dart';
+import '../../common/widgets/admin_layout/admin_table_helpers.dart';
 
 // ── Enums ─────────────────────────────────────────────────────────────────────
 
@@ -46,13 +52,13 @@ extension _DecisionX on _Decision {
   Color get color {
     switch (this) {
       case _Decision.promote:
-        return Colors.green;
+        return AdminColors.success;
       case _Decision.repeat:
-        return Colors.orange;
+        return const Color(0xFFEA580C);
       case _Decision.graduate:
-        return Colors.blue;
+        return AdminColors.primaryAction;
       case _Decision.skip:
-        return Colors.grey;
+        return AdminColors.textMuted;
     }
   }
 
@@ -553,10 +559,13 @@ class _PromotionWorkflowScreenState
             onPressed: () => Navigator.of(ctx).pop(false),
             child: const Text('Cancel'),
           ),
-          ElevatedButton(
+          FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-            child: const Text('Execute', style: TextStyle(color: Colors.white)),
+            style: FilledButton.styleFrom(
+              backgroundColor: AdminColors.success,
+              foregroundColor: AdminColors.textOnPrimary,
+            ),
+            child: const Text('Execute'),
           ),
         ],
       ),
@@ -623,21 +632,34 @@ class _PromotionWorkflowScreenState
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final user = ref.watch(authControllerProvider).valueOrNull;
     final isPrincipalOrSuper =
         user != null &&
         (user.role.toUpperCase() == 'PRINCIPAL' ||
-            user.role.toUpperCase() == 'SUPERADMIN');
+            user.role.toUpperCase() == 'STAFF_ADMIN');
 
     return AdminScaffold(
-      title: 'Promotion Workflow (Phase 7)',
+      title: 'Promotion workflow',
       child: _loading && _previewItems.isEmpty
-          ? const Center(child: CircularProgressIndicator())
+          ? const Padding(
+              padding: EdgeInsets.all(AdminSpacing.pagePadding),
+              child: AdminLoadingPlaceholder(
+                message: 'Loading academic years and filters…',
+                height: 320,
+              ),
+            )
           : SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(AdminSpacing.pagePadding),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  const AdminPageHeader(
+                    title: 'Promotion workflow',
+                    subtitle:
+                        'Preview eligible students, adjust decisions, then execute '
+                        'for the target year. Accounts and admission numbers are never recreated.',
+                  ),
                   // ── Info Banner ──────────────────────────────────────────
                   _InfoBanner(
                     message:
@@ -645,7 +667,7 @@ class _PromotionWorkflowScreenState
                         'with the system-suggested decision. You can override per student. '
                         'Execution creates new academic mappings — user accounts and admission numbers are NEVER recreated.',
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: AdminSpacing.md),
 
                   // ── Year Selection ────────────────────────────────────────
                   _SectionCard(
@@ -789,54 +811,58 @@ class _PromotionWorkflowScreenState
                                   }),
                           ),
                         ),
-                        ElevatedButton.icon(
+                        FilledButton.icon(
                           icon: _loading
-                              ? const SizedBox(
+                              ? SizedBox(
                                   width: 14,
                                   height: 14,
                                   child: CircularProgressIndicator(
                                     strokeWidth: 2,
-                                    color: Colors.white,
+                                    color: theme.colorScheme.onPrimary,
                                   ),
                                 )
-                              : const Icon(Icons.preview_outlined),
-                          label: const Text('Preview Promotion'),
+                              : const Icon(Icons.preview_outlined, size: 18),
+                          label: const Text('Preview promotion'),
                           onPressed: _loading ? null : _runPreview,
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: AdminSpacing.sm),
 
                   // ── Error / Success ────────────────────────────────────────
                   if (_error != null)
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      margin: const EdgeInsets.only(bottom: 12),
-                      decoration: BoxDecoration(
-                        color: Colors.red.shade50,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.red.shade200),
-                      ),
-                      child: Text(
-                        _error!,
-                        style: TextStyle(color: Colors.red.shade700),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: AdminSpacing.md),
+                      child: Material(
+                        color: AdminColors.dangerSurface,
+                        borderRadius: BorderRadius.circular(10),
+                        child: Padding(
+                          padding: const EdgeInsets.all(AdminSpacing.md),
+                          child: SelectableText(
+                            _error!,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: AdminColors.danger,
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   if (_successMessage != null)
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      margin: const EdgeInsets.only(bottom: 12),
-                      decoration: BoxDecoration(
-                        color: Colors.green.shade50,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.green.shade200),
-                      ),
-                      child: Text(
-                        _successMessage!,
-                        style: TextStyle(color: Colors.green.shade700),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: AdminSpacing.md),
+                      child: Material(
+                        color: AdminColors.success.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(10),
+                        child: Padding(
+                          padding: const EdgeInsets.all(AdminSpacing.md),
+                          child: SelectableText(
+                            _successMessage!,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: AdminColors.success,
+                            ),
+                          ),
+                        ),
                       ),
                     ),
 
@@ -1010,9 +1036,9 @@ class _PromotionWorkflowScreenState
                                       scrollDirection: Axis.horizontal,
                                       child: DataTable(
                                         headingRowColor:
-                                            WidgetStateProperty.all(
-                                              Colors.grey.shade100,
-                                            ),
+                                            adminTableHeadingRowColor(),
+                                        horizontalMargin: AdminSpacing.md,
+                                        columnSpacing: AdminSpacing.lg,
                                         columns: const [
                                           DataColumn(label: Text('Select')),
                                           DataColumn(
@@ -1039,13 +1065,19 @@ class _PromotionWorkflowScreenState
                                             label: Text('Target Section'),
                                           ),
                                         ],
-                                        rows: classItems.map((item) {
+                                        rows: classItems
+                                            .asMap()
+                                            .entries
+                                            .map((rowEntry) {
+                                          final rowIndex = rowEntry.key;
+                                          final item = rowEntry.value;
                                           return DataRow(
                                             color: item.hasWarning
                                                 ? WidgetStateProperty.all(
-                                                    Colors.amber.shade50,
+                                                    AdminColors.primaryAction
+                                                        .withValues(alpha: 0.06),
                                                   )
-                                                : null,
+                                                : adminDataRowColor(rowIndex),
                                             cells: [
                                               DataCell(
                                                 Checkbox(
@@ -1301,7 +1333,7 @@ class _PromotionWorkflowScreenState
                         ],
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: AdminSpacing.sm),
 
                     // ── Execute ─────────────────────────────────────────────
                     if (isPrincipalOrSuper)
@@ -1310,44 +1342,47 @@ class _PromotionWorkflowScreenState
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
+                            Text(
                               'Review all decisions above before executing. '
                               'This creates new academic mappings in the target year '
                               'and closes the source year mappings as terminal states.',
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: Colors.black54,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: AdminColors.textSecondary,
+                                height: 1.35,
                               ),
                             ),
-                            const SizedBox(height: 12),
+                            const SizedBox(height: AdminSpacing.sm),
                             Row(
                               children: [
-                                ElevatedButton.icon(
+                                FilledButton.icon(
                                   icon: _executing
-                                      ? const SizedBox(
+                                      ? SizedBox(
                                           width: 14,
                                           height: 14,
                                           child: CircularProgressIndicator(
                                             strokeWidth: 2,
-                                            color: Colors.white,
+                                            color: theme.colorScheme.onPrimary,
                                           ),
                                         )
-                                      : const Icon(Icons.check_circle_outline),
-                                  label: const Text('Execute Promotion'),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.green.shade700,
-                                    foregroundColor: Colors.white,
+                                      : const Icon(
+                                          Icons.check_circle_outline,
+                                          size: 18,
+                                        ),
+                                  label: const Text('Execute promotion'),
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: AdminColors.success,
+                                    foregroundColor: AdminColors.textOnPrimary,
                                   ),
                                   onPressed: _executing
                                       ? null
                                       : _executePromotion,
                                 ),
-                                const SizedBox(width: 12),
+                                const SizedBox(width: AdminSpacing.sm),
                                 Text(
                                   '${_previewItems.where((e) => e.selected).length} selected',
-                                  style: const TextStyle(
+                                  style: theme.textTheme.bodySmall?.copyWith(
                                     fontWeight: FontWeight.w600,
-                                    color: Colors.black54,
+                                    color: AdminColors.textSecondary,
                                   ),
                                 ),
                               ],
@@ -1361,38 +1396,38 @@ class _PromotionWorkflowScreenState
                   if (_sourceYearId != null &&
                       _targetYearId != null &&
                       isPrincipalOrSuper) ...[
-                    const SizedBox(height: 12),
+                    const SizedBox(height: AdminSpacing.sm),
                     _SectionCard(
                       title:
                           'Optional — Copy Teacher Assignments to Target Year',
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
+                          Text(
                             'Copies all teacher-class-subject assignments from the source year to the target year. '
                             'Existing assignments in the target year are skipped (not overwritten). '
                             'Fresh assignments can always be created manually.',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Colors.black54,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: AdminColors.textSecondary,
+                              height: 1.35,
                             ),
                           ),
-                          const SizedBox(height: 12),
-                          ElevatedButton.icon(
+                          const SizedBox(height: AdminSpacing.sm),
+                          FilledButton.icon(
                             icon: _copyingAssignments
-                                ? const SizedBox(
+                                ? SizedBox(
                                     width: 14,
                                     height: 14,
                                     child: CircularProgressIndicator(
                                       strokeWidth: 2,
-                                      color: Colors.white,
+                                      color: theme.colorScheme.onPrimary,
                                     ),
                                   )
-                                : const Icon(Icons.copy_all_outlined),
-                            label: const Text('Copy Teacher Assignments'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.blueGrey.shade700,
-                              foregroundColor: Colors.white,
+                                : const Icon(Icons.copy_all_outlined, size: 18),
+                            label: const Text('Copy teacher assignments'),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: AdminColors.textSecondary,
+                              foregroundColor: AdminColors.textOnPrimary,
                             ),
                             onPressed: _copyingAssignments
                                 ? null
@@ -1417,26 +1452,37 @@ class _InfoBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
+    final theme = Theme.of(context);
+    return DecoratedBox(
       decoration: BoxDecoration(
-        color: Colors.blue.shade50,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.blue.shade200),
+        color: AdminColors.primarySubtle,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: AdminColors.primaryAction.withValues(alpha: 0.22),
+        ),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.info_outline, color: Colors.blue.shade700, size: 18),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              message,
-              style: TextStyle(color: Colors.blue.shade700, fontSize: 13),
+      child: Padding(
+        padding: const EdgeInsets.all(AdminSpacing.md),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              Icons.info_outline_rounded,
+              color: AdminColors.primaryAction,
+              size: 20,
             ),
-          ),
-        ],
+            const SizedBox(width: AdminSpacing.sm),
+            Expanded(
+              child: Text(
+                message,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: AdminColors.textPrimary,
+                  height: 1.35,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1449,21 +1495,20 @@ class _SectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      elevation: 1,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+    final theme = Theme.of(context);
+    return AdminSurfaceCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w700,
             ),
-            const SizedBox(height: 12),
-            child,
-          ],
-        ),
+          ),
+          const SizedBox(height: AdminSpacing.sm),
+          child,
+        ],
       ),
     );
   }

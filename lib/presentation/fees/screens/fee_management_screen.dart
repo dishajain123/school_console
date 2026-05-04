@@ -6,9 +6,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/constants/api_constants.dart';
 import '../../../core/network/dio_client.dart';
+import '../../../core/theme/admin_colors.dart';
 import '../../../domains/providers/active_year_provider.dart';
 import '../../../domains/providers/auth_provider.dart';
 import '../../common/layout/admin_scaffold.dart';
+import '../../common/widgets/admin_layout/admin_empty_state.dart';
+import '../../common/widgets/admin_layout/admin_filter_card.dart';
+import '../../common/widgets/admin_layout/admin_loading_placeholder.dart';
+import '../../common/widgets/admin_layout/admin_page_header.dart';
+import '../../common/widgets/admin_layout/admin_spacing.dart';
+import '../../common/widgets/admin_layout/admin_table_helpers.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Local models
@@ -82,13 +89,13 @@ class _InstallmentRow {
   Color get statusColor {
     switch (status.toUpperCase()) {
       case 'PAID':
-        return Colors.green;
+        return AdminColors.success;
       case 'PARTIAL':
-        return Colors.orange;
+        return const Color(0xFFEA580C);
       case 'OVERDUE':
-        return Colors.red;
+        return AdminColors.danger;
       default:
-        return Colors.blueGrey;
+        return AdminColors.textSecondary;
     }
   }
 
@@ -510,6 +517,21 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
   bool _loading = false;
   String? _error;
 
+  void _resetFeeFilters() {
+    setState(() {
+      _selectedStandardId = null;
+      _selectedSection = null;
+      _paymentCycleFilter = null;
+      _statusFilter = null;
+      _structures = [];
+      _students = [];
+      _analytics = {};
+      _defaulters = [];
+      _sections = [];
+      _error = null;
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -869,13 +891,13 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                         width: double.infinity,
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          color: Colors.blue.shade50,
+                          color: AdminColors.primarySubtle,
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.blue.shade200),
+                          border: Border.all(color: AdminColors.primaryAction.withValues(alpha: 0.22)),
                         ),
                         child: Text(
                           'This payment will be auto-distributed across overdue and pending fee heads for this student.',
-                          style: TextStyle(color: Colors.blue.shade800, fontSize: 12),
+                          style: TextStyle(color: AdminColors.textPrimary, fontSize: 12),
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -933,9 +955,9 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                             width: double.infinity,
                             padding: const EdgeInsets.all(10),
                             decoration: BoxDecoration(
-                              color: Colors.orange.shade50,
+                              color: AdminColors.primaryAction.withValues(alpha: 0.06),
                               borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Colors.orange.shade200),
+                              border: Border.all(color: AdminColors.primaryAction.withValues(alpha: 0.28)),
                             ),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -944,7 +966,7 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                                   title,
                                   style: TextStyle(
                                     fontWeight: FontWeight.w700,
-                                    color: Colors.orange.shade900,
+                                    color: const Color(0xFF9A3412),
                                     fontSize: 12,
                                   ),
                                 ),
@@ -960,7 +982,7 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                                       '• $label  |  Due: $due  |  Pending: ${_fmt(inst.outstandingAmount)}',
                                       style: TextStyle(
                                         fontSize: 12,
-                                        color: Colors.orange.shade800,
+                                        color: const Color(0xFFC2410C),
                                       ),
                                     ),
                                   );
@@ -970,7 +992,7 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                                     '...and ${targets.length - 4} more installment(s)',
                                     style: TextStyle(
                                       fontSize: 12,
-                                      color: Colors.orange.shade800,
+                                      color: const Color(0xFFC2410C),
                                     ),
                                   ),
                               ],
@@ -1272,12 +1294,12 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                       'The same due date is applied to every fee head in this save. '
                       'Adjust amounts and categories per head below.',
                       style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                            color: Colors.grey.shade700,
+                            color: AdminColors.textSecondary,
                           ),
                     ),
                     const SizedBox(height: 10),
                     Material(
-                      color: Colors.grey.shade50,
+                      color: AdminColors.borderSubtle,
                       borderRadius: BorderRadius.circular(10),
                       child: ListTile(
                         contentPadding: const EdgeInsets.symmetric(
@@ -1324,9 +1346,9 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                         ),
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: Colors.grey.shade50,
+                          color: AdminColors.borderSubtle,
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: Colors.grey.shade300),
+                          border: Border.all(color: AdminColors.border),
                         ),
                         child: Column(
                           children: [
@@ -1343,7 +1365,7 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                                   IconButton(
                                     icon: const Icon(
                                       Icons.delete_outline,
-                                      color: Colors.red,
+                                      color: AdminColors.danger,
                                       size: 18,
                                     ),
                                     onPressed: () {
@@ -1413,15 +1435,15 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                                   width: double.infinity,
                                   padding: const EdgeInsets.all(8),
                                   decoration: BoxDecoration(
-                                    color: Colors.grey.shade50,
+                                    color: AdminColors.borderSubtle,
                                     borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(color: Colors.grey.shade300),
+                                    border: Border.all(color: AdminColors.border),
                                   ),
                                   child: Text(
                                     'Auto split preview -> Monthly: ${_fmt(monthly)}, Quarterly: ${_fmt(quarterly)}, Yearly: ${_fmt(parsed)}',
                                     style: TextStyle(
                                       fontSize: 12,
-                                      color: Colors.grey.shade700,
+                                      color: AdminColors.textSecondary,
                                     ),
                                   ),
                                 );
@@ -1826,33 +1848,47 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return AdminScaffold(
-      title: 'Fee Management',
+      title: 'Fee management',
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AdminSpacing.pagePadding),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _buildFilterRow(),
-            const SizedBox(height: 10),
+            const AdminPageHeader(
+              title: 'Fee management',
+              subtitle:
+                  'Structures, class roster billing, analytics, and defaulters. '
+                  'Select year, class, and filters, then Apply.',
+            ),
+            AdminFilterCard(
+              onReset: _resetFeeFilters,
+              child: _buildFilterRow(),
+            ),
+            const SizedBox(height: AdminSpacing.sm),
             if (_error != null)
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(10),
-                margin: const EdgeInsets.only(bottom: 8),
-                decoration: BoxDecoration(
-                  color: Colors.red.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.red.shade200),
-                ),
-                child: Text(
-                  _error!,
-                  style: TextStyle(color: Colors.red.shade700),
+              Padding(
+                padding: const EdgeInsets.only(bottom: AdminSpacing.sm),
+                child: Material(
+                  color: AdminColors.dangerSurface,
+                  borderRadius: BorderRadius.circular(10),
+                  child: Padding(
+                    padding: const EdgeInsets.all(AdminSpacing.md),
+                    child: SelectableText(
+                      _error!,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: AdminColors.danger,
+                      ),
+                    ),
+                  ),
                 ),
               ),
             TabBar(
               controller: _tabController,
               isScrollable: true,
+              dividerColor: const Color(0x00000000),
               tabs: const [
                 Tab(text: 'Structures'),
                 Tab(text: 'Students'),
@@ -1860,10 +1896,13 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                 Tab(text: 'Defaulters'),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AdminSpacing.xs),
             Expanded(
               child: _loading
-                  ? const Center(child: CircularProgressIndicator())
+                  ? const AdminLoadingPlaceholder(
+                      message: 'Loading fee data…',
+                      height: 320,
+                    )
                   : TabBarView(
                       controller: _tabController,
                       children: [
@@ -1882,8 +1921,8 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
 
   Widget _buildFilterRow() {
     return Wrap(
-      spacing: 12,
-      runSpacing: 8,
+      spacing: AdminSpacing.sm,
+      runSpacing: AdminSpacing.sm,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         SizedBox(
@@ -2054,8 +2093,8 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
             },
           ),
         ),
-        ElevatedButton.icon(
-          icon: const Icon(Icons.refresh, size: 14),
+        FilledButton.icon(
+          icon: const Icon(Icons.refresh_rounded, size: 18),
           label: const Text('Apply'),
           onPressed: _applyFeeFilters,
         ),
@@ -2065,8 +2104,10 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
 
   Widget _buildStructuresTab() {
     if (_selectedStandardId == null) {
-      return const Center(
-        child: Text('Please select a class to manage fee structures.'),
+      return const AdminEmptyState(
+        icon: Icons.class_outlined,
+        title: 'Select a class',
+        message: 'Choose class (and year) in filters, then Apply, to manage fee structures.',
       );
     }
 
@@ -2077,9 +2118,9 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
           spacing: 8,
           runSpacing: 8,
           children: [
-            ElevatedButton.icon(
-              icon: const Icon(Icons.add, size: 16),
-              label: const Text('Add Fee Structure'),
+            FilledButton.icon(
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Add fee structure'),
               onPressed: _showCreateStructureDialog,
             ),
             OutlinedButton.icon(
@@ -2097,8 +2138,10 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
         const SizedBox(height: 12),
         if (_structures.isEmpty)
           const Expanded(
-            child: Center(
-              child: Text('No fee structures found for selected class/year.'),
+            child: AdminEmptyState(
+              icon: Icons.receipt_long_outlined,
+              title: 'No fee structures',
+              message: 'Add a structure for this class and academic year.',
             ),
           )
         else
@@ -2106,7 +2149,9 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: DataTable(
-                headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
+                headingRowColor: adminTableHeadingRowColor(),
+                horizontalMargin: AdminSpacing.md,
+                columnSpacing: AdminSpacing.lg,
                 columns: const [
                   DataColumn(label: Text('Fee Head')),
                   DataColumn(label: Text('Category')),
@@ -2116,8 +2161,10 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                   DataColumn(label: Text('Description')),
                   DataColumn(label: Text('Actions')),
                 ],
-                rows: _structures.map((s) {
+                rows: _structures.asMap().entries.map((entry) {
+                  final s = entry.value;
                   return DataRow(
+                    color: adminDataRowColor(entry.key),
                     cells: [
                       DataCell(Text(s.displayLabel)),
                       DataCell(Text(s.feeCategory)),
@@ -2135,13 +2182,13 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                               child: Container(
                                 padding: const EdgeInsets.all(8),
                                 decoration: BoxDecoration(
-                                  color: Colors.blue.shade50,
+                                  color: AdminColors.primarySubtle,
                                   borderRadius: BorderRadius.circular(18),
-                                  border: Border.all(color: Colors.blue.shade200),
+                                  border: Border.all(color: AdminColors.primaryAction.withValues(alpha: 0.22)),
                                 ),
                                 child: Icon(
                                   Icons.edit_outlined,
-                                  color: Colors.blue.shade700,
+                                  color: AdminColors.primaryAction,
                                   size: 16,
                                 ),
                               ),
@@ -2153,13 +2200,13 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                               child: Container(
                                 padding: const EdgeInsets.all(8),
                                 decoration: BoxDecoration(
-                                  color: Colors.red.shade50,
+                                  color: AdminColors.dangerSurface,
                                   borderRadius: BorderRadius.circular(18),
-                                  border: Border.all(color: Colors.red.shade200),
+                                  border: Border.all(color: AdminColors.danger.withValues(alpha: 0.25)),
                                 ),
                                 child: Icon(
                                   Icons.delete_outline,
-                                  color: Colors.red.shade700,
+                                  color: AdminColors.danger,
                                   size: 16,
                                 ),
                               ),
@@ -2182,24 +2229,16 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
   Widget _buildStudentsTab() {
     if (_students.isEmpty) {
       final noClass = _selectedStandardId == null;
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              noClass
-                  ? 'Select a class (and year) first, then use Apply or Load Students.'
-                  : 'No rows yet, or no students match Cycle / Status. '
-                      'Class and filters are kept—click Load Students or Apply to refresh.',
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 12),
-            ElevatedButton.icon(
-              icon: const Icon(Icons.refresh),
-              label: const Text('Load Students'),
-              onPressed: noClass ? null : _loadStudents,
-            ),
-          ],
+      return AdminEmptyState(
+        icon: Icons.people_outline,
+        title: noClass ? 'Select a class' : 'No students in view',
+        message: noClass
+            ? 'Choose class and year in filters, then Apply.'
+            : 'Adjust cycle/status filters or click Load students to refresh.',
+        action: FilledButton.icon(
+          icon: const Icon(Icons.refresh_rounded, size: 18),
+          label: const Text('Load students'),
+          onPressed: noClass ? null : _loadStudents,
         ),
       );
     }
@@ -2207,7 +2246,9 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: DataTable(
-        headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
+        headingRowColor: adminTableHeadingRowColor(),
+        horizontalMargin: AdminSpacing.md,
+        columnSpacing: AdminSpacing.lg,
         columns: const [
           DataColumn(label: Text('Student')),
           DataColumn(label: Text('Action')),
@@ -2222,16 +2263,18 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
           DataColumn(label: Text('Outstanding')),
           DataColumn(label: Text('Status')),
         ],
-        rows: _students.map((s) {
+        rows: _students.asMap().entries.map((entry) {
+          final s = entry.value;
           final statusLabel = s.status.toUpperCase();
           final statusColor = statusLabel == 'OVERDUE'
-              ? Colors.red
+              ? AdminColors.danger
               : statusLabel == 'PAID'
-              ? Colors.green
+              ? AdminColors.success
               : statusLabel == 'PARTIAL'
-              ? Colors.orange
-              : Colors.blueGrey;
+              ? const Color(0xFFEA580C)
+              : AdminColors.textSecondary;
           return DataRow(
+            color: adminDataRowColor(entry.key),
             cells: [
               DataCell(Text(s.studentName ?? s.admissionNumber ?? '-')),
               DataCell(
@@ -2289,11 +2332,14 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
 
   Widget _buildAnalyticsTab() {
     if (_analytics.isEmpty) {
-      return Center(
-        child: ElevatedButton.icon(
-          icon: const Icon(Icons.refresh),
-          label: const Text('Load Analytics'),
+      return AdminEmptyState(
+        icon: Icons.analytics_outlined,
+        title: 'Analytics not loaded',
+        message: 'Load collection KPIs and breakdowns for the current filters.',
+        action: FilledButton.icon(
           onPressed: _loadAnalytics,
+          icon: const Icon(Icons.refresh_rounded, size: 18),
+          label: const Text('Load analytics'),
         ),
       );
     }
@@ -2321,36 +2367,36 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
         children: [
           // KPI cards
           Wrap(
-            spacing: 12,
-            runSpacing: 12,
+            spacing: AdminSpacing.sm,
+            runSpacing: AdminSpacing.sm,
             children: [
               _KpiCard(
                 'Collected',
                 _fmt(totalPaid),
                 Icons.check_circle_outline,
-                Colors.green,
+                AdminColors.success,
               ),
               _KpiCard(
                 'Outstanding',
                 _fmt(totalOut),
                 Icons.pending_outlined,
-                Colors.orange,
+                const Color(0xFFEA580C),
               ),
               _KpiCard(
                 'Collection %',
                 '${pct.toStringAsFixed(1)}%',
                 Icons.bar_chart_outlined,
                 pct >= 80
-                    ? Colors.green
+                    ? AdminColors.success
                     : pct >= 50
-                    ? Colors.orange
-                    : Colors.red,
+                    ? const Color(0xFFEA580C)
+                    : AdminColors.danger,
               ),
               _KpiCard(
                 'Defaulters',
                 '$def',
                 Icons.warning_amber_outlined,
-                Colors.red,
+                AdminColors.danger,
               ),
             ],
           ),
@@ -2358,11 +2404,11 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
 
           // Collection progress
           Container(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(AdminSpacing.md),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: AdminColors.surface,
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: Colors.grey.shade200),
+              border: Border.all(color: AdminColors.border),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2381,10 +2427,10 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                       '${pct.toStringAsFixed(1)}%',
                       style: TextStyle(
                         color: pct >= 80
-                            ? Colors.green
+                            ? AdminColors.success
                             : pct >= 50
-                            ? Colors.orange
-                            : Colors.red,
+                            ? const Color(0xFFEA580C)
+                            : AdminColors.danger,
                         fontWeight: FontWeight.w800,
                         fontSize: 16,
                       ),
@@ -2395,13 +2441,13 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                 LinearProgressIndicator(
                   value: (pct / 100).clamp(0.0, 1.0),
                   minHeight: 10,
-                  backgroundColor: Colors.grey.shade200,
+                  backgroundColor: AdminColors.border,
                   valueColor: AlwaysStoppedAnimation<Color>(
                     pct >= 80
-                        ? Colors.green
+                        ? AdminColors.success
                         : pct >= 50
-                        ? Colors.orange
-                        : Colors.red,
+                        ? const Color(0xFFEA580C)
+                        : AdminColors.danger,
                   ),
                 ),
               ],
@@ -2419,7 +2465,9 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: DataTable(
-                headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
+                headingRowColor: adminTableHeadingRowColor(),
+                horizontalMargin: AdminSpacing.md,
+                columnSpacing: AdminSpacing.lg,
                 columns: const [
                   DataColumn(label: Text('Class')),
                   DataColumn(label: Text('Students')),
@@ -2429,10 +2477,12 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                   DataColumn(label: Text('Defaulters')),
                   DataColumn(label: Text('Collection %')),
                 ],
-                rows: byClass.map((c) {
+                rows: byClass.asMap().entries.map((entry) {
+                  final c = entry.value;
                   final cpct =
                       (c['collection_percentage'] as num?)?.toDouble() ?? 0;
                   return DataRow(
+                    color: adminDataRowColor(entry.key),
                     cells: [
                       DataCell(Text(c['standard_name']?.toString() ?? '-')),
                       DataCell(
@@ -2462,10 +2512,10 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                           '${cpct.toStringAsFixed(1)}%',
                           style: TextStyle(
                             color: cpct >= 80
-                                ? Colors.green
+                                ? AdminColors.success
                                 : cpct >= 50
-                                ? Colors.orange
-                                : Colors.red,
+                                ? const Color(0xFFEA580C)
+                                : AdminColors.danger,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -2488,12 +2538,12 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
             ...byStatus.map((s) {
               final st = (s['status'] as String? ?? '').toUpperCase();
               final color = st == 'PAID'
-                  ? Colors.green
+                  ? AdminColors.success
                   : st == 'PARTIAL'
-                  ? Colors.orange
+                  ? const Color(0xFFEA580C)
                   : st == 'OVERDUE'
-                  ? Colors.red
-                  : Colors.blueGrey;
+                  ? AdminColors.danger
+                  : AdminColors.textSecondary;
               return Padding(
                 padding: const EdgeInsets.only(bottom: 6),
                 child: Row(
@@ -2537,7 +2587,7 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                     const Icon(
                       Icons.payment_outlined,
                       size: 16,
-                      color: Colors.blueGrey,
+                      color: AdminColors.textSecondary,
                     ),
                     const SizedBox(width: 8),
                     Text(
@@ -2562,24 +2612,14 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
 
   Widget _buildDefaultersTab() {
     if (_defaulters.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(
-              Icons.check_circle_outline,
-              size: 48,
-              color: Colors.green,
-            ),
-            const SizedBox(height: 12),
-            const Text('No defaulters found.', style: TextStyle(fontSize: 16)),
-            const SizedBox(height: 12),
-            ElevatedButton.icon(
-              icon: const Icon(Icons.refresh),
-              label: const Text('Refresh'),
-              onPressed: _loadDefaulters,
-            ),
-          ],
+      return AdminEmptyState(
+        icon: Icons.verified_outlined,
+        title: 'No defaulters',
+        message: 'No overdue accounts match the current year and class filters.',
+        action: FilledButton.icon(
+          onPressed: _loadDefaulters,
+          icon: const Icon(Icons.refresh_rounded, size: 18),
+          label: const Text('Refresh'),
         ),
       );
     }
@@ -2587,7 +2627,9 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: DataTable(
-        headingRowColor: WidgetStateProperty.all(Colors.red.shade50),
+        headingRowColor: WidgetStateProperty.all(AdminColors.dangerSurface),
+        horizontalMargin: AdminSpacing.md,
+        columnSpacing: AdminSpacing.lg,
         columns: const [
           DataColumn(label: Text('Adm. No.')),
           DataColumn(label: Text('Name')),
@@ -2595,19 +2637,21 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
           DataColumn(label: Text('Total Due')),
           DataColumn(label: Text('Oldest Due Date')),
         ],
-        rows: _defaulters
-            .map(
-              (d) => DataRow(
-                cells: [
-                  DataCell(Text(d['admission_number']?.toString() ?? '-')),
-                  DataCell(Text(d['student_name']?.toString() ?? '-')),
-                  DataCell(Text('${d['overdue_ledgers'] ?? 0}')),
-                  DataCell(Text(_fmt(d['total_overdue_amount']))),
-                  DataCell(Text(d['oldest_due_date']?.toString() ?? '-')),
-                ],
-              ),
-            )
-            .toList(),
+        rows: _defaulters.asMap().entries.map(
+              (entry) {
+                final d = entry.value;
+                return DataRow(
+                  color: adminDataRowColor(entry.key),
+                  cells: [
+                    DataCell(Text(d['admission_number']?.toString() ?? '-')),
+                    DataCell(Text(d['student_name']?.toString() ?? '-')),
+                    DataCell(Text('${d['overdue_ledgers'] ?? 0}')),
+                    DataCell(Text(_fmt(d['total_overdue_amount']))),
+                    DataCell(Text(d['oldest_due_date']?.toString() ?? '-')),
+                  ],
+                );
+              },
+            ).toList(),
       ),
     );
   }
@@ -2626,16 +2670,16 @@ class _KpiCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: 170,
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(AdminSpacing.sm),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
+        color: color.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withOpacity(0.25)),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
       ),
       child: Row(
         children: [
           Icon(icon, color: color, size: 22),
-          const SizedBox(width: 8),
+          const SizedBox(width: AdminSpacing.xs),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2650,7 +2694,10 @@ class _KpiCard extends StatelessWidget {
                 ),
                 Text(
                   label,
-                  style: TextStyle(fontSize: 11, color: color.withOpacity(0.7)),
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AdminColors.textSecondary,
+                  ),
                 ),
               ],
             ),

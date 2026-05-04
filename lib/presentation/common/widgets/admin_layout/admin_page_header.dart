@@ -15,12 +15,14 @@ class AdminPageHeader extends StatelessWidget {
 
   final String title;
   final String? subtitle;
-  /// Primary CTA (e.g. FilledButton) — placed on the right before icon actions.
+  /// Primary CTA (e.g. [FilledButton]) — placed on the right before icon actions.
   final Widget? primaryAction;
   final List<Widget> iconActions;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Padding(
       padding: const EdgeInsets.only(bottom: AdminSpacing.md),
       child: Row(
@@ -32,21 +34,25 @@ class AdminPageHeader extends StatelessWidget {
               children: [
                 Text(
                   title,
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w600,
-                        color: AdminColors.textPrimary,
-                      ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.headlineSmall?.copyWith(
+                    color: AdminColors.textPrimary,
+                    height: 1.2,
+                  ),
                 ),
                 if (subtitle != null && subtitle!.trim().isNotEmpty) ...[
                   const SizedBox(height: AdminSpacing.xs),
                   Text(
                     subtitle!,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          fontSize: 13,
-                          color: AdminColors.textSecondary,
-                          height: 1.35,
-                        ),
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w400,
+                      color: AdminColors.textSecondary,
+                      height: 1.4,
+                    ),
                   ),
                 ],
               ],
@@ -54,11 +60,14 @@ class AdminPageHeader extends StatelessWidget {
           ),
           if (primaryAction != null) ...[
             const SizedBox(width: AdminSpacing.md),
-            primaryAction!,
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: primaryAction!,
+            ),
           ],
           ...iconActions.map(
             (w) => Padding(
-              padding: const EdgeInsets.only(left: AdminSpacing.xs),
+              padding: const EdgeInsets.only(left: AdminSpacing.xs, top: 2),
               child: IconTheme(
                 data: const IconThemeData(
                   color: AdminColors.textSecondary,

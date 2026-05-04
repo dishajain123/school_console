@@ -3,15 +3,21 @@
 // FIXED: screen now uses the corrected AuditLog model (occurredAt, entityType,
 //        entityId, description, actorName, beforeState, afterState).
 // FIXED: calls /audit-logs (not /approvals/audit/logs).
-// Features: filter by action, entity type, date range, free-text search.
+// Features: filter by action, entity type, date range.
 //           Paginated. Expandable rows to view before/after state.
-//           SUPERADMIN sees all schools; PRINCIPAL sees own school only.
+//           STAFF_ADMIN sees all schools; PRINCIPAL sees own school only.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/theme/admin_colors.dart';
 import '../../../data/models/audit/audit_log.dart';
 import '../../../domains/providers/audit_provider.dart';
 import '../../common/layout/admin_scaffold.dart';
+import '../../common/widgets/admin_layout/admin_empty_state.dart';
+import '../../common/widgets/admin_layout/admin_filter_card.dart';
+import '../../common/widgets/admin_layout/admin_loading_placeholder.dart';
+import '../../common/widgets/admin_layout/admin_page_header.dart';
+import '../../common/widgets/admin_layout/admin_spacing.dart';
 
 class AuditLogScreen extends ConsumerStatefulWidget {
   const AuditLogScreen({super.key});
@@ -21,27 +27,17 @@ class AuditLogScreen extends ConsumerStatefulWidget {
 }
 
 class _AuditLogScreenState extends ConsumerState<AuditLogScreen> {
-  final _searchCtrl = TextEditingController();
-
   String? _selectedAction;
   String? _selectedEntityType;
   String? _dateFrom;
   String? _dateTo;
-
-  @override
-  void dispose() {
-    _searchCtrl.dispose();
-    super.dispose();
-  }
 
   void _applyFilters() {
     ref.read(auditLogFilterProvider.notifier).update(
           AuditLogFilter(
             action: _selectedAction,
             entityType: _selectedEntityType,
-            q: _searchCtrl.text.trim().isEmpty
-                ? null
-                : _searchCtrl.text.trim(),
+            q: null,
             dateFrom: _dateFrom,
             dateTo: _dateTo,
             page: 1,
@@ -51,7 +47,6 @@ class _AuditLogScreenState extends ConsumerState<AuditLogScreen> {
   }
 
   void _resetFilters() {
-    _searchCtrl.clear();
     setState(() {
       _selectedAction = null;
       _selectedEntityType = null;
@@ -87,42 +82,32 @@ class _AuditLogScreenState extends ConsumerState<AuditLogScreen> {
     final entityTypes = ref.watch(auditEntityTypesProvider);
 
     return AdminScaffold(
-      title: 'Audit Log',
+      title: 'Audit log',
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AdminSpacing.pagePadding),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // ── Filter Section ────────────────────────────────────────────
-            Card(
-              elevation: 0,
-              color: Colors.grey.shade50,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-                side: BorderSide(color: Colors.grey.shade200),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Filters',
-                      style: TextStyle(
-                          fontWeight: FontWeight.w600, fontSize: 13),
-                    ),
-                    const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 10,
-                      runSpacing: 10,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
+            const AdminPageHeader(
+              title: 'Audit log',
+              subtitle:
+                  'Trace admin actions with filters and pagination. Expand rows to compare before/after state.',
+            ),
+            AdminFilterCard(
+              onReset: _resetFilters,
+              child: Wrap(
+                    spacing: AdminSpacing.sm,
+                    runSpacing: AdminSpacing.sm,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
                         // Action filter
                         SizedBox(
                           width: 200,
                           child: actions.when(
                             data: (list) => DropdownButtonFormField<String?>(
-                              value: _selectedAction,
+                              key: ValueKey<String?>(
+                                  'audit_action_${_selectedAction ?? 'null'}'),
+                              initialValue: _selectedAction,
                               isExpanded: true,
                               decoration: const InputDecoration(
                                 labelText: 'Action',
@@ -169,10 +154,16 @@ class _AuditLogScreenState extends ConsumerState<AuditLogScreen> {
                                   setState(() => _selectedAction = v),
                             ),
                             loading: () => const SizedBox(
-                                height: 40,
-                                child: Center(
-                                    child: LinearProgressIndicator())),
-                            error: (_, __) => const Text('—'),
+                              height: 40,
+                              child: Center(
+                                child: LinearProgressIndicator(
+                                  minHeight: 2,
+                                  color: AdminColors.primaryAction,
+                                  backgroundColor: AdminColors.borderSubtle,
+                                ),
+                              ),
+                            ),
+                            error: (_, _) => const Text('—'),
                           ),
                         ),
                         // Entity type filter
@@ -181,7 +172,9 @@ class _AuditLogScreenState extends ConsumerState<AuditLogScreen> {
                           child: entityTypes.when(
                             data: (list) =>
                                 DropdownButtonFormField<String?>(
-                              value: _selectedEntityType,
+                              key: ValueKey<String?>(
+                                  'audit_entity_${_selectedEntityType ?? 'null'}'),
+                              initialValue: _selectedEntityType,
                               isExpanded: true,
                               decoration: const InputDecoration(
                                 labelText: 'Entity Type',
@@ -228,30 +221,32 @@ class _AuditLogScreenState extends ConsumerState<AuditLogScreen> {
                                   setState(() => _selectedEntityType = v),
                             ),
                             loading: () => const SizedBox(
-                                height: 40,
-                                child: Center(
-                                    child: LinearProgressIndicator())),
-                            error: (_, __) => const Text('—'),
+                              height: 40,
+                              child: Center(
+                                child: LinearProgressIndicator(
+                                  minHeight: 2,
+                                  color: AdminColors.primaryAction,
+                                  backgroundColor: AdminColors.borderSubtle,
+                                ),
+                              ),
+                            ),
+                            error: (_, _) => const Text('—'),
                           ),
                         ),
-                        // Search text
                         SizedBox(
                           width: 200,
-                          child: TextField(
-                            controller: _searchCtrl,
-                            decoration: const InputDecoration(
-                              labelText: 'Search description',
-                              isDense: true,
-                              border: OutlineInputBorder(),
-                              contentPadding: EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 8),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: FilledButton.icon(
+                              icon: const Icon(Icons.search_rounded, size: 18),
+                              label: const Text('Apply filters'),
+                              onPressed: _applyFilters,
                             ),
-                            onSubmitted: (_) => _applyFilters(),
                           ),
                         ),
                         // Date From
                         OutlinedButton.icon(
-                          icon: const Icon(Icons.date_range, size: 14),
+                          icon: const Icon(Icons.date_range, size: 18),
                           label: Text(_dateFrom != null
                               ? 'From: $_dateFrom'
                               : 'From Date'),
@@ -259,76 +254,101 @@ class _AuditLogScreenState extends ConsumerState<AuditLogScreen> {
                         ),
                         // Date To
                         OutlinedButton.icon(
-                          icon: const Icon(Icons.date_range, size: 14),
+                          icon: const Icon(Icons.date_range, size: 18),
                           label: Text(
                               _dateTo != null ? 'To: $_dateTo' : 'To Date'),
                           onPressed: () => _pickDate(isFrom: false),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        ElevatedButton.icon(
-                          icon: const Icon(Icons.search, size: 14),
-                          label: const Text('Apply Filters'),
-                          onPressed: _applyFilters,
-                        ),
-                        const SizedBox(width: 8),
-                        OutlinedButton.icon(
-                          icon: const Icon(Icons.clear, size: 14),
-                          label: const Text('Reset'),
-                          onPressed: _resetFilters,
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
               ),
-            ),
-            const SizedBox(height: 12),
+            const SizedBox(height: AdminSpacing.sm),
 
             // ── Log List ──────────────────────────────────────────────────
             Expanded(
               child: logs.when(
-                loading: () =>
-                    const Center(child: CircularProgressIndicator()),
+                loading: () => const AdminLoadingPlaceholder(
+                  message: 'Loading audit log…',
+                  height: 320,
+                ),
                 error: (e, _) => Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.error_outline,
-                          size: 48, color: Colors.red),
-                      const SizedBox(height: 8),
-                      Text(e.toString(),
-                          style: const TextStyle(color: Colors.red)),
-                      const SizedBox(height: 8),
-                      OutlinedButton(
-                        onPressed: () =>
-                            ref.invalidate(auditLogProvider),
-                        child: const Text('Retry'),
+                  child: Padding(
+                    padding: const EdgeInsets.all(AdminSpacing.lg),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 520),
+                      child: Material(
+                        color: AdminColors.dangerSurface,
+                        borderRadius: BorderRadius.circular(8),
+                        child: Padding(
+                          padding: const EdgeInsets.all(AdminSpacing.md),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.error_outline_rounded,
+                                    color: AdminColors.danger,
+                                    size: 28,
+                                  ),
+                                  const SizedBox(width: AdminSpacing.sm),
+                                  Text(
+                                    'Could not load audit log',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleSmall
+                                        ?.copyWith(
+                                          color: AdminColors.textPrimary,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: AdminSpacing.sm),
+                              SelectableText(
+                                e.toString(),
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(
+                                      color: AdminColors.danger,
+                                      height: 1.4,
+                                    ),
+                              ),
+                              const SizedBox(height: AdminSpacing.md),
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: FilledButton.icon(
+                                  icon: const Icon(Icons.refresh_rounded,
+                                      size: 18),
+                                  label: const Text('Retry'),
+                                  onPressed: () =>
+                                      ref.invalidate(auditLogProvider),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
-                    ],
+                    ),
                   ),
                 ),
                 data: (items) {
                   if (items.isEmpty) {
-                    return const Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.history, size: 56, color: Colors.grey),
-                          SizedBox(height: 12),
-                          Text('No audit log entries found for the selected filters.',
-                              style: TextStyle(color: Colors.grey)),
-                        ],
-                      ),
+                    return const AdminEmptyState(
+                      icon: Icons.history,
+                      title: 'No audit entries',
+                      message:
+                          'Try widening filters or changing the date range, then apply again.',
                     );
                   }
                   return ListView.separated(
                     itemCount: items.length,
-                    separatorBuilder: (_, __) =>
-                        const Divider(height: 1),
+                    separatorBuilder: (_, _) => const Divider(
+                      height: 1,
+                      color: AdminColors.border,
+                    ),
                     itemBuilder: (context, index) {
                       final item = items[index];
                       return _AuditLogTile(log: item);
@@ -366,18 +386,18 @@ class _AuditLogTileState extends State<_AuditLogTile> {
   Color _actionColor(String action) {
     final a = action.toUpperCase();
     if (a.contains('APPROVE') || a.contains('ENROLL') || a.contains('CREATE')) {
-      return Colors.green;
+      return AdminColors.success;
     }
     if (a.contains('REJECT') || a.contains('DELETE') || a.contains('EXIT')) {
-      return Colors.red;
+      return AdminColors.danger;
     }
     if (a.contains('PROMOTE') || a.contains('UPDATE') || a.contains('EDIT')) {
-      return Colors.blue;
+      return AdminColors.primaryAction;
     }
     if (a.contains('HOLD') || a.contains('SUSPEND')) {
-      return Colors.orange;
+      return const Color(0xFFEA580C);
     }
-    return Colors.grey.shade600;
+    return AdminColors.textSecondary;
   }
 
   @override
@@ -404,11 +424,12 @@ class _AuditLogTileState extends State<_AuditLogTile> {
                   padding: const EdgeInsets.symmetric(
                       horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
-                    color:
-                        _actionColor(log.action).withOpacity(0.12),
+                    color: _actionColor(log.action)
+                        .withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(4),
                     border: Border.all(
-                        color: _actionColor(log.action).withOpacity(0.5)),
+                      color: _actionColor(log.action).withValues(alpha: 0.45),
+                    ),
                   ),
                   child: Text(
                     log.action,
@@ -425,17 +446,19 @@ class _AuditLogTileState extends State<_AuditLogTile> {
                   padding: const EdgeInsets.symmetric(
                       horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
-                    color: Colors.purple.shade50,
+                    color: AdminColors.primarySubtle,
                     borderRadius: BorderRadius.circular(4),
-                    border:
-                        Border.all(color: Colors.purple.shade200),
+                    border: Border.all(
+                      color:
+                          AdminColors.primaryAction.withValues(alpha: 0.28),
+                    ),
                   ),
                   child: Text(
                     log.entityType,
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 10,
                       fontWeight: FontWeight.w600,
-                      color: Colors.purple.shade700,
+                      color: AdminColors.primaryPressed,
                     ),
                   ),
                 ),
@@ -444,7 +467,9 @@ class _AuditLogTileState extends State<_AuditLogTile> {
                 Text(
                   _formatDate(log.occurredAt),
                   style: const TextStyle(
-                      fontSize: 11, color: Colors.grey),
+                    fontSize: 11,
+                    color: AdminColors.textMuted,
+                  ),
                 ),
                 if (hasStateChanges) ...[
                   const SizedBox(width: 6),
@@ -453,7 +478,7 @@ class _AuditLogTileState extends State<_AuditLogTile> {
                         ? Icons.expand_less
                         : Icons.expand_more,
                     size: 16,
-                    color: Colors.grey,
+                    color: AdminColors.textMuted,
                   ),
                 ],
               ],
@@ -495,7 +520,7 @@ class _AuditLogTileState extends State<_AuditLogTile> {
             // Before/after state expansion
             if (_expanded && hasStateChanges) ...[
               const SizedBox(height: 8),
-              const Divider(height: 1),
+              const Divider(height: 1, color: AdminColors.border),
               const SizedBox(height: 8),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -504,8 +529,9 @@ class _AuditLogTileState extends State<_AuditLogTile> {
                     Expanded(
                       child: _StateBox(
                         title: 'Before',
-                        color: Colors.red.shade50,
-                        borderColor: Colors.red.shade200,
+                        color: AdminColors.dangerSurface,
+                        borderColor:
+                            AdminColors.danger.withValues(alpha: 0.35),
                         data: log.beforeState!,
                       ),
                     ),
@@ -515,8 +541,9 @@ class _AuditLogTileState extends State<_AuditLogTile> {
                     Expanded(
                       child: _StateBox(
                         title: 'After',
-                        color: Colors.green.shade50,
-                        borderColor: Colors.green.shade200,
+                        color: AdminColors.success.withValues(alpha: 0.1),
+                        borderColor:
+                            AdminColors.success.withValues(alpha: 0.4),
                         data: log.afterState!,
                       ),
                     ),
@@ -540,11 +567,15 @@ class _InfoChip extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 12, color: Colors.grey.shade600),
+        Icon(icon, size: 12, color: AdminColors.textSecondary),
         const SizedBox(width: 3),
-        Text(label,
-            style:
-                TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 11,
+            color: AdminColors.textSecondary,
+          ),
+        ),
       ],
     );
   }

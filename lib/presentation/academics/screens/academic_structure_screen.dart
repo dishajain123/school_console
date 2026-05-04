@@ -1,14 +1,20 @@
 // lib/presentation/academics/screens/academic_structure_screen.dart  [Admin Console]
 // Phase 3: Standards (classes) and Sections management.
-// Only PRINCIPAL and SUPERADMIN can create/edit; STAFF with settings:manage can view.
+// Only PRINCIPAL and STAFF_ADMIN can create/edit; STAFF with settings:manage can view.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
 
 import '../../../core/constants/api_constants.dart';
 import '../../../core/network/dio_client.dart';
+import '../../../core/theme/admin_colors.dart';
 import '../../../domains/providers/auth_provider.dart';
 import '../../common/layout/admin_scaffold.dart';
+import '../../common/widgets/admin_layout/admin_empty_state.dart';
+import '../../common/widgets/admin_layout/admin_loading_placeholder.dart';
+import '../../common/widgets/admin_layout/admin_page_header.dart';
+import '../../common/widgets/admin_layout/admin_spacing.dart';
+import '../../common/widgets/admin_layout/admin_surface_card.dart';
 
 // ── Simple models ─────────────────────────────────────────────────────────────
 
@@ -593,7 +599,7 @@ class _AcademicStructureScreenState
     final user = ref.read(authControllerProvider).valueOrNull;
     if (user == null) return false;
     return user.role.toUpperCase() == 'PRINCIPAL' ||
-        user.role.toUpperCase() == 'SUPERADMIN';
+        user.role.toUpperCase() == 'STAFF_ADMIN';
   }
 
   Future<void> _showAddStandardDialog() async {
@@ -1060,79 +1066,124 @@ class _AcademicStructureScreenState
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return AdminScaffold(
-      title: 'Class Setup',
+      title: 'Class setup',
       child: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Padding(
+              padding: EdgeInsets.all(AdminSpacing.pagePadding),
+              child: AdminLoadingPlaceholder(
+                message: 'Loading classes and sections…',
+                height: 320,
+              ),
+            )
           : _error != null
-          ? Center(child: Text(_error!))
-          : Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Year selector
-                  if (_years.isNotEmpty)
-                    Row(
-                      children: [
-                        const Text('Academic Year: '),
-                        const SizedBox(width: 8),
-                        DropdownButton<String>(
-                          value: _selectedYearId,
-                          items: _years
-                              .map(
-                                (y) => DropdownMenuItem<String>(
-                                  value: y['id']?.toString(),
-                                  child: Text(y['name']?.toString() ?? ''),
-                                ),
-                              )
-                              .toList(),
-                          onChanged: (val) {
-                            setState(() => _selectedYearId = val);
-                            _loadStandards();
-                          },
-                        ),
-                        const SizedBox(width: 8),
-                        if (_canEdit)
-                          OutlinedButton.icon(
-                            onPressed: _showAddAcademicYearDialog,
-                            icon: const Icon(Icons.add),
-                            label: const Text('Add Year'),
-                          ),
-                      ],
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(AdminSpacing.pagePadding),
+                child: Material(
+                  color: AdminColors.dangerSurface,
+                  borderRadius: BorderRadius.circular(10),
+                  child: Padding(
+                    padding: const EdgeInsets.all(AdminSpacing.md),
+                    child: SelectableText(
+                      _error!,
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: AdminColors.danger,
+                      ),
                     ),
-                  const SizedBox(height: 16),
+                  ),
+                ),
+              ),
+            )
+          : Padding(
+              padding: const EdgeInsets.all(AdminSpacing.pagePadding),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const AdminPageHeader(
+                    title: 'Class setup',
+                    subtitle:
+                        'Pick an academic year, then manage classes, sections, and subjects for that year.',
+                  ),
+                  if (_years.isNotEmpty)
+                    AdminSurfaceCard(
+                      child: Wrap(
+                        spacing: AdminSpacing.sm,
+                        runSpacing: AdminSpacing.sm,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text(
+                            'Academic year',
+                            style: theme.textTheme.labelLarge?.copyWith(
+                              color: AdminColors.textSecondary,
+                            ),
+                          ),
+                          DropdownButton<String>(
+                            value: _selectedYearId,
+                            items: _years
+                                .map(
+                                  (y) => DropdownMenuItem<String>(
+                                    value: y['id']?.toString(),
+                                    child: Text(y['name']?.toString() ?? ''),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (val) {
+                              setState(() => _selectedYearId = val);
+                              _loadStandards();
+                            },
+                          ),
+                          if (_canEdit)
+                            OutlinedButton.icon(
+                              onPressed: _showAddAcademicYearDialog,
+                              icon: const Icon(Icons.add, size: 18),
+                              label: const Text('Add year'),
+                            ),
+                        ],
+                      ),
+                    ),
+                  const SizedBox(height: AdminSpacing.md),
                   Expanded(
                     child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         // Standards panel
                         Expanded(
-                          child: Card(
+                          child: AdminSurfaceCard(
+                            padding: EdgeInsets.zero,
                             child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
                                 ListTile(
-                                  title: const Text(
+                                  title: Text(
                                     'Classes',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
+                                    style: theme.textTheme.titleSmall?.copyWith(
+                                      fontWeight: FontWeight.w700,
+                                      color: AdminColors.textPrimary,
                                     ),
                                   ),
                                   trailing: _canEdit
                                       ? IconButton(
                                           icon: const Icon(Icons.add),
+                                          tooltip: 'Add class',
                                           onPressed: _showAddStandardDialog,
                                         )
                                       : null,
                                 ),
-                                const Divider(height: 1),
+                                const Divider(
+                                  height: 1,
+                                  color: AdminColors.border,
+                                ),
                                 Expanded(
                                   child: _standards.isEmpty
-                                      ? const Center(
-                                          child: Text(
-                                            'No classes. Add one above.',
-                                          ),
+                                      ? const AdminEmptyState(
+                                          icon: Icons.class_outlined,
+                                          title: 'No classes yet',
+                                          message:
+                                              'Add a class for the selected academic year.',
                                         )
                                       : ListView.builder(
                                           itemCount: _standards.length,
@@ -1188,43 +1239,51 @@ class _AcademicStructureScreenState
                             ),
                           ),
                         ),
-                        const SizedBox(width: 16),
+                        const SizedBox(width: AdminSpacing.md),
                         // Sections panel
                         Expanded(
-                          child: Card(
+                          child: AdminSurfaceCard(
+                            padding: EdgeInsets.zero,
                             child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
                                 ListTile(
                                   title: Text(
                                     _selectedStandard != null
                                         ? 'Sections — ${_selectedStandard!.name}'
                                         : 'Sections',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
+                                    style: theme.textTheme.titleSmall?.copyWith(
+                                      fontWeight: FontWeight.w700,
+                                      color: AdminColors.textPrimary,
                                     ),
                                   ),
                                   trailing:
                                       _canEdit && _selectedStandard != null
                                       ? IconButton(
                                           icon: const Icon(Icons.add),
+                                          tooltip: 'Add section',
                                           onPressed: _showAddSectionDialog,
                                         )
                                       : null,
                                 ),
-                                const Divider(height: 1),
+                                const Divider(
+                                  height: 1,
+                                  color: AdminColors.border,
+                                ),
                                 Expanded(
                                   child: _selectedStandard == null
-                                      ? const Center(
-                                          child: Text(
-                                            'Select a class to view sections',
-                                          ),
+                                      ? const AdminEmptyState(
+                                          icon: Icons.touch_app_outlined,
+                                          title: 'Select a class',
+                                          message:
+                                              'Choose a class on the left to load its sections.',
                                         )
                                       : _sections.isEmpty
-                                      ? const Center(
-                                          child: Text(
-                                            'No sections. Add one above.',
-                                          ),
+                                      ? const AdminEmptyState(
+                                          icon: Icons.grid_view_outlined,
+                                          title: 'No sections yet',
+                                          message:
+                                              'Add a section for this class using the + action.',
                                         )
                                       : ListView.builder(
                                           itemCount: _sections.length,
@@ -1286,43 +1345,51 @@ class _AcademicStructureScreenState
                             ),
                           ),
                         ),
-                        const SizedBox(width: 16),
+                        const SizedBox(width: AdminSpacing.md),
                         // Subjects panel
                         Expanded(
-                          child: Card(
+                          child: AdminSurfaceCard(
+                            padding: EdgeInsets.zero,
                             child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
                                 ListTile(
                                   title: Text(
                                     _selectedStandard != null
                                         ? 'Subjects — ${_selectedStandard!.name}'
                                         : 'Subjects',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
+                                    style: theme.textTheme.titleSmall?.copyWith(
+                                      fontWeight: FontWeight.w700,
+                                      color: AdminColors.textPrimary,
                                     ),
                                   ),
                                   trailing:
                                       _canEdit && _selectedStandard != null
                                       ? IconButton(
                                           icon: const Icon(Icons.add),
+                                          tooltip: 'Add subject',
                                           onPressed: _showAddSubjectDialog,
                                         )
                                       : null,
                                 ),
-                                const Divider(height: 1),
+                                const Divider(
+                                  height: 1,
+                                  color: AdminColors.border,
+                                ),
                                 Expanded(
                                   child: _selectedStandard == null
-                                      ? const Center(
-                                          child: Text(
-                                            'Select a class to view subjects',
-                                          ),
+                                      ? const AdminEmptyState(
+                                          icon: Icons.touch_app_outlined,
+                                          title: 'Select a class',
+                                          message:
+                                              'Choose a class on the left to load its subjects.',
                                         )
                                       : _subjects.isEmpty
-                                      ? const Center(
-                                          child: Text(
-                                            'No subjects. Add one above.',
-                                          ),
+                                      ? const AdminEmptyState(
+                                          icon: Icons.menu_book_outlined,
+                                          title: 'No subjects yet',
+                                          message:
+                                              'Add a subject for this class using the + action.',
                                         )
                                       : ListView.builder(
                                           itemCount: _subjects.length,

@@ -1,4 +1,4 @@
-// lib/presentation/academic_history/screens/student_academic_history_screen.dart  [Mobile App]
+// lib/presentation/academic_history/screens/student_academic_history_screen.dart  [Admin Console]
 // Phase 7 / 14 — Student Academic History.
 // Displays a student's full year-by-year academic record:
 //   class, section, roll number, status, joined date, left date, transfers.
@@ -9,20 +9,18 @@
 //   TEACHER / PRINCIPAL: any student in their school.
 //
 // API: GET /enrollments/history/{studentId}
-//      Returns StudentAcademicHistoryResponse:
-//        { student_id, admission_number, student_name,
-//          history: [ { id, standard_name, section_name, roll_number,
-//                       status, joined_on, left_on, exit_reason,
-//                       academic_year_name, admission_type } ] }
-//
-// Navigation: context.push('/academic-history/$studentId')
-// The studentId param is passed via go_router path parameter.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/constants/api_constants.dart';
+import '../../../core/theme/admin_colors.dart';
 import '../../../domains/providers/auth_provider.dart';
+import '../../common/layout/admin_scaffold.dart';
+import '../../common/widgets/admin_layout/admin_empty_state.dart';
+import '../../common/widgets/admin_layout/admin_loading_placeholder.dart';
+import '../../common/widgets/admin_layout/admin_page_header.dart';
+import '../../common/widgets/admin_layout/admin_spacing.dart';
 
 // ── Models ────────────────────────────────────────────────────────────────────
 
@@ -126,23 +124,23 @@ class _StudentAcademicHistoryScreenState
   Color _statusColor(String status) {
     switch (status.toUpperCase()) {
       case 'ACTIVE':
-        return Colors.green;
+        return AdminColors.success;
       case 'HOLD':
-        return Colors.orange;
+        return const Color(0xFFEA580C);
       case 'COMPLETED':
-        return Colors.blue;
+        return AdminColors.primaryAction;
       case 'PROMOTED':
-        return Colors.indigo;
+        return AdminColors.primaryPressed;
       case 'REPEATED':
-        return Colors.amber.shade700;
+        return const Color(0xFFD97706);
       case 'GRADUATED':
-        return Colors.teal;
+        return const Color(0xFF0D9488);
       case 'LEFT':
-        return Colors.red;
+        return AdminColors.danger;
       case 'TRANSFERRED':
-        return Colors.deepOrange;
+        return const Color(0xFFEA580C);
       default:
-        return Colors.grey;
+        return AdminColors.textMuted;
     }
   }
 
@@ -164,150 +162,241 @@ class _StudentAcademicHistoryScreenState
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final title = _studentName?.trim().isNotEmpty == true
+        ? _studentName!.trim()
+        : 'Academic history';
+    final headerSubtitle = [
+      if (_admissionNumber != null && _admissionNumber!.trim().isNotEmpty)
+        'Admission no. ${_admissionNumber!.trim()}',
+      if (!_loading && _error == null)
+        '${_history.length} academic year(s) on record',
+    ].join(' · ');
 
-    return Scaffold(
-      backgroundColor: Colors.grey.shade50,
-      appBar: AppBar(
-        title: Text(
-          _studentName != null
-              ? 'Academic History — $_studentName'
-              : 'Academic History',
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _load,
-          ),
-        ],
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.error_outline,
-                          color: Colors.red.shade400, size: 48),
-                      const SizedBox(height: 12),
-                      Text(_error!,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(color: Colors.red)),
-                      const SizedBox(height: 12),
-                      OutlinedButton(
-                        onPressed: _load,
-                        child: const Text('Retry'),
-                      ),
-                    ],
-                  ),
-                )
-              : _history.isEmpty
-                  ? const Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.history_edu_outlined,
-                              size: 64, color: Colors.grey),
-                          SizedBox(height: 16),
-                          Text(
-                            'No academic history found.',
-                            style:
-                                TextStyle(color: Colors.grey, fontSize: 16),
-                          ),
-                        ],
-                      ),
+    return AdminScaffold(
+      title: 'Academic history',
+      child: Padding(
+        padding: const EdgeInsets.all(AdminSpacing.pagePadding),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AdminPageHeader(
+              title: title,
+              subtitle: headerSubtitle.isEmpty
+                  ? 'Enrollment timeline by year, class, and status.'
+                  : headerSubtitle,
+              iconActions: [
+                IconButton(
+                  tooltip: 'Refresh',
+                  onPressed: _load,
+                  icon: const Icon(Icons.refresh_rounded),
+                ),
+              ],
+            ),
+            Expanded(
+              child: _loading
+                  ? const AdminLoadingPlaceholder(
+                      message: 'Loading academic history…',
+                      height: 320,
                     )
-                  : CustomScrollView(
-                      slivers: [
-                        // ── Header card ────────────────────────────────────
-                        SliverToBoxAdapter(
-                          child: Padding(
-                            padding:
-                                const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                            child: Card(
-                              elevation: 2,
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12)),
-                              child: Padding(
-                                padding: const EdgeInsets.all(16),
-                                child: Row(
-                                  children: [
-                                    CircleAvatar(
-                                      radius: 28,
-                                      backgroundColor: theme
-                                          .colorScheme.primaryContainer,
-                                      child: Text(
-                                        (_studentName ?? '?')
-                                            .substring(0, 1)
-                                            .toUpperCase(),
-                                        style: TextStyle(
-                                          fontSize: 22,
-                                          fontWeight: FontWeight.bold,
-                                          color: theme
-                                              .colorScheme.onPrimaryContainer,
-                                        ),
+                  : _error != null
+                      ? _HistoryErrorPanel(
+                          message: _error!,
+                          onRetry: _load,
+                        )
+                      : _history.isEmpty
+                          ? const AdminEmptyState(
+                              icon: Icons.history_edu_outlined,
+                              title: 'No academic history',
+                              message:
+                                  'No enrollment years are on file for this student yet.',
+                            )
+                          : CustomScrollView(
+                              slivers: [
+                                SliverToBoxAdapter(
+                                  child: Card(
+                                    margin: EdgeInsets.zero,
+                                    elevation: 0,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                      side: const BorderSide(
+                                        color: AdminColors.border,
                                       ),
                                     ),
-                                    const SizedBox(width: 16),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(
+                                        AdminSpacing.md,
+                                      ),
+                                      child: Row(
                                         children: [
-                                          Text(
-                                            _studentName ?? '—',
-                                            style: theme.textTheme.titleMedium
-                                                ?.copyWith(
-                                                    fontWeight:
-                                                        FontWeight.bold),
-                                          ),
-                                          if (_admissionNumber != null)
-                                            Text(
-                                              'Adm. No: $_admissionNumber',
-                                              style: theme.textTheme.bodySmall
-                                                  ?.copyWith(
-                                                      color: Colors.grey),
+                                          CircleAvatar(
+                                            radius: 28,
+                                            backgroundColor:
+                                                AdminColors.primarySubtle,
+                                            child: Text(
+                                              (_studentName != null &&
+                                                      _studentName!
+                                                          .trim()
+                                                          .isNotEmpty)
+                                                  ? _studentName!
+                                                      .trim()
+                                                      .substring(0, 1)
+                                                      .toUpperCase()
+                                                  : '?',
+                                              style: const TextStyle(
+                                                fontSize: 22,
+                                                fontWeight: FontWeight.bold,
+                                                color:
+                                                    AdminColors.primaryPressed,
+                                              ),
                                             ),
-                                          Text(
-                                            '${_history.length} academic year(s) on record',
-                                            style: theme.textTheme.bodySmall
-                                                ?.copyWith(
-                                                    color: Colors.grey),
+                                          ),
+                                          const SizedBox(
+                                            width: AdminSpacing.md,
+                                          ),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  _studentName?.trim()
+                                                              .isNotEmpty ==
+                                                          true
+                                                      ? _studentName!.trim()
+                                                      : '—',
+                                                  style: theme
+                                                      .textTheme.titleMedium
+                                                      ?.copyWith(
+                                                    fontWeight: FontWeight.w700,
+                                                    color:
+                                                        AdminColors.textPrimary,
+                                                  ),
+                                                ),
+                                                if (_admissionNumber != null)
+                                                  Text(
+                                                    'Admission no.: $_admissionNumber',
+                                                    style: theme
+                                                        .textTheme.bodySmall
+                                                        ?.copyWith(
+                                                      color: AdminColors
+                                                          .textSecondary,
+                                                    ),
+                                                  ),
+                                                Text(
+                                                  '${_history.length} academic year(s) on record',
+                                                  style: theme
+                                                      .textTheme.bodySmall
+                                                      ?.copyWith(
+                                                    color:
+                                                        AdminColors.textMuted,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
                                           ),
                                         ],
                                       ),
                                     ),
-                                  ],
+                                  ),
                                 ),
-                              ),
+                                SliverPadding(
+                                  padding: const EdgeInsets.only(
+                                    top: AdminSpacing.md,
+                                  ),
+                                  sliver: SliverList(
+                                    delegate: SliverChildBuilderDelegate(
+                                      (context, index) {
+                                        final entry = _history[index];
+                                        final isLast =
+                                            index == _history.length - 1;
+                                        return _TimelineItem(
+                                          entry: entry,
+                                          isLast: isLast,
+                                          statusColor:
+                                              _statusColor(entry.status),
+                                          formatAdmissionType:
+                                              _formatAdmissionType,
+                                        );
+                                      },
+                                      childCount: _history.length,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
-                        ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
-                        // ── Timeline ───────────────────────────────────────
-                        SliverPadding(
-                          padding: const EdgeInsets.all(16),
-                          sliver: SliverList(
-                            delegate: SliverChildBuilderDelegate(
-                              (context, index) {
-                                final entry = _history[index];
-                                final isLast =
-                                    index == _history.length - 1;
-                                return _TimelineItem(
-                                  entry: entry,
-                                  isLast: isLast,
-                                  statusColor:
-                                      _statusColor(entry.status),
-                                  formatAdmissionType:
-                                      _formatAdmissionType,
-                                );
-                              },
-                              childCount: _history.length,
+class _HistoryErrorPanel extends StatelessWidget {
+  const _HistoryErrorPanel({
+    required this.message,
+    required this.onRetry,
+  });
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(AdminSpacing.lg),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: Material(
+            color: AdminColors.dangerSurface,
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.all(AdminSpacing.md),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.error_outline_rounded,
+                        color: AdminColors.danger,
+                        size: 28,
+                      ),
+                      const SizedBox(width: AdminSpacing.sm),
+                      Text(
+                        'Could not load history',
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              color: AdminColors.textPrimary,
+                              fontWeight: FontWeight.w600,
                             ),
-                          ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AdminSpacing.sm),
+                  SelectableText(
+                    message,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AdminColors.danger,
+                          height: 1.4,
                         ),
-                      ],
+                  ),
+                  const SizedBox(height: AdminSpacing.md),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: FilledButton.icon(
+                      icon: const Icon(Icons.refresh_rounded, size: 18),
+                      label: const Text('Retry'),
+                      onPressed: onRetry,
                     ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -333,7 +422,6 @@ class _TimelineItem extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // ── Timeline line + dot ────────────────────────────────────────
           SizedBox(
             width: 40,
             child: Column(
@@ -344,10 +432,13 @@ class _TimelineItem extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: statusColor,
                     shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 2),
+                    border: Border.all(
+                      color: AdminColors.surface,
+                      width: 2,
+                    ),
                     boxShadow: [
                       BoxShadow(
-                        color: statusColor.withValues(alpha: 0.4),
+                        color: statusColor.withValues(alpha: 0.35),
                         blurRadius: 4,
                         spreadRadius: 1,
                       ),
@@ -358,41 +449,47 @@ class _TimelineItem extends StatelessWidget {
                   Expanded(
                     child: Container(
                       width: 2,
-                      color: Colors.grey.shade300,
+                      color: AdminColors.border,
                     ),
                   ),
               ],
             ),
           ),
-          const SizedBox(width: 8),
-
-          // ── Content card ───────────────────────────────────────────────
+          const SizedBox(width: AdminSpacing.sm),
           Expanded(
             child: Padding(
-              padding: EdgeInsets.only(bottom: isLast ? 0 : 16),
+              padding: EdgeInsets.only(
+                bottom: isLast ? 0 : AdminSpacing.md,
+              ),
               child: Card(
-                elevation: 1,
+                margin: EdgeInsets.zero,
+                elevation: 0,
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
+                  borderRadius: BorderRadius.circular(10),
+                  side: const BorderSide(color: AdminColors.border),
+                ),
                 child: Padding(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(AdminSpacing.sm),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Year + Class
                       Row(
                         children: [
                           Expanded(
                             child: Text(
                               entry.academicYearName ?? '—',
                               style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14),
+                                fontWeight: FontWeight.w700,
+                                fontSize: 14,
+                                color: AdminColors.textPrimary,
+                              ),
                             ),
                           ),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 2),
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
                             decoration: BoxDecoration(
                               color: statusColor.withValues(alpha: 0.12),
                               borderRadius: BorderRadius.circular(12),
@@ -401,7 +498,7 @@ class _TimelineItem extends StatelessWidget {
                               entry.status,
                               style: TextStyle(
                                 color: statusColor,
-                                fontWeight: FontWeight.bold,
+                                fontWeight: FontWeight.w700,
                                 fontSize: 11,
                               ),
                             ),
@@ -412,13 +509,13 @@ class _TimelineItem extends StatelessWidget {
                       Text(
                         '${entry.standardName ?? '—'} ${entry.sectionName != null ? '· Section ${entry.sectionName}' : ''}',
                         style: const TextStyle(
-                            fontSize: 13, color: Colors.black87),
+                          fontSize: 13,
+                          color: AdminColors.textSecondary,
+                        ),
                       ),
-
-                      // Details row
                       const SizedBox(height: 6),
                       Wrap(
-                        spacing: 12,
+                        spacing: AdminSpacing.sm,
                         runSpacing: 4,
                         children: [
                           if (entry.rollNumber != null)
@@ -440,32 +537,38 @@ class _TimelineItem extends StatelessWidget {
                             _DetailChip(
                               icon: Icons.logout,
                               label: entry.leftOn!,
-                              color: Colors.red,
+                              color: AdminColors.danger,
                             ),
                         ],
                       ),
-
-                      // Exit reason
                       if (entry.exitReason != null) ...[
                         const SizedBox(height: 6),
                         Container(
-                          padding: const EdgeInsets.all(8),
+                          padding: const EdgeInsets.all(AdminSpacing.sm),
                           decoration: BoxDecoration(
-                            color: Colors.red.shade50,
+                            color: AdminColors.dangerSurface,
                             borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: AdminColors.danger.withValues(alpha: 0.25),
+                            ),
                           ),
                           child: Row(
-                            crossAxisAlignment:
-                                CrossAxisAlignment.start,
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Icon(Icons.info_outline,
-                                  size: 14, color: Colors.red),
+                              const Icon(
+                                Icons.info_outline,
+                                size: 14,
+                                color: AdminColors.danger,
+                              ),
                               const SizedBox(width: 6),
                               Expanded(
                                 child: Text(
                                   entry.exitReason!,
                                   style: const TextStyle(
-                                      fontSize: 12, color: Colors.red),
+                                    fontSize: 12,
+                                    color: AdminColors.danger,
+                                    height: 1.35,
+                                  ),
                                 ),
                               ),
                             ],
@@ -497,7 +600,7 @@ class _DetailChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = color ?? Colors.black54;
+    final c = color ?? AdminColors.textSecondary;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [

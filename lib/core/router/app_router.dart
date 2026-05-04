@@ -9,6 +9,7 @@ import '../../presentation/approvals/screens/approval_detail_screen.dart';
 import '../../presentation/approvals/screens/approval_queue_screen.dart';
 import '../../presentation/audit/screens/audit_log_screen.dart';
 import '../../presentation/auth/screens/admin_login_screen.dart';
+import '../../presentation/dashboard/screens/dashboard_screen.dart';
 import '../../presentation/academics/screens/academic_years_screen.dart';
 import '../../presentation/academics/screens/academic_structure_screen.dart';
 import '../../presentation/enrollment/screens/enrollment_screen.dart';
@@ -46,13 +47,18 @@ GoRouter buildRouter(Ref ref) {
       final isLoggedIn = authState.valueOrNull != null;
 
       if (!isLoggedIn && !isLoginPage) return RouteNames.login;
-      if (isLoggedIn && isLoginPage) return RouteNames.approvals;
+      if (isLoggedIn && isLoginPage) return RouteNames.dashboard;
       return null;
     },
     routes: [
       GoRoute(
         path: RouteNames.login,
         builder: (context, state) => const AdminLoginScreen(),
+      ),
+
+      GoRoute(
+        path: RouteNames.dashboard,
+        builder: (context, state) => const DashboardScreen(),
       ),
 
       // Phase 1 — Approvals

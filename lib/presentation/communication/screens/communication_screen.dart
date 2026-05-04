@@ -3,9 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/constants/api_constants.dart';
 import '../../../core/network/dio_client.dart';
+import '../../../core/theme/admin_colors.dart';
 import '../../../domains/providers/active_year_provider.dart';
 import '../../../domains/providers/auth_provider.dart';
 import '../../common/layout/admin_scaffold.dart';
+import '../../common/widgets/admin_layout/admin_empty_state.dart';
+import '../../common/widgets/admin_layout/admin_filter_card.dart';
+import '../../common/widgets/admin_layout/admin_loading_placeholder.dart';
+import '../../common/widgets/admin_layout/admin_page_header.dart';
+import '../../common/widgets/admin_layout/admin_spacing.dart';
 
 class _Announcement {
   const _Announcement({
@@ -45,15 +51,15 @@ class _Announcement {
   Color get typeColor {
     switch (type.toUpperCase()) {
       case 'URGENT':
-        return Colors.red;
+        return AdminColors.danger;
       case 'FEE':
-        return Colors.orange;
+        return const Color(0xFFEA580C);
       case 'EXAM':
-        return Colors.blue;
+        return AdminColors.primaryAction;
       case 'EVENT':
-        return Colors.purple;
+        return const Color(0xFF7C3AED);
       default:
-        return Colors.teal;
+        return AdminColors.success;
     }
   }
 }
@@ -159,6 +165,14 @@ class _CommunicationScreenState extends ConsumerState<CommunicationScreen> {
   String? _error;
   String? _success;
   String _visibilityFilter = 'ACTIVE';
+
+  void _resetCommFilters() {
+    setState(() {
+      _visibilityFilter = 'ACTIVE';
+      _error = null;
+      _success = null;
+    });
+  }
 
   @override
   void initState() {
@@ -386,31 +400,45 @@ class _CommunicationScreenState extends ConsumerState<CommunicationScreen> {
     final user = ref.watch(authControllerProvider).valueOrNull;
     final canAnnounce = user != null &&
         (user.role.toUpperCase() == 'PRINCIPAL' ||
-            user.role.toUpperCase() == 'SUPERADMIN' ||
+            user.role.toUpperCase() == 'STAFF_ADMIN' ||
             user.permissions.contains('announcement:create'));
 
     return AdminScaffold(
       title: 'Communication',
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AdminSpacing.pagePadding),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            const AdminPageHeader(
+              title: 'Communication',
+              subtitle:
+                  'School-wide announcements by type and audience. Principals and staff admins can publish.',
+            ),
             if (_error != null)
-              _StatusBanner(
-                message: _error!,
-                isError: true,
-                onDismiss: () => setState(() => _error = null),
+              Padding(
+                padding: const EdgeInsets.only(bottom: AdminSpacing.sm),
+                child: _StatusBanner(
+                  message: _error!,
+                  isError: true,
+                  onDismiss: () => setState(() => _error = null),
+                ),
               ),
             if (_success != null)
-              _StatusBanner(
-                message: _success!,
-                isError: false,
-                onDismiss: () => setState(() => _success = null),
+              Padding(
+                padding: const EdgeInsets.only(bottom: AdminSpacing.sm),
+                child: _StatusBanner(
+                  message: _success!,
+                  isError: false,
+                  onDismiss: () => setState(() => _success = null),
+                ),
               ),
             Expanded(
               child: _loading
-                  ? const Center(child: CircularProgressIndicator())
+                  ? const AdminLoadingPlaceholder(
+                      message: 'Loading announcements…',
+                      height: 320,
+                    )
                   : _buildAnnouncements(canAnnounce),
             ),
           ],
@@ -427,15 +455,15 @@ class _CommunicationScreenState extends ConsumerState<CommunicationScreen> {
     }).toList(growable: false);
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 8),
+        AdminFilterCard(
+          onReset: _resetCommFilters,
           child: Row(
             children: [
               Text(
                 '${filtered.length} announcement(s)',
-                style: const TextStyle(color: Colors.grey),
+                style: const TextStyle(color: AdminColors.textSecondary),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: AdminSpacing.sm),
               SizedBox(
                 width: 170,
                 child: DropdownButtonFormField<String>(
@@ -458,15 +486,15 @@ class _CommunicationScreenState extends ConsumerState<CommunicationScreen> {
               ),
               const Spacer(),
               OutlinedButton.icon(
-                icon: const Icon(Icons.refresh, size: 14),
+                icon: const Icon(Icons.refresh, size: 18),
                 label: const Text('Refresh'),
                 onPressed: _loadAnnouncements,
               ),
               if (canCreate) ...[
-                const SizedBox(width: 8),
-                ElevatedButton.icon(
-                  icon: const Icon(Icons.add, size: 14),
-                  label: const Text('New Announcement'),
+                const SizedBox(width: AdminSpacing.xs),
+                FilledButton.icon(
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('New announcement'),
                   onPressed: () => _showCreateAnnouncementDialog(),
                 ),
               ],
@@ -474,18 +502,25 @@ class _CommunicationScreenState extends ConsumerState<CommunicationScreen> {
           ),
         ),
         if (filtered.isEmpty)
-          const Expanded(child: Center(child: Text('No announcements found.')))
+          const Expanded(
+            child: AdminEmptyState(
+              icon: Icons.campaign_outlined,
+              title: 'No announcements',
+              message: 'Nothing matches the current view filter.',
+            ),
+          )
         else
           Expanded(
             child: ListView.separated(
               itemCount: filtered.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
+              separatorBuilder: (_, __) =>
+                  const Divider(height: 1, color: AdminColors.border),
               itemBuilder: (context, i) {
                 final a = filtered[i];
                 return ListTile(
                   leading: CircleAvatar(
                     radius: 18,
-                    backgroundColor: a.typeColor.withOpacity(0.15),
+                    backgroundColor: a.typeColor.withValues(alpha: 0.15),
                     child: Icon(
                       Icons.campaign_outlined,
                       size: 16,
@@ -503,7 +538,7 @@ class _CommunicationScreenState extends ConsumerState<CommunicationScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
-                          color: a.typeColor.withOpacity(0.12),
+                          color: a.typeColor.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
@@ -536,11 +571,17 @@ class _CommunicationScreenState extends ConsumerState<CommunicationScreen> {
                       if (a.targetRole != null || a.targetStandardId != null)
                         Text(
                           'Target: ${a.targetRole ?? 'ALL'} | Class: ${_standardLabel(a.targetStandardId)}',
-                          style: const TextStyle(fontSize: 11, color: Colors.blue),
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: AdminColors.primaryAction,
+                          ),
                         ),
                       Text(
                         _formatDate(a.createdAt),
-                        style: const TextStyle(fontSize: 11, color: Colors.grey),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AdminColors.textSecondary,
+                        ),
                       ),
                     ],
                   ),
@@ -565,7 +606,12 @@ class _CommunicationScreenState extends ConsumerState<CommunicationScreen> {
                                               Navigator.of(ctx).pop(false),
                                           child: const Text('Cancel'),
                                         ),
-                                        ElevatedButton(
+                                        FilledButton(
+                                          style: FilledButton.styleFrom(
+                                            backgroundColor: AdminColors.danger,
+                                            foregroundColor:
+                                                AdminColors.textOnPrimary,
+                                          ),
                                           onPressed: () =>
                                               Navigator.of(ctx).pop(true),
                                           child: const Text('Delete'),
@@ -615,29 +661,39 @@ class _StatusBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = isError ? Colors.red : Colors.green;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      margin: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(
-        color: color.shade50,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.shade200),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              message,
-              style: TextStyle(color: color.shade700, fontSize: 13),
+    final theme = Theme.of(context);
+    return Material(
+      color: isError
+          ? AdminColors.dangerSurface
+          : AdminColors.success.withValues(alpha: 0.1),
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AdminSpacing.md,
+          vertical: AdminSpacing.sm,
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: SelectableText(
+                message,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: isError ? AdminColors.danger : AdminColors.success,
+                ),
+              ),
             ),
-          ),
-          GestureDetector(
-            onTap: onDismiss,
-            child: Icon(Icons.close, size: 14, color: color.shade400),
-          ),
-        ],
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              tooltip: 'Dismiss',
+              onPressed: onDismiss,
+              icon: Icon(
+                Icons.close_rounded,
+                size: 18,
+                color: AdminColors.textMuted,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/constants/brand_constants.dart';
 import '../../../core/constants/route_constants.dart';
 import '../../../core/theme/admin_colors.dart';
+import '../widgets/school_brand_logo.dart';
 import '../../../data/models/auth/admin_user.dart';
 import '../../../domains/providers/auth_provider.dart';
 
@@ -223,27 +225,58 @@ class AdminSidebar extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 24, 16, 12),
-              child: Column(
+              padding: const EdgeInsets.fromLTRB(14, 18, 12, 12),
+              child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Console',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: -0.2,
-                          color: AdminColors.textPrimary,
+                  SchoolBrandLogo(height: 50, borderRadius: 10),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          BrandConstants.schoolDisplayName,
+                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -0.35,
+                                color: AdminColors.textPrimary,
+                              ),
                         ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    user.email ?? user.phone ?? user.role,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: AdminColors.textMuted,
-                          fontSize: 11,
+                        const SizedBox(height: 2),
+                        Text(
+                          BrandConstants.adminConsoleTitle,
+                          style:
+                              Theme.of(context).textTheme.labelSmall?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    color: AdminColors.primaryAction,
+                                    letterSpacing: 0.15,
+                                  ),
                         ),
+                        const SizedBox(height: 10),
+                        Text(
+                          'Console',
+                          style:
+                              Theme.of(context).textTheme.labelMedium?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    color: AdminColors.textMuted,
+                                    fontSize: 11,
+                                  ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          user.email ?? user.phone ?? user.role,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style:
+                              Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: AdminColors.textSecondary,
+                                    fontSize: 11,
+                                    height: 1.25,
+                                  ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),

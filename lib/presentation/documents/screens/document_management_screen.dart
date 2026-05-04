@@ -219,6 +219,36 @@ class _DocRepository {
     );
     return _Document.fromJson(r.data ?? {});
   }
+
+  Future<Map<String, dynamic>> listSchoolUsers({
+    int page = 1,
+    int pageSize = 100,
+  }) async {
+    final r = await _dio.dio.get<Map<String, dynamic>>(
+      '/users',
+      queryParameters: {'page': page, 'page_size': pageSize},
+    );
+    return Map<String, dynamic>.from(r.data ?? {});
+  }
+
+  Future<List<Map<String, dynamic>>> listStudents({
+    String? academicYearId,
+    int page = 1,
+    int pageSize = 200,
+  }) async {
+    final r = await _dio.dio.get<Map<String, dynamic>>(
+      '/students',
+      queryParameters: {
+        'page': page,
+        'page_size': pageSize,
+        if (academicYearId != null && academicYearId.trim().isNotEmpty)
+          'academic_year_id': academicYearId.trim(),
+      },
+    );
+    return ((r.data?['items'] as List?) ?? [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+  }
 }
 
 // ── Screen ────────────────────────────────────────────────────────────────────
@@ -245,6 +275,12 @@ class _DocumentManagementScreenState
   List<Map<String, dynamic>> _standards = [];
   String? _selectedYearId;
   String? _selectedStandardId;
+
+  List<Map<String, dynamic>> _directoryUsers = [];
+  bool _usersLoading = false;
+  String? _usersListError;
+  int _usersPage = 1;
+  int _usersTotalPages = 1;
   final TextEditingController _sectionCtrl = TextEditingController();
   final TextEditingController _studentNameSearchCtrl = TextEditingController();
 
@@ -256,11 +292,36 @@ class _DocumentManagementScreenState
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     _repo = _DocRepository(ref.read(dioClientProvider));
     _loadMeta();
     _loadDocuments();
     _loadRequirements();
+    _loadDirectoryUsers();
+  }
+
+  Future<void> _loadDirectoryUsers({int page = 1}) async {
+    setState(() {
+      _usersLoading = true;
+      _usersListError = null;
+    });
+    try {
+      final raw = await _repo.listSchoolUsers(page: page, pageSize: 100);
+      final items = ((raw['items'] as List?) ?? [])
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+      final totalPages = raw['total_pages'];
+      if (!mounted) return;
+      setState(() {
+        _directoryUsers = items;
+        _usersPage = page;
+        _usersTotalPages = totalPages is int ? totalPages : int.tryParse('$totalPages') ?? 1;
+      });
+    } catch (e) {
+      if (mounted) setState(() => _usersListError = e.toString());
+    } finally {
+      if (mounted) setState(() => _usersLoading = false);
+    }
   }
 
   Future<void> _loadMeta() async {
@@ -437,12 +498,20 @@ class _DocumentManagementScreenState
   }
 
   Future<void> _showUploadDialog() async {
+    List<Map<String, dynamic>> studentChoices = [];
+    try {
+      studentChoices = await _repo.listStudents(
+        academicYearId: _selectedYearId,
+      );
+    } catch (_) {}
+
     final studentIdCtrl = TextEditingController();
     String docType = 'BONAFIDE';
     final otherNameCtrl = TextEditingController();
     String _fileNameInput = '';
     Uint8List? _fileBytes;
     String _contentType = 'application/pdf';
+    String? pickedStudentId;
 
     await showDialog<void>(
       context: context,
@@ -453,6 +522,32 @@ class _DocumentManagementScreenState
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (studentChoices.isNotEmpty)
+                  DropdownButtonFormField<String>(
+                    value: pickedStudentId,
+                    decoration: const InputDecoration(
+                      labelText: 'Student (optional)',
+                      helperText: 'Or paste student UUID below',
+                    ),
+                    isExpanded: true,
+                    items: studentChoices
+                        .map(
+                          (s) => DropdownMenuItem<String>(
+                            value: s['id']?.toString(),
+                            child: Text(
+                              '${s['admission_number'] ?? s['id']} — '
+                              '${s['student_name'] ?? '-'}',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (v) => setDialog(() {
+                      pickedStudentId = v;
+                      if (v != null) studentIdCtrl.text = v;
+                    }),
+                  ),
+                if (studentChoices.isNotEmpty) const SizedBox(height: 8),
                 TextField(
                   controller: studentIdCtrl,
                   decoration:
@@ -1181,6 +1276,7 @@ class _DocumentManagementScreenState
                           Tab(text: 'All documents'),
                           Tab(text: 'Pending review'),
                           Tab(text: 'Requirements'),
+                          Tab(text: 'Users'),
                         ],
                       ),
                     ),
@@ -1194,6 +1290,7 @@ class _DocumentManagementScreenState
                                 _buildAllDocumentsTab(),
                                 _buildPendingTab(),
                                 _buildRequirementsTab(),
+                                _buildUsersTab(),
                               ],
                             ),
                     ),
@@ -1523,6 +1620,128 @@ class _DocumentManagementScreenState
               ),
             ),
           ),
+      ],
+    );
+  }
+
+  Widget _buildUsersTab() {
+    if (_usersListError != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(AdminSpacing.md),
+          child: Text(
+            _usersListError!,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.red, fontSize: 13),
+          ),
+        ),
+      );
+    }
+    if (_usersLoading) {
+      return const AdminLoadingPlaceholder();
+    }
+    if (_directoryUsers.isEmpty) {
+      return const AdminEmptyState(
+        title: 'No users in this page',
+        message: 'Try another page or confirm your account can list school users.',
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AdminSpacing.md,
+            AdminSpacing.sm,
+            AdminSpacing.md,
+            AdminSpacing.sm,
+          ),
+          child: Row(
+            children: [
+              Text(
+                'Page $_usersPage / $_usersTotalPages · ${_directoryUsers.length} rows',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AdminColors.textSecondary,
+                    ),
+              ),
+              const Spacer(),
+              TextButton.icon(
+                onPressed: _usersLoading
+                    ? null
+                    : () => _loadDirectoryUsers(page: _usersPage > 1 ? _usersPage - 1 : 1),
+                icon: const Icon(Icons.chevron_left, size: 18),
+                label: const Text('Prev'),
+              ),
+              TextButton.icon(
+                onPressed: _usersLoading || _usersPage >= _usersTotalPages
+                    ? null
+                    : () => _loadDirectoryUsers(page: _usersPage + 1),
+                icon: const Icon(Icons.chevron_right, size: 18),
+                label: const Text('Next'),
+              ),
+              FilledButton.tonal(
+                onPressed: _usersLoading ? null : () => _loadDirectoryUsers(page: _usersPage),
+                child: const Text('Refresh'),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AdminSpacing.md,
+              0,
+              AdminSpacing.md,
+              AdminSpacing.md,
+            ),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: SingleChildScrollView(
+                child: DataTable(
+                  headingRowColor:
+                      WidgetStateProperty.all(AdminColors.borderSubtle),
+                  border: TableBorder(
+                    horizontalInside: BorderSide(color: AdminColors.border),
+                    top: BorderSide(color: AdminColors.border),
+                    bottom: BorderSide(color: AdminColors.border),
+                  ),
+                  columns: const [
+                    DataColumn(label: Text('Name')),
+                    DataColumn(label: Text('Email')),
+                    DataColumn(label: Text('Phone')),
+                    DataColumn(label: Text('Role')),
+                    DataColumn(label: Text('Active')),
+                  ],
+                  rows: _directoryUsers.asMap().entries.map((entry) {
+                    final i = entry.key;
+                    final u = entry.value;
+                    final name = u['full_name']?.toString() ?? '—';
+                    final email = u['email']?.toString() ?? '—';
+                    final phone = u['phone']?.toString() ?? '—';
+                    final role = u['role']?.toString() ?? '—';
+                    final active = u['is_active'] == true;
+                    return DataRow(
+                      color: adminDataRowColor(i),
+                      cells: [
+                        DataCell(SelectableText(name)),
+                        DataCell(SelectableText(email)),
+                        DataCell(SelectableText(phone)),
+                        DataCell(Text(role)),
+                        DataCell(
+                          Icon(
+                            active ? Icons.check_circle_outline : Icons.cancel_outlined,
+                            size: 16,
+                            color: active ? Colors.green : AdminColors.textMuted,
+                          ),
+                        ),
+                      ],
+                    );
+                  }).toList(),
+                ),
+              ),
+            ),
+          ),
+        ),
       ],
     );
   }

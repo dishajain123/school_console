@@ -38,8 +38,8 @@ class RouteNames {
   // Phase 8 — Fees Management
   static const String fees = '/fees';
 
-  // Phase 10 — Exams & Results
-  static const String examsResults = '/results';
+  // Phase 10 — Examination
+  static const String examination = '/examination';
 
   // Phase 11 — Reporting & Analytics
   static const String reports = '/reports';
@@ -49,6 +49,7 @@ class RouteNames {
 
   // Phase 13 — Document Management
   static const String documents = '/documents';
+  static const String documentStudentDetail = '/documents/student';
 
   static const String settings = '/settings';
 }

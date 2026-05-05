@@ -147,6 +147,7 @@ class ApiConstants {
 
   // ── Timetable ─────────────────────────────────────────────────────────────
   static const String timetable = '/timetable';
+  static String timetableByStandard(String standardId) => '/timetable/$standardId';
   static String timetableSections(String standardId) =>
       '/timetable/$standardId/sections';
 
@@ -155,6 +156,8 @@ class ApiConstants {
 
   // ── Results ───────────────────────────────────────────────────────────────
   static const String results = '/results';
+  static const String resultsEntries = '/results/entries';
+  static const String resultsReportCardUpload = '/results/report-card/upload';
   static const String resultsExams = '/results/exams';
   static const String resultsExamsBulk = '/results/exams/bulk';
   static String resultsExamDistribution(String examId) =>
@@ -166,6 +169,9 @@ class ApiConstants {
   // ── Documents ─────────────────────────────────────────────────────────────
   static const String documents = '/documents';
   static const String documentRequirements = '/documents/requirements';
+  /// GET ?student_id= — checklist per student (class-scoped requirements).
+  static const String documentRequirementsStatus =
+      '/documents/requirements/status';
   static const String documentUpload = '/documents/upload';
   static String documentDownload(String id) => '/documents/$id/download';
   static String documentVerify(String id) => '/documents/$id/verify';

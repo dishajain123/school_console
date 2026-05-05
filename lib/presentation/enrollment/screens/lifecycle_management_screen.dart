@@ -1578,17 +1578,34 @@ class _LifecycleManagementScreenState
                                 ),
                               ),
                               const SizedBox(width: 8),
-                              FilledButton(
+                              OutlinedButton(
+                                style: OutlinedButton.styleFrom(
+                                  backgroundColor: Colors.white,
+                                  foregroundColor: AdminColors.textPrimary,
+                                  side: BorderSide(
+                                    color: theme.colorScheme.outline
+                                        .withValues(alpha: 0.6),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                    vertical: 10,
+                                  ),
+                                ),
                                 onPressed: _searchLoading ? null : _search,
                                 child: _searchLoading
-                                    ? const SizedBox(
-                                        width: 16,
-                                        height: 16,
+                                    ? SizedBox(
+                                        width: 20,
+                                        height: 20,
                                         child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            color: Colors.white),
+                                          strokeWidth: 2,
+                                          color: AdminColors.primaryAction,
+                                        ),
                                       )
-                                    : const Text('🔍'),
+                                    : Icon(
+                                        Icons.search,
+                                        size: 22,
+                                        color: AdminColors.primaryAction,
+                                      ),
                               ),
                             ],
                           ),

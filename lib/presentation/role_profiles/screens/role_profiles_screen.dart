@@ -33,7 +33,6 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
   ];
   late final TabController _tabController;
   final _searchController = TextEditingController();
-  int _page = 1;
   List<Map<String, dynamic>> _years = const [];
   String? _selectedYearId;
   List<Map<String, dynamic>> _standards = const [];
@@ -48,7 +47,6 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
     _tabController.addListener(() {
       if (_tabController.indexIsChanging) return;
       setState(() {
-        _page = 1;
         if (_tabController.index != 0) {
           _selectedStandardId = null;
           _selectedSection = null;
@@ -57,9 +55,7 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
       });
     });
     _searchController.addListener(() {
-      setState(() {
-        _page = 1;
-      });
+      setState(() {});
     });
     _loadAcademicYears();
   }
@@ -114,7 +110,6 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
         _years.where((y) => y['id']?.toString() == preferredYearId).toList();
     final active = _years.where((y) => y['is_active'] == true).toList();
     setState(() {
-      _page = 1;
       _selectedStandardId = null;
       _selectedSection = null;
       _sections = const [];
@@ -157,7 +152,7 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
             const AdminPageHeader(
               title: 'Role profiles',
               subtitle:
-                  'Browse people by role, narrow students with class and section, then search or paginate.',
+                  'Browse people by role, narrow students with class and section, then search. Scroll the table to see everyone in view.',
             ),
             Material(
               color: AdminColors.surface,
@@ -228,7 +223,6 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
                           _selectedStandardId = null;
                           _selectedSection = null;
                           _sections = const [];
-                          _page = 1;
                         });
                         ref
                             .read(activeAcademicYearProvider.notifier)
@@ -283,7 +277,6 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
                             _selectedStandardId = value;
                             _selectedSection = null;
                             _sections = const [];
-                            _page = 1;
                           });
                           if (value != null) {
                             await _loadSectionsForStandard(value);
@@ -318,7 +311,6 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
                         onChanged: (value) {
                           setState(() {
                             _selectedSection = value;
-                            _page = 1;
                           });
                         },
                       ),
@@ -329,7 +321,7 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
             const SizedBox(height: AdminSpacing.sm),
             Expanded(
               child: FutureBuilder<RoleProfileListData>(
-                future: repository.listProfiles(
+                future: repository.listAllProfiles(
                   role: _currentRole,
                   search: _searchController.text,
                   // Keep students visible right after approval/profile creation,
@@ -337,8 +329,6 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
                   academicYearId: null,
                   standardId: _isStudentTab ? _selectedStandardId : null,
                   section: _isStudentTab ? _selectedSection : null,
-                  page: _page,
-                  pageSize: 20,
                 ),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
@@ -443,13 +433,9 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
                         )
                         .toList(),
                     totalItems: data?.total ?? items.length,
-                    currentPage: data?.page ?? 1,
-                    pageSize: data?.pageSize ?? 20,
-                    onPageChanged: (nextPage) {
-                      setState(() {
-                        _page = nextPage;
-                      });
-                    },
+                    currentPage: 1,
+                    pageSize: items.isEmpty ? 1 : items.length,
+                    showPagination: false,
                   );
                 },
               ),

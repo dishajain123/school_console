@@ -46,6 +46,30 @@ class ApprovalRepository {
     return items;
   }
 
+  /// Total rows for the queue with the same filters as [queueFiltered] (uses API `total`).
+  Future<int> queueTotal({
+    String? status,
+    String? role,
+    String? source,
+    String? q,
+  }) async {
+    final resp = await _client.dio.get<Map<String, dynamic>>(
+      ApiConstants.approvalsQueue,
+      queryParameters: {
+        'page': 1,
+        'page_size': 1,
+        if (status != null && status.trim().isNotEmpty) 'status': status.trim(),
+        if (role != null && role.trim().isNotEmpty) 'role': role.trim(),
+        if (source != null && source.trim().isNotEmpty) 'source': source.trim(),
+        if (q != null && q.trim().isNotEmpty) 'q': q.trim(),
+      },
+    );
+    final raw = resp.data?['total'];
+    if (raw is int) return raw;
+    if (raw is num) return raw.toInt();
+    return 0;
+  }
+
   Future<List<RegistrationRequest>> queueByStatus(String status) async {
     final resp = await _client.dio.get<Map<String, dynamic>>(
       ApiConstants.approvalsQueue,

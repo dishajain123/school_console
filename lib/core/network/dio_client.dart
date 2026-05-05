@@ -4,6 +4,7 @@ import '../constants/api_constants.dart';
 import '../storage/secure_storage.dart';
 import 'interceptors/auth_interceptor.dart';
 import 'interceptors/error_interceptor.dart';
+import 'interceptors/rate_limit_retry_interceptor.dart';
 
 class DioClient {
   DioClient(this._storage)
@@ -39,6 +40,7 @@ class DioClient {
       ),
     );
     dio.interceptors.add(AuthInterceptor(_storage));
+    dio.interceptors.add(RateLimitRetryInterceptor(dio));
     dio.interceptors.add(ErrorInterceptor());
   }
 

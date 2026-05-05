@@ -47,8 +47,8 @@ const _allItems = [
   _NavItem(icon: Icons.badge_outlined, selectedIcon: Icons.badge, label: 'Profiles', route: RouteNames.roleProfiles),
   // 9 — Fees (Phase 8)
   _NavItem(icon: Icons.payments_outlined, selectedIcon: Icons.payments, label: 'Fees', route: RouteNames.fees),
-  // 10 — Exams & Results (Phase 10)
-  _NavItem(icon: Icons.analytics_outlined, selectedIcon: Icons.analytics, label: 'Results', route: RouteNames.examsResults),
+  // 10 — Examination (Phase 10)
+  _NavItem(icon: Icons.analytics_outlined, selectedIcon: Icons.analytics, label: 'Examination', route: RouteNames.examination),
   // 11 — Reports & Analytics (Phase 11)
   _NavItem(icon: Icons.bar_chart_outlined, selectedIcon: Icons.bar_chart, label: 'Reports', route: RouteNames.reports),
   // 12 — Communication (Phase 12)
@@ -74,13 +74,13 @@ List<_NavItem> _itemsForUser(AdminUser user) {
   // Staff Admin (web console) sees full navigation for the school.
   if (role == 'STAFF_ADMIN') return _allItems;
 
-  // TRUSTEE: read-only — Reports, Fees view, Results view
+  // TRUSTEE: read-only — Reports, Fees view, Examination view
   if (role == 'TRUSTEE') {
     return [
       byRoute[RouteNames.dashboard]!,
       byRoute[RouteNames.reports]!,
       byRoute[RouteNames.fees]!,
-      byRoute[RouteNames.examsResults]!,
+      byRoute[RouteNames.examination]!,
     ];
   }
 
@@ -120,9 +120,9 @@ List<_NavItem> _itemsForUser(AdminUser user) {
     addRoute(visible, RouteNames.fees);
   }
 
-  // Results — PRINCIPAL or result:read
+  // Examination — PRINCIPAL or result:read
   if (role == 'PRINCIPAL' || perms.contains('result:read')) {
-    addRoute(visible, RouteNames.examsResults);
+    addRoute(visible, RouteNames.examination);
   }
 
   // Reports — PRINCIPAL or reports:read

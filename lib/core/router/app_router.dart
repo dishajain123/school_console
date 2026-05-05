@@ -22,6 +22,7 @@ import '../../presentation/results/screens/exams_results_screen.dart';
 import '../../presentation/reports/screens/reports_screen.dart';
 import '../../presentation/communication/screens/communication_screen.dart';
 import '../../presentation/documents/screens/document_management_screen.dart';
+import '../../presentation/documents/screens/document_student_detail_screen.dart';
 import '../../presentation/settings/screens/settings_screen.dart';
 
 final goRouterProvider = Provider<GoRouter>((ref) {
@@ -123,9 +124,9 @@ GoRouter buildRouter(Ref ref) {
         builder: (context, state) => const FeeManagementScreen(),
       ),
 
-      // Phase 10 — Exams & Results
+      // Phase 10 — Examination
       GoRoute(
-        path: RouteNames.examsResults,
+        path: RouteNames.examination,
         builder: (context, state) => const ExamsResultsScreen(),
       ),
 
@@ -145,6 +146,13 @@ GoRouter buildRouter(Ref ref) {
       GoRoute(
         path: RouteNames.documents,
         builder: (context, state) => const DocumentManagementScreen(),
+      ),
+      GoRoute(
+        path: '${RouteNames.documentStudentDetail}/:studentId',
+        builder: (context, state) {
+          final id = state.pathParameters['studentId'] ?? '';
+          return DocumentStudentDetailScreen(studentId: id);
+        },
       ),
 
       GoRoute(

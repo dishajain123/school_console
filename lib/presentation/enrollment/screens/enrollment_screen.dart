@@ -1274,155 +1274,193 @@ class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
                               children: [
-                                Text(
-                                  'Approved Users Onboarding',
-                                  style: Theme.of(
-                                    context,
-                                  ).textTheme.titleMedium,
+                                Expanded(
+                                  flex: 2,
+                                  child: Text(
+                                    'Approved Users Onboarding',
+                                    style:
+                                        Theme.of(context).textTheme.titleMedium,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
                                 ),
-                                const Spacer(),
-                                DropdownButton<String>(
-                                  value: _selectedYearId,
-                                  hint: const Text('Academic Year'),
-                                  items: _years
-                                      .map(
-                                        (y) => DropdownMenuItem<String>(
-                                          value: y['id']?.toString(),
-                                          child: Text(
-                                            y['name']?.toString() ?? '',
-                                          ),
-                                        ),
-                                      )
-                                      .toList(),
-                                  onChanged: (v) async {
-                                    setState(() {
-                                      _selectedYearId = v;
-                                      _onboardingSearch = '';
-                                      _onboardingSearchCtrl.text = '';
-                                      _onboardingRaw = const [];
-                                      _onboarding = const [];
-                                      _currentPage = 0;
-                                      _selectedOnboardingUserIds.clear();
-                                    });
-                                    await _loadOnboardingQueue();
-                                  },
-                                ),
-                                const SizedBox(width: 8),
-                                DropdownButton<String?>(
-                                  value: _onboardingRole,
-                                  hint: const Text('Role'),
-                                  items: const [
-                                    DropdownMenuItem<String?>(
-                                      value: null,
-                                      child: Text('All'),
-                                    ),
-                                    DropdownMenuItem<String?>(
-                                      value: 'STUDENT',
-                                      child: Text('Student'),
-                                    ),
-                                    DropdownMenuItem<String?>(
-                                      value: 'TEACHER',
-                                      child: Text('Teacher'),
-                                    ),
-                                    DropdownMenuItem<String?>(
-                                      value: 'PARENT',
-                                      child: Text('Parent'),
-                                    ),
-                                    DropdownMenuItem<String?>(
-                                      value: 'PRINCIPAL',
-                                      child: Text('Principal'),
-                                    ),
-                                    DropdownMenuItem<String?>(
-                                      value: 'TRUSTEE',
-                                      child: Text('Trustee'),
-                                    ),
-                                  ],
-                                  onChanged: (v) async {
-                                    setState(() => _onboardingRole = v);
-                                    await _loadOnboardingQueue();
-                                  },
-                                ),
-                                const SizedBox(width: 8),
-                                DropdownButton<String>(
-                                  value: _onboardingStatus,
-                                  items: const [
-                                    DropdownMenuItem<String>(
-                                      value: 'PENDING',
-                                      child: Text('Pending'),
-                                    ),
-                                    DropdownMenuItem<String>(
-                                      value: 'ENROLLED',
-                                      child: Text('Enrolled'),
-                                    ),
-                                    DropdownMenuItem<String>(
-                                      value: 'ALL',
-                                      child: Text('All'),
-                                    ),
-                                  ],
-                                  onChanged: (v) {
-                                    setState(
-                                      () => _onboardingStatus = v ?? 'PENDING',
-                                    );
-                                    _recomputeOnboardingView();
-                                  },
-                                ),
-                                const SizedBox(width: 8),
-                                SizedBox(
-                                  width: 240,
-                                  child: TextFormField(
-                                    controller: _onboardingSearchCtrl,
-                                    decoration: InputDecoration(
-                                      isDense: true,
-                                      hintText:
-                                          'Search name, contact, identifier',
-                                      border: const OutlineInputBorder(),
-                                      prefixIcon: const Icon(
-                                        Icons.search,
-                                        size: 18,
-                                      ),
-                                      suffixIcon:
-                                          _onboardingSearch.trim().isEmpty
-                                          ? null
-                                          : IconButton(
-                                              tooltip: 'Clear search',
-                                              icon: const Icon(
-                                                Icons.clear,
-                                                size: 16,
-                                              ),
-                                              onPressed: () {
-                                                _onboardingSearchCtrl.clear();
+                                Expanded(
+                                  flex: 5,
+                                  child: Align(
+                                    alignment: Alignment.centerRight,
+                                    child: SingleChildScrollView(
+                                      scrollDirection: Axis.horizontal,
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        mainAxisAlignment: MainAxisAlignment.end,
+                                        children: [
+                                          DropdownButton<String>(
+                                            value: _selectedYearId,
+                                            hint: const Text('Academic Year'),
+                                            items: _years
+                                                .map(
+                                                  (y) =>
+                                                      DropdownMenuItem<String>(
+                                                    value: y['id']?.toString(),
+                                                    child: Text(
+                                                      y['name']?.toString() ??
+                                                          '',
+                                                    ),
+                                                  ),
+                                                )
+                                                .toList(),
+                                            onChanged: (v) async {
+                                              setState(() {
+                                                _selectedYearId = v;
                                                 _onboardingSearch = '';
+                                                _onboardingSearchCtrl.text =
+                                                    '';
+                                                _onboardingRaw = const [];
+                                                _onboarding = const [];
+                                                _currentPage = 0;
+                                                _selectedOnboardingUserIds
+                                                    .clear();
+                                              });
+                                              await _loadOnboardingQueue();
+                                            },
+                                          ),
+                                          const SizedBox(width: 8),
+                                          DropdownButton<String?>(
+                                            value: _onboardingRole,
+                                            hint: const Text('Role'),
+                                            items: const [
+                                              DropdownMenuItem<String?>(
+                                                value: null,
+                                                child: Text('All'),
+                                              ),
+                                              DropdownMenuItem<String?>(
+                                                value: 'STUDENT',
+                                                child: Text('Student'),
+                                              ),
+                                              DropdownMenuItem<String?>(
+                                                value: 'TEACHER',
+                                                child: Text('Teacher'),
+                                              ),
+                                              DropdownMenuItem<String?>(
+                                                value: 'PARENT',
+                                                child: Text('Parent'),
+                                              ),
+                                              DropdownMenuItem<String?>(
+                                                value: 'PRINCIPAL',
+                                                child: Text('Principal'),
+                                              ),
+                                              DropdownMenuItem<String?>(
+                                                value: 'TRUSTEE',
+                                                child: Text('Trustee'),
+                                              ),
+                                            ],
+                                            onChanged: (v) async {
+                                              setState(
+                                                () => _onboardingRole = v,
+                                              );
+                                              await _loadOnboardingQueue();
+                                            },
+                                          ),
+                                          const SizedBox(width: 8),
+                                          DropdownButton<String>(
+                                            value: _onboardingStatus,
+                                            items: const [
+                                              DropdownMenuItem<String>(
+                                                value: 'PENDING',
+                                                child: Text('Pending'),
+                                              ),
+                                              DropdownMenuItem<String>(
+                                                value: 'ENROLLED',
+                                                child: Text('Enrolled'),
+                                              ),
+                                              DropdownMenuItem<String>(
+                                                value: 'ALL',
+                                                child: Text('All'),
+                                              ),
+                                            ],
+                                            onChanged: (v) {
+                                              setState(
+                                                () => _onboardingStatus =
+                                                    v ?? 'PENDING',
+                                              );
+                                              _recomputeOnboardingView();
+                                            },
+                                          ),
+                                          const SizedBox(width: 8),
+                                          SizedBox(
+                                            width: 240,
+                                            child: TextFormField(
+                                              controller:
+                                                  _onboardingSearchCtrl,
+                                              decoration: InputDecoration(
+                                                isDense: true,
+                                                hintText:
+                                                    'Search name, contact, identifier',
+                                                border:
+                                                    const OutlineInputBorder(),
+                                                prefixIcon: const Icon(
+                                                  Icons.search,
+                                                  size: 18,
+                                                ),
+                                                suffixIcon: _onboardingSearch
+                                                        .trim()
+                                                        .isEmpty
+                                                    ? null
+                                                    : IconButton(
+                                                        tooltip: 'Clear search',
+                                                        icon: const Icon(
+                                                          Icons.clear,
+                                                          size: 16,
+                                                        ),
+                                                        onPressed: () {
+                                                          _onboardingSearchCtrl
+                                                              .clear();
+                                                          _onboardingSearch =
+                                                              '';
+                                                          _recomputeOnboardingView();
+                                                        },
+                                                      ),
+                                              ),
+                                              onChanged: (v) {
+                                                _onboardingSearch = v;
                                                 _recomputeOnboardingView();
                                               },
                                             ),
+                                          ),
+                                          IconButton(
+                                            tooltip: 'Refresh onboarding queue',
+                                            onPressed: _loadOnboardingQueue,
+                                            icon: const Icon(Icons.refresh),
+                                          ),
+                                          IconButton(
+                                            tooltip: 'Copy table',
+                                            onPressed: _onboarding.isEmpty
+                                                ? null
+                                                : _copyOnboardingTable,
+                                            icon: const Icon(
+                                              Icons.copy_all_outlined,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          OutlinedButton.icon(
+                                            onPressed:
+                                                _selectedOnboardingUserIds
+                                                    .isEmpty
+                                                ? null
+                                                : _reenrollSelectedUsers,
+                                            icon: const Icon(
+                                              Icons.autorenew_outlined,
+                                              size: 16,
+                                            ),
+                                            label: Text(
+                                              'Re-enroll Selected (${_selectedOnboardingUserIds.length})',
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
-                                    onChanged: (v) {
-                                      _onboardingSearch = v;
-                                      _recomputeOnboardingView();
-                                    },
-                                  ),
-                                ),
-                                IconButton(
-                                  tooltip: 'Refresh onboarding queue',
-                                  onPressed: _loadOnboardingQueue,
-                                  icon: const Icon(Icons.refresh),
-                                ),
-                                IconButton(
-                                  tooltip: 'Copy table',
-                                  onPressed: _onboarding.isEmpty
-                                      ? null
-                                      : _copyOnboardingTable,
-                                  icon: const Icon(Icons.copy_all_outlined),
-                                ),
-                                const SizedBox(width: 8),
-                                OutlinedButton.icon(
-                                  onPressed: _selectedOnboardingUserIds.isEmpty
-                                      ? null
-                                      : _reenrollSelectedUsers,
-                                  icon: const Icon(Icons.autorenew_outlined, size: 16),
-                                  label: Text(
-                                    'Re-enroll Selected (${_selectedOnboardingUserIds.length})',
                                   ),
                                 ),
                               ],

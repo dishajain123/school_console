@@ -8,6 +8,7 @@ class RoleProfileRepository {
 
   final DioClient _client;
   static const int _maxPageSize = 100;
+  static const int _maxAggregatedPages = 200;
 
   Future<RoleProfileListData> listProfiles({
     required String role,
@@ -34,6 +35,48 @@ class RoleProfileRepository {
       },
     );
     return RoleProfileListData.fromJson(resp.data ?? const {});
+  }
+
+  /// Loads all matching profiles by paging the API (up to [_maxPageSize] per request).
+  /// Stops after [maxItems] rows or [_maxAggregatedPages] pages as a safety cap.
+  Future<RoleProfileListData> listAllProfiles({
+    required String role,
+    String? search,
+    String? academicYearId,
+    String? standardId,
+    String? section,
+    int maxItems = 5000,
+  }) async {
+    final merged = <RoleProfileItem>[];
+    var page = 1;
+    var total = 0;
+    var totalPages = 1;
+    while (merged.length < maxItems && page <= _maxAggregatedPages) {
+      final chunk = await listProfiles(
+        role: role,
+        search: search,
+        academicYearId: academicYearId,
+        standardId: standardId,
+        section: section,
+        page: page,
+        pageSize: _maxPageSize,
+      );
+      total = chunk.total;
+      totalPages = chunk.totalPages;
+      merged.addAll(chunk.items);
+      if (chunk.items.isEmpty || page >= totalPages) break;
+      page++;
+    }
+    if (merged.length > maxItems) {
+      merged.removeRange(maxItems, merged.length);
+    }
+    return RoleProfileListData(
+      items: merged,
+      total: total,
+      page: 1,
+      pageSize: merged.length,
+      totalPages: 1,
+    );
   }
 
   Future<List<Map<String, dynamic>>> listStandards({String? academicYearId}) async {

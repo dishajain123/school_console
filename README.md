@@ -163,6 +163,7 @@ lib/
 │       ├── enrollment_screen_providers.dart
 │       ├── fee_repository_provider.dart
 │       ├── lifecycle_management_providers.dart
+│       ├── principal_reports_repository_provider.dart
 │       ├── role_profile_list_provider.dart
 │       ├── results_repository_provider.dart
 │       ├── school_settings_provider.dart
@@ -196,6 +197,7 @@ lib/
     ├── documents/          # Document management: requirements, upload, verify
     ├── enrollment/         # Onboarding queue, lifecycle management, promotion workflow
     ├── fees/               # Fee structures, student billing, payment collection, analytics
+    │   └── use_cases/      # fee_payment_calculator.dart (cycle suggestion + installment targeting)
     ├── reports/            # Principal reports: KPIs, fee collection, result drill-down
     ├── results/            # Examination: create exams, upload results, exam schedules
     ├── role_profiles/      # Browse profiles by role with class/section filters
@@ -306,7 +308,7 @@ Minimum regression coverage currently includes:
 
 1. `DioClient.assertValidSchoolId` UUID validation contract
 2. `TokenResponse.fromJson` parsing contract
-3. `ADMIN_API_BASE_URL` release safety via CI build command with explicit `--dart-define` and `https://` URL
+3. `ADMIN_API_BASE_URL` release safety is documented and intended to be enforced in CI/release build commands with explicit `--dart-define` and `https://` URL
 
 ---
 

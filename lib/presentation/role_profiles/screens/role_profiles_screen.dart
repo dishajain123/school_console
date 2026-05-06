@@ -4,14 +4,13 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/cache/timed_memory_cache.dart';
 import '../../../core/logging/crash_reporter.dart';
 import '../../../core/theme/admin_colors.dart';
 import '../../../data/models/role_profiles/role_profile_item.dart';
 import '../../../domains/providers/active_year_provider.dart';
 import '../../../domains/providers/auth_provider.dart';
 import '../../../domains/providers/role_profile_list_provider.dart';
-import '../../../domains/providers/role_profile_provider.dart';
+import '../../../domains/providers/repository_providers.dart';
 import '../../common/layout/admin_scaffold.dart';
 import '../../common/widgets/admin_layout/admin_empty_state.dart';
 import '../../common/widgets/admin_layout/admin_filter_card.dart';
@@ -141,7 +140,7 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
   void _resetFilters() {
     _searchDebounceTimer?.cancel();
     _searchController.clear();
-    TimedMemoryCache.invalidatePrefix('role_profiles_v1|');
+    ref.read(timedCacheProvider).invalidatePrefix('role_profiles_v1|');
     final preferredYearId = ref.read(activeAcademicYearProvider);
     final preferred =
         _years.where((y) => y['id']?.toString() == preferredYearId).toList();
@@ -422,7 +421,7 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
                                   ),
                                   label: const Text('Retry'),
                                   onPressed: () {
-                                    TimedMemoryCache.invalidatePrefix(
+                                    ref.read(timedCacheProvider).invalidatePrefix(
                                       'role_profiles_v1|',
                                     );
                                     ref.invalidate(
@@ -675,7 +674,7 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
                   parentId: parentId,
                   studentIds: resolvedStudentIds,
                 );
-                TimedMemoryCache.invalidatePrefix('role_profiles_v1|');
+                ref.read(timedCacheProvider).invalidatePrefix('role_profiles_v1|');
                 if (!mounted || !ctx.mounted) return;
                 Navigator.of(ctx).pop();
                 ScaffoldMessenger.of(context).showSnackBar(

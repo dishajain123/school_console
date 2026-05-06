@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/cache/timed_memory_cache.dart';
 import '../../data/repositories/academic_repository.dart';
 import '../../data/repositories/admin_document_repository.dart';
 import '../../data/repositories/announcement_repository.dart';
@@ -31,3 +32,9 @@ final roleProfileRepositoryProvider = Provider<RoleProfileRepository>(
 final settingsRepositoryProvider = Provider<SettingsRepository>(
   (ref) => SettingsRepository(ref.watch(dioClientProvider)),
 );
+
+final timedCacheProvider = Provider<TimedMemoryCache>((ref) {
+  final cache = TimedMemoryCache();
+  ref.onDispose(cache.clear);
+  return cache;
+});

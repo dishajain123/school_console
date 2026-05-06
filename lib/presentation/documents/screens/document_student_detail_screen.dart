@@ -8,7 +8,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/platform/browser_actions.dart';
 import '../../../core/theme/admin_colors.dart';
-import '../../../domains/providers/admin_document_provider.dart';
+import '../../../domains/providers/repository_providers.dart';
 import '../../../domains/providers/student_documents_overview_provider.dart';
 import '../../../data/models/documents/student_documents_overview.dart';
 import '../../common/layout/admin_scaffold.dart';

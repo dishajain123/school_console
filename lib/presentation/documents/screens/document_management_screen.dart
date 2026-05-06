@@ -20,7 +20,7 @@ import 'package:file_picker/file_picker.dart';
 import '../../../core/logging/crash_reporter.dart';
 import '../../../core/theme/admin_colors.dart';
 import '../../../domains/providers/active_year_provider.dart';
-import '../../../domains/providers/admin_document_provider.dart';
+import '../../../domains/providers/repository_providers.dart';
 import '../../common/layout/admin_scaffold.dart';
 import '../../common/widgets/admin_layout/admin_empty_state.dart';
 import '../../common/widgets/admin_layout/admin_filter_card.dart';
@@ -72,7 +72,7 @@ class _DocumentManagementScreenState
     extends ConsumerState<DocumentManagementScreen>
     with SingleTickerProviderStateMixin {
   // Cache documents by filter tuple so revisits paint instantly while we refresh.
-  static final Map<String, List<AdminDocument>> _documentsCache = {};
+  final Map<String, List<AdminDocument>> _documentsCache = {};
 
   late final TabController _tabController;
   late final AdminDocumentRepository _repo;

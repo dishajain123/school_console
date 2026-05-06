@@ -5,8 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/admin_colors.dart';
 import '../../../domains/providers/auth_provider.dart';
+import '../../../domains/providers/repository_providers.dart';
 import '../../../domains/providers/school_settings_provider.dart';
-import '../../../domains/providers/settings_repository_provider.dart';
 import '../../common/layout/admin_scaffold.dart';
 import '../../common/widgets/admin_layout/admin_empty_state.dart';
 import '../../common/widgets/admin_layout/admin_loading_placeholder.dart';

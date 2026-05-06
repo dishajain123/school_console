@@ -20,6 +20,7 @@ import '../../common/widgets/admin_layout/admin_page_header.dart';
 import '../../common/widgets/admin_layout/admin_spacing.dart';
 import '../../common/widgets/admin_layout/admin_table_helpers.dart';
 import '../../common/widgets/data_table_widget.dart';
+import '../use_cases/fee_payment_calculator.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Local models
@@ -504,73 +505,21 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
     }
     bool verified = false;
 
-    double suggestedAmountForCycle(String cycle) {
-      final outstandingInstallments = student.installments
-          .where((i) => i.hasOutstanding)
-          .toList()
-        ..sort((a, b) {
-          final ad = DateTime.tryParse(a.dueDate ?? '') ?? DateTime(2100);
-          final bd = DateTime.tryParse(b.dueDate ?? '') ?? DateTime(2100);
-          return ad.compareTo(bd);
-        });
-      final total = student.totalOutstanding;
-      if (total <= 0.01) return 0;
+    List<FeeInstallmentDue> toDueRows() => student.installments
+        .map(
+          (i) => FeeInstallmentDue(
+            installmentName: i.installmentName,
+            dueDate: i.dueDate,
+            outstandingAmount: i.outstandingAmount,
+          ),
+        )
+        .toList(growable: false);
 
-      final hasMonthlyNames = outstandingInstallments.any(
-        (i) => i.installmentName.toLowerCase().contains('month'),
-      );
-      final hasQuarterNames = outstandingInstallments.any(
-        (i) => i.installmentName.toLowerCase().contains('quarter'),
-      );
-
-      if (cycle == 'MONTHLY') {
-        if (hasMonthlyNames && outstandingInstallments.isNotEmpty) {
-          return outstandingInstallments.first.outstandingAmount.clamp(0.0, total);
-        }
-        if (hasQuarterNames && outstandingInstallments.isNotEmpty) {
-          return (outstandingInstallments.first.outstandingAmount / 3).clamp(0.0, total);
-        }
-        return (total / 12).clamp(0.0, total);
-      }
-      if (cycle == 'QUARTERLY') {
-        if (hasMonthlyNames) {
-          final chunk = outstandingInstallments.take(3).fold<double>(
-            0.0,
-            (sum, i) => sum + i.outstandingAmount,
-          );
-          return chunk.clamp(0.0, total);
-        }
-        if (hasQuarterNames && outstandingInstallments.isNotEmpty) {
-          return outstandingInstallments.first.outstandingAmount.clamp(0.0, total);
-        }
-        return (total / 4).clamp(0.0, total);
-      }
-      return total;
-    }
-
-    List<_InstallmentRow> nextInstallmentsForCycle(String cycle) {
-      final outstandingInstallments = student.installments
-          .where((i) => i.hasOutstanding)
-          .toList()
-        ..sort((a, b) {
-          final ad = DateTime.tryParse(a.dueDate ?? '') ?? DateTime(2100);
-          final bd = DateTime.tryParse(b.dueDate ?? '') ?? DateTime(2100);
-          return ad.compareTo(bd);
-        });
-      if (outstandingInstallments.isEmpty) return const [];
-      if (cycle == 'MONTHLY') return [outstandingInstallments.first];
-      if (cycle == 'QUARTERLY') {
-        final hasMonthlyNames = outstandingInstallments.any(
-          (i) => i.installmentName.toLowerCase().contains('month'),
-        );
-        return hasMonthlyNames
-            ? outstandingInstallments.take(3).toList()
-            : [outstandingInstallments.first];
-      }
-      return outstandingInstallments;
-    }
-
-    amountCtrl.text = suggestedAmountForCycle(paymentCycle).toStringAsFixed(2);
+    amountCtrl.text = FeePaymentCalculator.suggestedAmountForCycle(
+      cycle: paymentCycle,
+      totalOutstanding: student.totalOutstanding,
+      installments: toDueRows(),
+    ).toStringAsFixed(2);
 
     final shouldSubmit = await showDialog<bool>(
       context: context,
@@ -625,7 +574,12 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                           final next = v ?? 'YEARLY';
                           setDialogState(() {
                             paymentCycle = next;
-                            amountCtrl.text = suggestedAmountForCycle(next)
+                            amountCtrl.text = FeePaymentCalculator
+                                .suggestedAmountForCycle(
+                                  cycle: next,
+                                  totalOutstanding: student.totalOutstanding,
+                                  installments: toDueRows(),
+                                )
                                 .toStringAsFixed(2);
                           });
                         },
@@ -645,7 +599,19 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                       const SizedBox(height: 10),
                       Builder(
                         builder: (_) {
-                          final targets = nextInstallmentsForCycle(paymentCycle);
+                          final targetDueRows =
+                              FeePaymentCalculator.nextInstallmentsForCycle(
+                            cycle: paymentCycle,
+                            installments: toDueRows(),
+                          );
+                          final targets = student.installments.where((inst) {
+                            return targetDueRows.any(
+                              (d) =>
+                                  d.installmentName == inst.installmentName &&
+                                  d.dueDate == inst.dueDate &&
+                                  d.outstandingAmount == inst.outstandingAmount,
+                            );
+                          }).toList(growable: false);
                           final title = paymentCycle == 'MONTHLY'
                               ? 'Next monthly installment target'
                               : paymentCycle == 'QUARTERLY'

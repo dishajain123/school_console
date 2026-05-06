@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'dart:async';
 
 import '../../logging/crash_reporter.dart';
 import '../../auth/auth_logout_bus.dart';
@@ -10,7 +11,7 @@ class AuthInterceptor extends Interceptor {
 
   final SecureStorage _storage;
   final AuthLogoutBus _logoutBus;
-  bool _isRefreshing = false;
+  Completer<String>? _refreshCompleter;
 
   @override
   void onRequest(
@@ -34,7 +35,7 @@ class AuthInterceptor extends Interceptor {
     DioException err,
     ErrorInterceptorHandler handler,
   ) async {
-    if (err.response?.statusCode != 401 || _isRefreshing) {
+    if (err.response?.statusCode != 401) {
       handler.next(err);
       return;
     }
@@ -45,65 +46,83 @@ class AuthInterceptor extends Interceptor {
       return;
     }
 
-    _isRefreshing = true;
+    if (_refreshCompleter != null) {
+      try {
+        final token = await _refreshCompleter!.future;
+        final retryResp = await _retryWithToken(err.requestOptions, token);
+        handler.resolve(retryResp);
+      } catch (e, stack) {
+        CrashReporter.log(e, stack);
+        handler.next(err);
+      }
+      return;
+    }
+
+    _refreshCompleter = Completer<String>();
     try {
-      final refreshToken = await _storage.readRefreshToken();
-      if (refreshToken == null || refreshToken.trim().isEmpty) {
-        await _storage.clearTokens();
-        _logoutBus.notifyLogout();
-        handler.next(err);
-        return;
-      }
-
-      final refreshDio = Dio(
-        BaseOptions(
-          baseUrl: ApiConstants.baseUrl,
-          connectTimeout: const Duration(seconds: 10),
-          receiveTimeout: const Duration(seconds: 10),
-          headers: {'Content-Type': 'application/json'},
-        ),
-      );
-      final refreshResp = await refreshDio.post<Map<String, dynamic>>(
-        ApiConstants.refresh,
-        data: {'refresh_token': refreshToken},
-      );
-      final newAccessToken = refreshResp.data?['access_token']?.toString();
-      if (newAccessToken == null || newAccessToken.isEmpty) {
-        await _storage.clearTokens();
-        _logoutBus.notifyLogout();
-        handler.next(err);
-        return;
-      }
-
+      final newAccessToken = await _doRefresh();
+      _refreshCompleter!.complete(newAccessToken);
       await _storage.saveAccessToken(newAccessToken);
-
-      final retryOptions = err.requestOptions.copyWith(
-        headers: <String, dynamic>{
-          ...err.requestOptions.headers,
-          'Authorization': 'Bearer $newAccessToken',
-        },
-      );
-      final retryDio = Dio(
-        BaseOptions(
-          baseUrl: ApiConstants.baseUrl,
-          connectTimeout: const Duration(seconds: 15),
-          receiveTimeout: const Duration(seconds: 30),
-          sendTimeout: const Duration(seconds: 30),
-          headers: {'Content-Type': 'application/json'},
-        ),
-      );
-      final retryResp = await retryDio.fetch<dynamic>(retryOptions);
+      final retryResp = await _retryWithToken(err.requestOptions, newAccessToken);
       handler.resolve(retryResp);
       return;
     } catch (e, stack) {
+      _refreshCompleter?.completeError(e);
       CrashReporter.log(e, stack);
       await _storage.clearTokens();
       _logoutBus.notifyLogout();
       handler.next(err);
       return;
     } finally {
-      _isRefreshing = false;
+      _refreshCompleter = null;
     }
+  }
+
+  Future<String> _doRefresh() async {
+    final refreshToken = await _storage.readRefreshToken();
+    if (refreshToken == null || refreshToken.trim().isEmpty) {
+      throw StateError('Missing refresh token');
+    }
+
+    final refreshDio = Dio(
+      BaseOptions(
+        baseUrl: ApiConstants.baseUrl,
+        connectTimeout: const Duration(seconds: 10),
+        receiveTimeout: const Duration(seconds: 10),
+        headers: {'Content-Type': 'application/json'},
+      ),
+    );
+    final refreshResp = await refreshDio.post<Map<String, dynamic>>(
+      ApiConstants.refresh,
+      data: {'refresh_token': refreshToken},
+    );
+    final newAccessToken = refreshResp.data?['access_token']?.toString();
+    if (newAccessToken == null || newAccessToken.isEmpty) {
+      throw StateError('Refresh response missing access_token');
+    }
+    return newAccessToken;
+  }
+
+  Future<Response<dynamic>> _retryWithToken(
+    RequestOptions requestOptions,
+    String token,
+  ) async {
+    final retryOptions = requestOptions.copyWith(
+      headers: <String, dynamic>{
+        ...requestOptions.headers,
+        'Authorization': 'Bearer $token',
+      },
+    );
+    final retryDio = Dio(
+      BaseOptions(
+        baseUrl: ApiConstants.baseUrl,
+        connectTimeout: const Duration(seconds: 15),
+        receiveTimeout: const Duration(seconds: 30),
+        sendTimeout: const Duration(seconds: 30),
+        headers: {'Content-Type': 'application/json'},
+      ),
+    );
+    return retryDio.fetch<dynamic>(retryOptions);
   }
 
   bool _isPublicPath(String path) {

@@ -1,11 +1,9 @@
 /// Tiny in-process cache with TTL for short-lived list responses.
 /// Avoids repeated network work when navigating back to a screen quickly.
 class TimedMemoryCache {
-  TimedMemoryCache._();
+  final Map<String, _Entry> _store = {};
 
-  static final Map<String, _Entry> _store = {};
-
-  static T? getIfFresh<T>(String key) {
+  T? getIfFresh<T>(String key) {
     final e = _store[key];
     if (e == null) return null;
     if (DateTime.now().isAfter(e.expiresAt)) {
@@ -15,12 +13,16 @@ class TimedMemoryCache {
     return e.value as T;
   }
 
-  static void put<T>(String key, T value, Duration ttl) {
+  void put<T>(String key, T value, Duration ttl) {
     _store[key] = _Entry(value, DateTime.now().add(ttl));
   }
 
-  static void invalidatePrefix(String prefix) {
+  void invalidatePrefix(String prefix) {
     _store.removeWhere((k, _) => k.startsWith(prefix));
+  }
+
+  void clear() {
+    _store.clear();
   }
 }
 

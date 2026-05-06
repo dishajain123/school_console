@@ -1,6 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/cache/timed_memory_cache.dart';
 import '../../data/models/role_profiles/role_profile_item.dart';
 import 'repository_providers.dart';
 
@@ -56,8 +55,8 @@ class RoleProfileListQuery {
 
 final roleProfileListProvider = FutureProvider.autoDispose
     .family<RoleProfileListData, RoleProfileListQuery>((ref, q) async {
-  final cached =
-      TimedMemoryCache.getIfFresh<RoleProfileListData>(q._cacheKey);
+  final cache = ref.read(timedCacheProvider);
+  final cached = cache.getIfFresh<RoleProfileListData>(q._cacheKey);
   if (cached != null) return cached;
 
   final repository = ref.watch(roleProfileRepositoryProvider);
@@ -70,6 +69,6 @@ final roleProfileListProvider = FutureProvider.autoDispose
     page: q.page,
     pageSize: q.pageSize,
   );
-  TimedMemoryCache.put(q._cacheKey, data, const Duration(seconds: 25));
+  cache.put(q._cacheKey, data, const Duration(seconds: 25));
   return data;
 });

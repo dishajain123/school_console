@@ -613,7 +613,7 @@ class _TeacherAssignmentScreenState
                     key: ValueKey(
                       'dlg_ct_${selTeacherId}_${selStandardId}_${sectionOptions.length}_${subjectOptions.length}',
                     ),
-                    value: selTeacherId,
+                    initialValue: selTeacherId,
                     decoration: const InputDecoration(
                       labelText: 'Teacher *',
                       border: OutlineInputBorder(),
@@ -638,7 +638,7 @@ class _TeacherAssignmentScreenState
                     key: ValueKey(
                       'dlg_cs_${selStandardId}_${sectionOptions.length}',
                     ),
-                    value: selStandardId,
+                    initialValue: selStandardId,
                     decoration: const InputDecoration(
                       labelText: 'Class *',
                       border: OutlineInputBorder(),
@@ -679,7 +679,7 @@ class _TeacherAssignmentScreenState
                     key: ValueKey(
                       'dlg_csec_${selSection}_${sectionOptions.length}',
                     ),
-                    value: selSection,
+                    initialValue: selSection,
                     decoration: const InputDecoration(
                       labelText: 'Section *',
                       border: OutlineInputBorder(),
@@ -702,7 +702,7 @@ class _TeacherAssignmentScreenState
                     key: ValueKey(
                       'dlg_csub_${selSubjectId}_${subjectOptions.length}',
                     ),
-                    value: selSubjectId,
+                    initialValue: selSubjectId,
                     decoration: const InputDecoration(
                       labelText: 'Subject *',
                       border: OutlineInputBorder(),
@@ -841,7 +841,7 @@ class _TeacherAssignmentScreenState
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String?>(
                   key: ValueKey('re_src_${sourceYearId}_${_years.length}'),
-                  value: sourceYearId.isEmpty ? null : sourceYearId,
+                  initialValue: sourceYearId.isEmpty ? null : sourceYearId,
                   decoration: const InputDecoration(
                     labelText: 'Source Academic Year',
                     border: OutlineInputBorder(),
@@ -873,7 +873,7 @@ class _TeacherAssignmentScreenState
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String?>(
                   key: ValueKey('re_tgt_${targetYearId}_$sourceYearId'),
-                  value: targetYearId.isEmpty ? null : targetYearId,
+                  initialValue: targetYearId.isEmpty ? null : targetYearId,
                   decoration: const InputDecoration(
                     labelText: 'Target Academic Year',
                     border: OutlineInputBorder(),
@@ -989,7 +989,7 @@ class _TeacherAssignmentScreenState
                   // Year
                   DropdownButtonFormField<String>(
                     key: ValueKey('ed_y_$selYearId'),
-                    value: selYearId,
+                    initialValue: selYearId,
                     decoration: const InputDecoration(
                       labelText: 'Academic Year *',
                       border: OutlineInputBorder(),
@@ -1009,7 +1009,7 @@ class _TeacherAssignmentScreenState
                   // Class
                   DropdownButtonFormField<String>(
                     key: ValueKey('ed_std_${selStandardId}_$selYearId'),
-                    value: selStandardId,
+                    initialValue: selStandardId,
                     decoration: const InputDecoration(
                       labelText: 'Class *',
                       border: OutlineInputBorder(),
@@ -1047,7 +1047,7 @@ class _TeacherAssignmentScreenState
                     key: ValueKey(
                       'ed_sec_${selSection}_${sectionOptions.map((e) => e.id).join(',')}',
                     ),
-                    value: sectionOptions.any((s) => s.id == selSection)
+                    initialValue: sectionOptions.any((s) => s.id == selSection)
                         ? selSection
                         : null,
                     decoration: const InputDecoration(
@@ -1071,7 +1071,7 @@ class _TeacherAssignmentScreenState
                   // Subject
                   DropdownButtonFormField<String>(
                     key: ValueKey('ed_sub_${selSubjectId}_${subjects.length}'),
-                    value: selSubjectId,
+                    initialValue: selSubjectId,
                     decoration: const InputDecoration(
                       labelText: 'Subject *',
                       border: OutlineInputBorder(),
@@ -1438,7 +1438,7 @@ class _TeacherAssignmentScreenState
                   DropdownButtonFormField<String?>(
                     key: ValueKey<String?>(
                         'ta_year_${_selectedYearId}_${_years.length}'),
-                    value: _selectedYearId,
+                    initialValue: _selectedYearId,
                     decoration: const InputDecoration(
                       labelText: 'Academic year',
                       isDense: true,
@@ -1640,7 +1640,7 @@ class _TeacherAssignmentScreenState
       key: ValueKey<String?>(
         'ta_teacher_${_selectedTeacherId}_${_visibleTeachers.length}_$_teacherStatusFilter',
       ),
-      value: _selectedTeacherId,
+      initialValue: _selectedTeacherId,
       decoration: const InputDecoration(
         labelText: 'Teacher',
         isDense: true,
@@ -1865,7 +1865,7 @@ class _TeacherAssignmentScreenState
                     key: ValueKey<String?>(
                       'ta_fstd_${_filterStandardId}_${_standards.length}',
                     ),
-                    value: _filterStandardId,
+                    initialValue: _filterStandardId,
                     decoration: const InputDecoration(
                       labelText: 'Class',
                       isDense: true,
@@ -1903,7 +1903,7 @@ class _TeacherAssignmentScreenState
                     key: ValueKey<String>(
                       'ta_fsec_${_filterSection}_${_filterSections.length}_$_filterStandardId',
                     ),
-                    value: () {
+                    initialValue: () {
                       if (_filterSection == null || _filterSection!.isEmpty) {
                         return '';
                       }

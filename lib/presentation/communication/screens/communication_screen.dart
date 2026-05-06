@@ -70,7 +70,7 @@ class _CommunicationScreenState extends ConsumerState<CommunicationScreen> {
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
-                  value: selectedType,
+                  initialValue: selectedType,
                   decoration: const InputDecoration(labelText: 'Type'),
                   items: const [
                     'GENERAL',
@@ -88,7 +88,7 @@ class _CommunicationScreenState extends ConsumerState<CommunicationScreen> {
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String?>(
-                  value: selectedRole,
+                  initialValue: selectedRole,
                   decoration: const InputDecoration(
                     labelText: 'Target Role (optional — all if blank)',
                   ),
@@ -102,7 +102,7 @@ class _CommunicationScreenState extends ConsumerState<CommunicationScreen> {
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String?>(
-                  value: selectedStandardId,
+                  initialValue: selectedStandardId,
                   decoration: const InputDecoration(
                     labelText: 'Target Class (optional — all if blank)',
                   ),
@@ -293,7 +293,7 @@ class _CommunicationScreenState extends ConsumerState<CommunicationScreen> {
               SizedBox(
                 width: 170,
                 child: DropdownButtonFormField<String>(
-                  value: _visibilityFilter,
+                  initialValue: _visibilityFilter,
                   decoration: const InputDecoration(
                     isDense: true,
                     border: OutlineInputBorder(),

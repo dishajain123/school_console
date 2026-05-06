@@ -602,7 +602,7 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                       ),
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
-                        value: paymentCycle,
+                        initialValue: paymentCycle,
                         decoration: const InputDecoration(
                           labelText: 'Payment Cycle',
                           border: OutlineInputBorder(),
@@ -702,7 +702,7 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                       ),
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
-                        value: paymentMode,
+                        initialValue: paymentMode,
                         decoration: const InputDecoration(
                           labelText: 'Payment Mode',
                           border: OutlineInputBorder(),
@@ -883,7 +883,7 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
           content: SizedBox(
             width: 360,
             child: DropdownButtonFormField<String>(
-              value: paymentCycle,
+              initialValue: paymentCycle,
               decoration: const InputDecoration(
                 labelText: 'Payment Cycle',
                 border: OutlineInputBorder(),
@@ -1087,7 +1087,7 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                             ),
                             const SizedBox(height: 8),
                             DropdownButtonFormField<String>(
-                              value: feeCategory,
+                              initialValue: feeCategory,
                               decoration: const InputDecoration(
                                 labelText: 'Fee Category',
                                 border: OutlineInputBorder(),
@@ -1634,7 +1634,7 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
               border: OutlineInputBorder(),
               contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             ),
-            value: _selectedYearId,
+            initialValue: _selectedYearId,
             items: _years
                 .map(
                   (y) => DropdownMenuItem<String>(
@@ -1668,7 +1668,7 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
               border: OutlineInputBorder(),
               contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             ),
-            value: _selectedStandardId,
+            initialValue: _selectedStandardId,
             items: _standards
                 .map(
                   (s) => DropdownMenuItem<String?>(
@@ -1704,7 +1704,7 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
               border: OutlineInputBorder(),
               contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             ),
-            value: _selectedSection,
+            initialValue: _selectedSection,
             items: [
               const DropdownMenuItem<String?>(
                 value: null,
@@ -1736,7 +1736,7 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
               border: OutlineInputBorder(),
               contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             ),
-            value: _paymentCycleFilter,
+            initialValue: _paymentCycleFilter,
             items: const [
               DropdownMenuItem<String?>(value: null, child: Text('All')),
               DropdownMenuItem<String?>(
@@ -1779,7 +1779,7 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
               border: OutlineInputBorder(),
               contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             ),
-            value: _statusFilter,
+            initialValue: _statusFilter,
             items: const [
               DropdownMenuItem<String?>(value: null, child: Text('All')),
               DropdownMenuItem<String?>(

@@ -20,7 +20,7 @@ class PrincipalReportsRepository {
   Future<Map<String, dynamic>> getOverview({String? yearId}) async {
     final r = await _client.dio.get<Map<String, dynamic>>(
       ApiConstants.principalReportsOverview,
-      queryParameters: {if (yearId != null) 'academic_year_id': yearId},
+      queryParameters: {'academic_year_id': ?yearId},
     );
     return r.data ?? {};
   }
@@ -34,9 +34,9 @@ class PrincipalReportsRepository {
     final r = await _client.dio.get<Map<String, dynamic>>(
       ApiConstants.principalReportsDetails,
       queryParameters: {
-        if (yearId != null) 'academic_year_id': yearId,
-        if (metric != null) 'metric': metric,
-        if (standardId != null) 'standard_id': standardId,
+        'academic_year_id': ?yearId,
+        'metric': ?metric,
+        'standard_id': ?standardId,
         if (section != null && section.trim().isNotEmpty) 'section': section,
       },
     );
@@ -50,8 +50,8 @@ class PrincipalReportsRepository {
     final r = await _client.dio.get<Map<String, dynamic>>(
       ApiConstants.feeAnalytics,
       queryParameters: {
-        if (yearId != null) 'academic_year_id': yearId,
-        if (standardId != null) 'standard_id': standardId,
+        'academic_year_id': ?yearId,
+        'standard_id': ?standardId,
       },
     );
     return r.data ?? {};
@@ -71,7 +71,7 @@ class PrincipalReportsRepository {
   Future<List<Map<String, dynamic>>> getDefaulters({String? yearId}) async {
     final r = await _client.dio.get<Map<String, dynamic>>(
       ApiConstants.feeDefaulters,
-      queryParameters: {if (yearId != null) 'academic_year_id': yearId},
+      queryParameters: {'academic_year_id': ?yearId},
     );
     return ((r.data?['defaulters'] as List?) ?? [])
         .map((e) => Map<String, dynamic>.from(e as Map))

@@ -408,7 +408,7 @@ class _LifecycleManagementScreenState
                         style: TextStyle(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 4),
                     DropdownButtonFormField<String>(
-                      value: targetStandardId,
+                      initialValue: targetStandardId,
                       decoration: const InputDecoration(
                         border: OutlineInputBorder(),
                         contentPadding:
@@ -442,7 +442,7 @@ class _LifecycleManagementScreenState
                     loadingSections
                         ? const LinearProgressIndicator()
                         : DropdownButtonFormField<String?>(
-                            value: targetSectionId,
+                            initialValue: targetSectionId,
                             decoration: const InputDecoration(
                               border: OutlineInputBorder(),
                               contentPadding: EdgeInsets.symmetric(
@@ -561,7 +561,7 @@ class _LifecycleManagementScreenState
                     style: TextStyle(fontWeight: FontWeight.bold)),
                 const SizedBox(height: 4),
                 DropdownButtonFormField<String>(
-                  value: exitStatus,
+                  initialValue: exitStatus,
                   decoration: const InputDecoration(
                     border: OutlineInputBorder(),
                     contentPadding:
@@ -750,7 +750,7 @@ class _LifecycleManagementScreenState
                         style: TextStyle(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 4),
                     DropdownButtonFormField<String>(
-                      value: targetYearId,
+                      initialValue: targetYearId,
                       decoration: const InputDecoration(
                         border: OutlineInputBorder(),
                         contentPadding:
@@ -778,7 +778,7 @@ class _LifecycleManagementScreenState
                         style: TextStyle(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 4),
                     DropdownButtonFormField<String>(
-                      value: targetStandardId,
+                      initialValue: targetStandardId,
                       decoration: const InputDecoration(
                         border: OutlineInputBorder(),
                         contentPadding:
@@ -809,7 +809,7 @@ class _LifecycleManagementScreenState
                     loadingSections
                         ? const LinearProgressIndicator()
                         : DropdownButtonFormField<String?>(
-                            value: targetSectionId,
+                            initialValue: targetSectionId,
                             decoration: const InputDecoration(
                               border: OutlineInputBorder(),
                               contentPadding: EdgeInsets.symmetric(
@@ -835,7 +835,7 @@ class _LifecycleManagementScreenState
                         style: TextStyle(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 4),
                     DropdownButtonFormField<String>(
-                      value: admissionType,
+                      initialValue: admissionType,
                       decoration: const InputDecoration(
                         border: OutlineInputBorder(),
                         contentPadding:
@@ -1038,7 +1038,7 @@ class _LifecycleManagementScreenState
                               SizedBox(
                                 width: 200,
                                 child: DropdownButtonFormField<String>(
-                                  value: _profileRole,
+                                  initialValue: _profileRole,
                                   decoration: const InputDecoration(
                                     labelText: 'Role',
                                     border: OutlineInputBorder(),
@@ -1083,7 +1083,7 @@ class _LifecycleManagementScreenState
                                 child: SizedBox(
                                   width: 240,
                                   child: DropdownButtonFormField<String>(
-                                    value: _filterYearId,
+                                    initialValue: _filterYearId,
                                     decoration: const InputDecoration(
                                       labelText: 'Academic Year',
                                       border: OutlineInputBorder(),
@@ -1118,7 +1118,7 @@ class _LifecycleManagementScreenState
                                 child: SizedBox(
                                   width: 220,
                                   child: DropdownButtonFormField<String>(
-                                    value: _filterStandardId,
+                                    initialValue: _filterStandardId,
                                     decoration: const InputDecoration(
                                       labelText: 'Class',
                                       border: OutlineInputBorder(),
@@ -1149,7 +1149,7 @@ class _LifecycleManagementScreenState
                                 child: SizedBox(
                                   width: 180,
                                   child: DropdownButtonFormField<String?>(
-                                    value: _filterSectionName,
+                                    initialValue: _filterSectionName,
                                     decoration: const InputDecoration(
                                       labelText: 'Section',
                                       border: OutlineInputBorder(),

@@ -8,12 +8,11 @@
 //   GET /principal-reports/details       — drill-down with metric/class/section filters
 //   GET /fees/analytics                  — fee collection breakdown
 //   GET /students + /masters/standards   — student strength by class
-import 'dart:convert';
-import 'dart:html' as html;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/logging/crash_reporter.dart';
+import '../../../core/platform/browser_actions.dart';
 import '../../../core/theme/admin_colors.dart';
 import '../../../domains/providers/active_year_provider.dart';
 import '../../../domains/providers/auth_provider.dart';
@@ -208,13 +207,11 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
     for (final row in rows) {
       sb.writeln(row.map((c) => '"${c.replaceAll('"', '""')}"').join(','));
     }
-    final bytes = utf8.encode(sb.toString());
-    final blob = html.Blob([bytes], 'text/csv');
-    final url = html.Url.createObjectUrlFromBlob(blob);
-    html.AnchorElement(href: url)
-      ..setAttribute('download', '${title}_${DateTime.now().toIso8601String().substring(0, 10)}.csv')
-      ..click();
-    html.Url.revokeObjectUrl(url);
+    downloadTextFile(
+      filename: '${title}_${DateTime.now().toIso8601String().substring(0, 10)}.csv',
+      contents: sb.toString(),
+      contentType: 'text/csv',
+    );
   }
 
   String _fmt(dynamic v) {

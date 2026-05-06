@@ -34,8 +34,8 @@ class AnnouncementRepository {
         'title': title,
         'body': body,
         'type': type,
-        if (targetRole != null) 'target_role': targetRole,
-        if (targetStandardId != null) 'target_standard_id': targetStandardId,
+        'target_role': ?targetRole,
+        'target_standard_id': ?targetStandardId,
         if (attachmentKey != null && attachmentKey.trim().isNotEmpty)
           'attachment_key': attachmentKey.trim(),
       },

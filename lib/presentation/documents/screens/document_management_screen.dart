@@ -10,12 +10,12 @@
 //   POST /documents/upload             — upload document for a student (multipart)
 // Backend: all endpoints fully implemented. This admin console screen was entirely missing.
 import 'dart:typed_data';
-import 'dart:html' as html;
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:dio/dio.dart';
+import 'package:file_picker/file_picker.dart';
 
 import '../../../core/logging/crash_reporter.dart';
 import '../../../core/theme/admin_colors.dart';
@@ -360,7 +360,7 @@ class _DocumentManagementScreenState
               children: [
                 if (studentChoices.isNotEmpty)
                   DropdownButtonFormField<String>(
-                    value: pickedStudentId,
+                    initialValue: pickedStudentId,
                     decoration: const InputDecoration(
                       labelText: 'Student (optional)',
                       helperText: 'Or paste student UUID below',
@@ -391,7 +391,7 @@ class _DocumentManagementScreenState
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
-                  value: docType,
+                  initialValue: docType,
                   decoration: const InputDecoration(labelText: 'Document Type'),
                   items: const [
                     'ID_CARD',
@@ -424,30 +424,29 @@ class _DocumentManagementScreenState
                 ElevatedButton.icon(
                   icon: const Icon(Icons.attach_file, size: 14),
                   label: Text(fileNameInput.isEmpty ? 'Choose File' : fileNameInput),
-                  onPressed: () {
-                    final input = html.FileUploadInputElement()
-                      ..accept = '.pdf,.jpg,.jpeg,.png'
-                      ..click();
-                    input.onChange.listen((_) {
-                      final files = input.files;
-                      if (files == null || files.isEmpty) return;
-                      final file = files.first;
-                      final reader = html.FileReader();
-                      reader.readAsArrayBuffer(file);
-                      reader.onLoadEnd.listen((_) {
-                        final result = reader.result;
-                        if (result is ByteBuffer) {
-                          setDialog(() {
-                            fileNameInput = file.name;
-                            contentType = file.type.isNotEmpty
-                                ? file.type
-                                : (fileNameInput.toLowerCase().endsWith('.pdf')
-                                    ? 'application/pdf'
-                                    : 'image/jpeg');
-                            fileBytes = Uint8List.view(result);
-                          });
-                        }
-                      });
+                  onPressed: () async {
+                    final result = await FilePicker.platform.pickFiles(
+                      type: FileType.custom,
+                      allowedExtensions: const ['pdf', 'jpg', 'jpeg', 'png'],
+                      withData: true,
+                      allowMultiple: false,
+                    );
+                    if (result == null || result.files.isEmpty) return;
+                    final file = result.files.single;
+                    final bytes = file.bytes;
+                    if (bytes == null || bytes.isEmpty) return;
+                    final lower = file.name.toLowerCase();
+                    setDialog(() {
+                      fileNameInput = file.name;
+                      contentType = switch ((file.extension ?? '').toLowerCase()) {
+                        'pdf' => 'application/pdf',
+                        'png' => 'image/png',
+                        'jpg' || 'jpeg' => 'image/jpeg',
+                        _ => lower.endsWith('.pdf')
+                            ? 'application/pdf'
+                            : 'application/octet-stream',
+                      };
+                      fileBytes = bytes;
                     });
                   },
                 ),
@@ -554,7 +553,7 @@ class _DocumentManagementScreenState
               mainAxisSize: MainAxisSize.min,
               children: [
                 DropdownButtonFormField<String?>(
-                  value: scopeYearId,
+                  initialValue: scopeYearId,
                   decoration: const InputDecoration(labelText: 'Academic Year'),
                   items: _years
                       .map((y) => DropdownMenuItem<String?>(
@@ -572,7 +571,7 @@ class _DocumentManagementScreenState
                 ),
                 if (!allClasses)
                   DropdownButtonFormField<String?>(
-                    value: scopeStandardId,
+                    initialValue: scopeStandardId,
                     decoration: const InputDecoration(labelText: 'Class'),
                     items: _standards
                         .map((s) => DropdownMenuItem<String?>(
@@ -598,7 +597,7 @@ class _DocumentManagementScreenState
                             children: [
                               Expanded(
                                 child: DropdownButtonFormField<String>(
-                                  value: docTypes.contains(selectedType)
+                                  initialValue: docTypes.contains(selectedType)
                                       ? selectedType
                                       : 'OTHER',
                                   decoration: const InputDecoration(
@@ -827,7 +826,7 @@ class _DocumentManagementScreenState
                             SizedBox(
                               width: fieldW(152),
                               child: DropdownButtonFormField<String?>(
-                                value: _selectedYearId,
+                                initialValue: _selectedYearId,
                                 isExpanded: true,
                                 decoration: const InputDecoration(
                                   labelText: 'Year',
@@ -874,7 +873,7 @@ class _DocumentManagementScreenState
                             SizedBox(
                               width: fieldW(140),
                               child: DropdownButtonFormField<String?>(
-                                value: _selectedStandardId,
+                                initialValue: _selectedStandardId,
                                 isExpanded: true,
                                 decoration: const InputDecoration(
                                   labelText: 'Class',
@@ -910,7 +909,7 @@ class _DocumentManagementScreenState
                             SizedBox(
                               width: fieldW(130),
                               child: DropdownButtonFormField<String?>(
-                                value: _selectedSection,
+                                initialValue: _selectedSection,
                                 isExpanded: true,
                                 decoration: const InputDecoration(
                                   labelText: 'Section',
@@ -943,7 +942,7 @@ class _DocumentManagementScreenState
                             SizedBox(
                               width: fieldW(148),
                               child: DropdownButtonFormField<String?>(
-                                value: _workflowStatusFilter,
+                                initialValue: _workflowStatusFilter,
                                 isExpanded: true,
                                 decoration: const InputDecoration(
                                   labelText: 'Status',

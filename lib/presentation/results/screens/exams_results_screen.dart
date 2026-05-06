@@ -4,7 +4,6 @@
 // Includes roster-based pending/uploaded tracking by class + section.
 import 'dart:async';
 
-import 'dart:html' as html;
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
@@ -12,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/logging/crash_reporter.dart';
+import '../../../core/platform/browser_actions.dart';
 import '../../../core/theme/admin_colors.dart';
 import '../../../data/repositories/results_repository.dart';
 import '../../../domains/providers/active_year_provider.dart';
@@ -1296,7 +1296,7 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 DropdownButtonFormField<String?>(
-                  value: localStandardId,
+                  initialValue: localStandardId,
                   decoration: const InputDecoration(
                     labelText: 'Class',
                     border: OutlineInputBorder(),
@@ -1340,7 +1340,7 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String?>(
-                  value: localSection,
+                  initialValue: localSection,
                   decoration: const InputDecoration(
                     labelText: 'Section (optional)',
                     border: OutlineInputBorder(),
@@ -1361,7 +1361,7 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String?>(
-                  value: localExamId,
+                  initialValue: localExamId,
                   decoration: const InputDecoration(
                     labelText: 'Exam',
                     helperText:
@@ -1557,7 +1557,7 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
                         border: OutlineInputBorder(),
                         contentPadding:
                             EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
-                    value: _selectedYearId,
+                    initialValue: _selectedYearId,
                     items: _years
                         .map((y) => DropdownMenuItem<String>(
                             value: y['id']?.toString(),
@@ -1596,7 +1596,7 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
                         border: OutlineInputBorder(),
                         contentPadding:
                             EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
-                    value: _selectedStandardId,
+                    initialValue: _selectedStandardId,
                     items: [
                       const DropdownMenuItem<String?>(
                           value: null, child: Text('All Classes')),
@@ -1630,7 +1630,7 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
                         border: OutlineInputBorder(),
                         contentPadding:
                             EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
-                    value: _selectedSection,
+                    initialValue: _selectedSection,
                     items: [
                       const DropdownMenuItem<String?>(
                           value: null, child: Text('All Sections')),
@@ -1657,7 +1657,7 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
                         border: OutlineInputBorder(),
                         contentPadding:
                             EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
-                    value: _uploadStatusFilter,
+                    initialValue: _uploadStatusFilter,
                     items: const [
                       DropdownMenuItem<String?>(
                           value: null, child: Text('All')),
@@ -1684,7 +1684,7 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
                         border: OutlineInputBorder(),
                         contentPadding:
                             EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
-                    value: _timetableStatusFilter,
+                    initialValue: _timetableStatusFilter,
                     items: const [
                       DropdownMenuItem<String?>(
                           value: null, child: Text('All')),
@@ -1955,7 +1955,7 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
   void _viewTimetableLink(String url) {
     final u = url.trim();
     if (u.isEmpty) return;
-    html.window.open(u, '_blank');
+    openUrlInNewTab(u);
   }
 
   Future<void> _deleteTimetableForExam(_Exam exam) async {
@@ -2486,7 +2486,7 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
                                         final u = uploaded!.reportCardUrl!
                                             .trim();
                                         if (u.isNotEmpty) {
-                                          html.window.open(u, '_blank');
+                                          openUrlInNewTab(u);
                                         }
                                       },
                                     ),

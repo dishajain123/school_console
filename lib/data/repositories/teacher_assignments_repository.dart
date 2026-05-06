@@ -46,7 +46,7 @@ class TeacherAssignmentsRepository {
         ApiConstants.teacherAssignments,
         queryParameters: {
           'teacher_id': teacherId,
-          if (yearId != null) 'academic_year_id': yearId,
+          'academic_year_id': ?yearId,
         },
       ),
     );
@@ -66,7 +66,7 @@ class TeacherAssignmentsRepository {
         queryParameters: {
           'standard_id': standardId,
           'section': section,
-          if (yearId != null) 'academic_year_id': yearId,
+          'academic_year_id': ?yearId,
         },
       ),
     );
@@ -84,7 +84,7 @@ class TeacherAssignmentsRepository {
         ApiConstants.teacherAssignments,
         queryParameters: {
           'standard_id': standardId,
-          if (yearId != null) 'academic_year_id': yearId,
+          'academic_year_id': ?yearId,
         },
       ),
     );
@@ -201,7 +201,7 @@ class TeacherAssignmentsRepository {
         queryParameters: {
           'role': 'TEACHER',
           'pending_only': false,
-          if (academicYearId != null) 'academic_year_id': academicYearId,
+          'academic_year_id': ?academicYearId,
         },
       ),
     );
@@ -260,7 +260,7 @@ class TeacherAssignmentsRepository {
       ApiConstants.subjects,
       queryParameters: {
         'page_size': 200,
-        if (standardId != null) 'standard_id': standardId,
+        'standard_id': ?standardId,
       },
     );
     return ((r.data?['items'] as List?) ?? [])
@@ -276,7 +276,7 @@ class TeacherAssignmentsRepository {
       () => _client.dio.get<List<dynamic>>(
         ApiConstants.leaveBalanceTeacher(teacherId),
         queryParameters: {
-          if (academicYearId != null) 'academic_year_id': academicYearId,
+          'academic_year_id': ?academicYearId,
         },
       ),
     );
@@ -295,7 +295,7 @@ class TeacherAssignmentsRepository {
         ApiConstants.leave,
         queryParameters: {
           'teacher_id': teacherId,
-          if (academicYearId != null) 'academic_year_id': academicYearId,
+          'academic_year_id': ?academicYearId,
         },
       ),
     );
@@ -322,7 +322,7 @@ class TeacherAssignmentsRepository {
             {'leave_type': 'SICK', 'total_days': sickDays},
             {'leave_type': 'EARNED', 'total_days': earnedDays},
           ],
-          if (academicYearId != null) 'academic_year_id': academicYearId,
+          'academic_year_id': ?academicYearId,
         },
       ),
     );

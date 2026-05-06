@@ -249,7 +249,7 @@ class AcademicRepository {
       ApiConstants.sectionById(sectionId),
       data: {
         'name': sectionName.trim().toUpperCase(),
-        if (capacity != null) 'capacity': capacity,
+        'capacity': ?capacity,
       },
     );
   }

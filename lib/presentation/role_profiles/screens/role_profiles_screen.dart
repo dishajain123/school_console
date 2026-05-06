@@ -238,7 +238,7 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
                     child: DropdownButtonFormField<String?>(
                       key: ValueKey<String?>(
                           'rp_year_${_selectedYearId ?? 'null'}_${_years.length}'),
-                      value: _selectedYearId,
+                      initialValue: _selectedYearId,
                       decoration: const InputDecoration(
                         labelText: 'Academic Year',
                         isDense: true,
@@ -294,7 +294,7 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
                       child: DropdownButtonFormField<String?>(
                         key: ValueKey<String?>(
                             'rp_std_${_selectedStandardId ?? 'null'}_${_standards.length}'),
-                        value: _selectedStandardId,
+                        initialValue: _selectedStandardId,
                         decoration: const InputDecoration(
                           labelText: 'Class',
                           isDense: true,
@@ -331,7 +331,7 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
                       child: DropdownButtonFormField<String?>(
                         key: ValueKey<String?>(
                             'rp_sec_${_selectedSection ?? 'null'}_${_sections.length}'),
-                        value: _selectedSection,
+                        initialValue: _selectedSection,
                         decoration: const InputDecoration(
                           labelText: 'Section',
                           isDense: true,

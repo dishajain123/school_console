@@ -683,7 +683,7 @@ class _PromotionWorkflowScreenState
                                 vertical: 8,
                               ),
                             ),
-                            value: _sourceYearId,
+                            initialValue: _sourceYearId,
                             items: _years
                                 .map(
                                   (y) => DropdownMenuItem<String>(
@@ -718,7 +718,7 @@ class _PromotionWorkflowScreenState
                                 vertical: 8,
                               ),
                             ),
-                            value: _targetYearId,
+                            initialValue: _targetYearId,
                             items: _years
                                 .map(
                                   (y) => DropdownMenuItem<String>(
@@ -751,7 +751,7 @@ class _PromotionWorkflowScreenState
                                 vertical: 8,
                               ),
                             ),
-                            value: _filterStandardId,
+                            initialValue: _filterStandardId,
                             items: [
                               const DropdownMenuItem<String>(
                                 value: null,
@@ -786,7 +786,7 @@ class _PromotionWorkflowScreenState
                                 vertical: 8,
                               ),
                             ),
-                            value: _filterSectionId,
+                            initialValue: _filterSectionId,
                             items: [
                               const DropdownMenuItem<String>(
                                 value: null,
@@ -931,7 +931,7 @@ class _PromotionWorkflowScreenState
                               SizedBox(
                                 width: 220,
                                 child: DropdownButtonFormField<String>(
-                                  value: _bulkTargetClassOptions().any(
+                                  initialValue: _bulkTargetClassOptions().any(
                                         (s) => s.id == _bulkTargetStandardId,
                                       )
                                       ? _bulkTargetStandardId
@@ -964,7 +964,7 @@ class _PromotionWorkflowScreenState
                               SizedBox(
                                 width: 220,
                                 child: DropdownButtonFormField<String>(
-                                  value: _bulkTargetSectionId,
+                                  initialValue: _bulkTargetSectionId,
                                   decoration: const InputDecoration(
                                     labelText: 'Target Section',
                                     border: OutlineInputBorder(),

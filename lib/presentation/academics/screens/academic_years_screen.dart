@@ -221,7 +221,7 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen>
                     key: ValueKey(
                       'preview_year_${previewYear?.id ?? 'none'}_${data.years.length}',
                     ),
-                    value: previewYear?.id,
+                    initialValue: previewYear?.id,
                     decoration: const InputDecoration(
                       labelText: 'Year',
                       isDense: true,
@@ -846,7 +846,7 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen>
               mainAxisSize: MainAxisSize.min,
               children: [
                 DropdownButtonFormField<String>(
-                  value: selected?.id,
+                  initialValue: selected?.id,
                   items: data.standards
                       .map(
                         (s) =>
@@ -933,7 +933,7 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen>
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String?>(
-                  value: selectedStandardId,
+                  initialValue: selectedStandardId,
                   items: [
                     const DropdownMenuItem<String?>(
                       value: null,

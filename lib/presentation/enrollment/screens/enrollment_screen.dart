@@ -746,7 +746,7 @@ class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               DropdownButtonFormField<String>(
-                value: selectedStandardId,
+                initialValue: selectedStandardId,
                 decoration: const InputDecoration(labelText: 'Class *'),
                 items: standards
                     .map(
@@ -783,7 +783,7 @@ class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
                   )
                 else
                   DropdownButtonFormField<String>(
-                    value: selectedParentId,
+                    initialValue: selectedParentId,
                     decoration: const InputDecoration(labelText: 'Parent *'),
                     items: parents
                         .map(
@@ -803,7 +803,7 @@ class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
                 const SizedBox(height: 8),
               ],
               DropdownButtonFormField<String?>(
-                value: selectedSectionId,
+                initialValue: selectedSectionId,
                 decoration: const InputDecoration(
                   labelText: 'Section (optional)',
                 ),

@@ -1,5 +1,4 @@
 // Per-student document review: requirements checklist, upload, verify/reject.
-import 'dart:html' as html;
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
@@ -7,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/platform/browser_actions.dart';
 import '../../../core/theme/admin_colors.dart';
 import '../../../domains/providers/admin_document_provider.dart';
 import '../../../domains/providers/student_documents_overview_provider.dart';
@@ -74,7 +74,7 @@ class _DocumentStudentDetailScreenState
     final repo = ref.read(adminDocumentRepositoryProvider);
     try {
       final url = await repo.getDownloadUrl(docId);
-      if (url != null && mounted) html.window.open(url, '_blank');
+      if (url != null && mounted) openUrlInNewTab(url);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

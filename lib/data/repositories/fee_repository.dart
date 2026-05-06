@@ -60,7 +60,7 @@ class FeeRepository {
       ApiConstants.feeStructuresList,
       queryParameters: {
         'standard_id': standardId,
-        if (academicYearId != null) 'academic_year_id': academicYearId,
+        'academic_year_id': ?academicYearId,
       },
     );
     final raw = resp.data is List
@@ -126,11 +126,10 @@ class FeeRepository {
     await _client.dio.patch<dynamic>(
       ApiConstants.feeStructureById(structureId),
       data: {
-        if (amount != null) 'amount': amount,
-        if (dueDate != null) 'due_date': dueDate,
-        if (description != null) 'description': description,
-        if (applyToAllClasses != null)
-          'apply_to_all_classes': applyToAllClasses,
+        'amount': ?amount,
+        'due_date': ?dueDate,
+        'description': ?description,
+        'apply_to_all_classes': ?applyToAllClasses,
       },
     );
   }
@@ -155,7 +154,7 @@ class FeeRepository {
       ApiConstants.feeLedgerGenerate,
       data: {
         'standard_id': standardId,
-        if (academicYearId != null) 'academic_year_id': academicYearId,
+        'academic_year_id': ?academicYearId,
       },
     );
     return resp.data ?? {};
@@ -172,7 +171,7 @@ class FeeRepository {
       data: {
         'student_id': studentId,
         'standard_id': standardId,
-        if (academicYearId != null) 'academic_year_id': academicYearId,
+        'academic_year_id': ?academicYearId,
         if (paymentCycle != null && paymentCycle.isNotEmpty)
           'payment_cycle': paymentCycle,
       },

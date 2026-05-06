@@ -123,8 +123,8 @@ class ResultsRepository {
     final resp = await _client.dio.get<dynamic>(
       ApiConstants.resultsExams,
       queryParameters: {
-        if (academicYearId != null) 'academic_year_id': academicYearId,
-        if (standardId != null) 'standard_id': standardId,
+        'academic_year_id': ?academicYearId,
+        'standard_id': ?standardId,
       },
     );
     final raw = resp.data is List
@@ -146,7 +146,7 @@ class ResultsRepository {
       data: {
         'name': name,
         'apply_to_all_standards': true,
-        if (academicYearId != null) 'academic_year_id': academicYearId,
+        'academic_year_id': ?academicYearId,
         'start_date': startDate,
         'end_date': endDate,
       },
@@ -215,7 +215,7 @@ class ResultsRepository {
       'exam_id': examId,
       if (academicYearId != null && academicYearId.trim().isNotEmpty)
         'academic_year_id': academicYearId,
-      if (sectionParam != null) 'section': sectionParam,
+      'section': ?sectionParam,
       'file': MultipartFile.fromBytes(
         fileBytes,
         filename: fileName,

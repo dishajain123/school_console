@@ -7,8 +7,10 @@ import 'package:flutter/services.dart';
 import 'dart:async';
 
 import '../../../core/constants/route_constants.dart';
+import '../../../core/logging/crash_reporter.dart';
 import '../../../domains/providers/auth_provider.dart';
 import '../../../domains/providers/enrollment_provider.dart';
+import '../../../domains/providers/enrollment_screen_providers.dart';
 import '../../../data/repositories/enrollment_repository.dart';
 import '../../common/layout/admin_scaffold.dart';
 import '../../common/widgets/admin_layout/admin_empty_state.dart';
@@ -16,137 +18,6 @@ import '../../common/widgets/admin_layout/admin_loading_placeholder.dart';
 import '../../common/widgets/admin_layout/admin_page_header.dart';
 import '../../common/widgets/admin_layout/admin_spacing.dart';
 import '../../common/widgets/admin_layout/admin_table_helpers.dart';
-
-// ── Repository ────────────────────────────────────────────────────────────────
-
-class _EnrollmentRepository {
-  _EnrollmentRepository(this._api);
-  final EnrollmentRepository _api;
-
-  Future<void> createMapping({
-    required String studentId,
-    required String standardId,
-    required String academicYearId,
-    String? sectionId,
-    String? rollNumber,
-  }) async {
-    await _api.createMapping(
-      studentId: studentId,
-      standardId: standardId,
-      academicYearId: academicYearId,
-      sectionId: sectionId,
-      rollNumber: rollNumber,
-    );
-  }
-
-  Future<List<Map<String, dynamic>>> listStandards(
-    String schoolId,
-    String academicYearId,
-  ) async {
-    return _api.listStandards(
-      schoolId: schoolId,
-      academicYearId: academicYearId,
-    );
-  }
-
-  Future<List<Map<String, dynamic>>> listSections(
-    String schoolId,
-    String standardId,
-    String academicYearId,
-  ) async {
-    return _api.listSections(
-      schoolId: schoolId,
-      standardId: standardId,
-      academicYearId: academicYearId,
-    );
-  }
-
-  Future<List<Map<String, dynamic>>> listAcademicYears(String schoolId) async {
-    return _api.listAcademicYears(schoolId: schoolId);
-  }
-
-  Future<List<Map<String, dynamic>>> onboardingQueue({
-    String? role,
-    bool pendingOnly = true,
-    String? academicYearId,
-  }) async {
-    return _api.onboardingQueue(
-      role: role,
-      pendingOnly: pendingOnly,
-      academicYearId: academicYearId,
-    );
-  }
-
-  Future<List<Map<String, dynamic>>> searchStudents(String query) async {
-    return _api.searchStudents(query);
-  }
-
-  Future<Map<String, dynamic>> getRoleProfileByUserId(String userId) async {
-    final resp = await _api.getRoleProfile(userId);
-    return resp;
-  }
-
-  Future<List<Map<String, dynamic>>> listParentProfiles({
-    String? search,
-  }) async {
-    return _api.listParentProfiles(search: search);
-  }
-
-  Future<Map<String, dynamic>> createStudentProfile({
-    required String userId,
-    required String parentId,
-    String? customAdmissionNumber,
-  }) async {
-    return _api.createStudentProfile(
-      userId: userId,
-      parentId: parentId,
-      customAdmissionNumber: customAdmissionNumber,
-    );
-  }
-
-  Future<Map<String, dynamic>> createParentProfile({
-    required String userId,
-    String relation = 'GUARDIAN',
-    String? occupation,
-  }) async {
-    return _api.createParentProfile(
-      userId: userId,
-      relation: relation,
-      occupation: occupation,
-    );
-  }
-
-  Future<List<Map<String, dynamic>>> listStudentProfiles({
-    String? search,
-    int pageSize = 300,
-  }) async {
-    return _api.listStudentProfiles(search: search, pageSize: pageSize);
-  }
-
-  Future<List<String>> getParentChildIds(String parentId) async {
-    return _api.getParentChildIds(parentId);
-  }
-
-  Future<void> assignParentChildren({
-    required String parentId,
-    required List<String> studentIds,
-  }) async {
-    return _api.assignParentChildren(
-      parentId: parentId,
-      studentIds: studentIds,
-    );
-  }
-
-  Future<Map<String, dynamic>> annualReenrollUser({
-    required String userId,
-    required String academicYearId,
-  }) async {
-    return _api.annualReenrollUser(
-      userId: userId,
-      academicYearId: academicYearId,
-    );
-  }
-}
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 
@@ -158,7 +29,8 @@ class EnrollmentScreen extends ConsumerStatefulWidget {
 }
 
 class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
-  late final _EnrollmentRepository _repo;
+  EnrollmentRepository get _repo =>
+      ref.read(enrollmentRepositoryProvider);
 
   List<Map<String, dynamic>> _years = [];
   List<Map<String, dynamic>> _onboardingRaw = [];
@@ -190,12 +62,14 @@ class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
   @override
   void initState() {
     super.initState();
-    _repo = _EnrollmentRepository(ref.read(enrollmentRepositoryProvider));
-    _loadYears();
-    _queueAutoRefresh = Timer.periodic(const Duration(seconds: 15), (_) {
-      if (_selectedYearId != null && _selectedYearId!.trim().isNotEmpty) {
-        _loadOnboardingQueue(silent: true);
-      }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _loadYears();
+      _queueAutoRefresh = Timer.periodic(const Duration(seconds: 15), (_) {
+        if (_selectedYearId != null && _selectedYearId!.trim().isNotEmpty) {
+          _loadOnboardingQueue(silent: true);
+        }
+      });
     });
   }
 
@@ -306,7 +180,8 @@ class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
     if (_schoolId == null) return;
     setState(() => _loading = true);
     try {
-      final years = await _repo.listAcademicYears(_schoolId!);
+      ref.invalidate(schoolEnrollmentYearsProvider);
+      final years = await ref.read(schoolEnrollmentYearsProvider.future);
       final active = years.firstWhere(
         (y) => y['is_active'] == true,
         orElse: () => years.isNotEmpty ? years.first : {},
@@ -338,12 +213,21 @@ class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
     final requestVersion = ++_queueRequestVersion;
     if (!silent) setState(() => _loading = true);
     try {
-      final items = await _repo.onboardingQueue(
-        role: _onboardingRole,
-        // Always fetch full queue for selected year/role.
-        // Status/search filters are applied locally for consistent UX.
-        pendingOnly: false,
-        academicYearId: _selectedYearId,
+      ref.invalidate(
+        onboardingQueueProvider(
+          OnboardingQueueKey(
+            academicYearId: _selectedYearId!,
+            role: _onboardingRole,
+          ),
+        ),
+      );
+      final items = await ref.read(
+        onboardingQueueProvider(
+          OnboardingQueueKey(
+            academicYearId: _selectedYearId!,
+            role: _onboardingRole,
+          ),
+        ).future,
       );
       if (!mounted || requestVersion != _queueRequestVersion) return;
       setState(() {
@@ -356,8 +240,9 @@ class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
       if (!mounted || requestVersion != _queueRequestVersion) return;
       setState(() => _error = e.toString());
     } finally {
-      if (!mounted || requestVersion != _queueRequestVersion) return;
-      if (!silent) setState(() => _loading = false);
+      if (mounted && requestVersion == _queueRequestVersion && !silent) {
+        setState(() => _loading = false);
+      }
     }
   }
 
@@ -582,8 +467,8 @@ class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
           academicYearId: _selectedYearId!,
         );
         successCount += 1;
-      } catch (_) {
-        // Continue processing others.
+      } catch (e, stack) {
+        CrashReporter.log(e, stack);
       }
     }
     if (!mounted) return;
@@ -642,14 +527,16 @@ class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
                               resolvedStudentId.isEmpty) &&
                           userId.isNotEmpty) {
                         try {
-                          final profile = await _repo.getRoleProfileByUserId(
+                          final profile = await _repo.getRoleProfile(
                             userId,
                           );
                           final sid = profile['student_id']?.toString();
                           if (sid != null && sid.isNotEmpty) {
                             resolvedStudentId = sid;
                           }
-                        } catch (_) {}
+                        } catch (e, stack) {
+                          CrashReporter.log(e, stack);
+                        }
                       }
                       if (resolvedStudentId == null ||
                           resolvedStudentId.isEmpty) {
@@ -706,14 +593,16 @@ class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
                       // If queue row has no profile_id, try resolving by user id first.
                       if (parentId == null && _isValidUuid(userId)) {
                         try {
-                          final profile = await _repo.getRoleProfileByUserId(
+                          final profile = await _repo.getRoleProfile(
                             userId,
                           );
                           final resolved = profile['parent_id']?.toString();
                           if (_isValidUuid(resolved)) {
                             parentId = resolved!.trim();
                           }
-                        } catch (_) {}
+                        } catch (e, stack) {
+                          CrashReporter.log(e, stack);
+                        }
                       }
 
                       // Create profile only when it truly does not exist.
@@ -758,7 +647,8 @@ class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
                             parentId: parentId,
                             admissions: admissions,
                           );
-                        } catch (_) {
+                        } catch (e, stack) {
+                          CrashReporter.log(e, stack);
                           autoLinked = 0;
                         }
                       }
@@ -817,15 +707,20 @@ class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
     List<Map<String, dynamic>> sections = [];
     if (_schoolId != null && _selectedYearId != null) {
       try {
-        standards = await _repo.listStandards(_schoolId!, _selectedYearId!);
-      } catch (_) {
+        standards = await _repo.listStandards(
+          schoolId: _schoolId,
+          academicYearId: _selectedYearId,
+        );
+      } catch (e, stack) {
+        CrashReporter.log(e, stack);
         standards = [];
       }
     }
     if (selectedStudentId == null && pendingStudentUserId != null) {
       try {
         parents = await _repo.listParentProfiles();
-      } catch (_) {
+      } catch (e, stack) {
+        CrashReporter.log(e, stack);
         parents = [];
       }
     }
@@ -841,6 +736,7 @@ class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
       }
       return;
     }
+    if (!mounted) return;
     await showDialog<void>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -867,9 +763,9 @@ class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
                       _selectedYearId != null &&
                       v != null) {
                     sections = await _repo.listSections(
-                      _schoolId!,
-                      v,
-                      _selectedYearId!,
+                      schoolId: _schoolId,
+                      standardId: v,
+                      academicYearId: _selectedYearId,
                     );
                   } else {
                     sections = [];
@@ -967,6 +863,7 @@ class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
                   }
                   return;
                 }
+                if (!ctx.mounted) return;
                 Navigator.of(ctx).pop();
                 try {
                   await _repo.createMapping(
@@ -978,7 +875,7 @@ class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
                         ? null
                         : rollCtrl.text.trim(),
                   );
-                  if (mounted)
+                  if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text(
@@ -988,11 +885,13 @@ class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
                         ),
                       ),
                     );
+                  }
                 } catch (e) {
-                  if (mounted)
+                  if (mounted) {
                     ScaffoldMessenger.of(
                       context,
                     ).showSnackBar(SnackBar(content: Text(e.toString())));
+                  }
                 }
               },
               child: const Text('Enroll'),
@@ -1220,6 +1119,8 @@ class _EnrollmentScreenState extends ConsumerState<EnrollmentScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(schoolEnrollmentYearsProvider);
+
     final totalRows = _onboarding.length;
     final totalPages = totalRows == 0 ? 1 : (totalRows / _rowsPerPage).ceil();
     final activePage = _currentPage.clamp(0, totalPages - 1);

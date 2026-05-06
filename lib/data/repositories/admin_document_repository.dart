@@ -5,29 +5,19 @@ import 'package:dio/dio.dart';
 import '../../core/constants/api_constants.dart';
 import '../../core/network/dio_client.dart';
 import '../models/documents/admin_document_models.dart';
+import 'masters_repository.dart';
 
 class AdminDocumentRepository {
-  AdminDocumentRepository(this._dio);
+  AdminDocumentRepository(this._dio) : _masters = MastersRepository(_dio);
 
   final DioClient _dio;
+  final MastersRepository _masters;
 
-  Future<List<Map<String, dynamic>>> listYears() async {
-    final r =
-        await _dio.dio.get<Map<String, dynamic>>(ApiConstants.academicYears);
-    return ((r.data?['items'] as List?) ?? [])
-        .map((e) => Map<String, dynamic>.from(e as Map))
-        .toList();
-  }
+  Future<List<Map<String, dynamic>>> listYears() =>
+      _masters.listAcademicYears();
 
-  Future<List<Map<String, dynamic>>> listStandards(String yearId) async {
-    final r = await _dio.dio.get<Map<String, dynamic>>(
-      ApiConstants.standards,
-      queryParameters: {'academic_year_id': yearId},
-    );
-    return ((r.data?['items'] as List?) ?? [])
-        .map((e) => Map<String, dynamic>.from(e as Map))
-        .toList();
-  }
+  Future<List<Map<String, dynamic>>> listStandards(String yearId) =>
+      _masters.listStandards(academicYearId: yearId);
 
   Future<List<String>> listSections({
     required String standardId,

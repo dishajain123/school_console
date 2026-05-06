@@ -1,8 +1,13 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
+/// Normalizes connection and HTTP errors for UI; does **not** clear tokens or logout
+/// (that stays in [AuthInterceptor] after refresh failure).
 class ErrorInterceptor extends Interceptor {
-  String _safePath(RequestOptions o) => o.path.isEmpty ? o.uri.toString() : o.path;
+  ErrorInterceptor();
+
+  String _safePath(RequestOptions o) =>
+      o.path.isEmpty ? o.uri.toString() : o.path;
 
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
@@ -43,7 +48,9 @@ class ErrorInterceptor extends Interceptor {
       return;
     }
 
-    if (err.response?.statusCode == 401) {
+    final statusCode = err.response?.statusCode;
+
+    if (statusCode == 403) {
       handler.next(
         DioException(
           requestOptions: err.requestOptions,
@@ -51,11 +58,26 @@ class ErrorInterceptor extends Interceptor {
           type: err.type,
           error: err.error,
           message:
-              'Session expired or unauthorized. Please login again.',
+              'You don\'t have permission for this action. '
+              'Contact an administrator if you need access.',
         ),
       );
       return;
     }
+
+    if (statusCode == 401) {
+      handler.next(
+        DioException(
+          requestOptions: err.requestOptions,
+          response: err.response,
+          type: err.type,
+          error: err.error,
+          message: 'Session expired or unauthorized. Please sign in again.',
+        ),
+      );
+      return;
+    }
+
     handler.next(err);
   }
 }

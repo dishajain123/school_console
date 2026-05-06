@@ -56,7 +56,7 @@ class AuditRepository {
   Future<List<String>> listActions() async {
     final resp =
         await _client.dio.get<List<dynamic>>(ApiConstants.auditLogActions);
-    return ((resp.data ?? const <dynamic>[]) as List)
+    return (resp.data ?? const <dynamic>[])
         .map((e) => e.toString())
         .toList();
   }
@@ -64,7 +64,7 @@ class AuditRepository {
   Future<List<String>> listEntityTypes() async {
     final resp =
         await _client.dio.get<List<dynamic>>(ApiConstants.auditLogEntityTypes);
-    return ((resp.data ?? const <dynamic>[]) as List)
+    return (resp.data ?? const <dynamic>[])
         .map((e) => e.toString())
         .toList();
   }

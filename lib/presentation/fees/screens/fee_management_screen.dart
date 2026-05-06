@@ -1,14 +1,17 @@
 // lib/presentation/fees/screens/fee_management_screen.dart  [Admin Console]
 // Rewritten: class-wise student fee view, one row per student, parent info,
 // payment cycle selection, mark-as-paid, auto-overdue, mode of payment.
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/constants/api_constants.dart';
-import '../../../core/network/dio_client.dart';
+import '../../../core/logging/crash_reporter.dart';
 import '../../../core/theme/admin_colors.dart';
+import '../../../data/models/fees/fee_structure_item.dart';
+import '../../../data/repositories/fee_repository.dart';
 import '../../../domains/providers/active_year_provider.dart';
 import '../../../domains/providers/auth_provider.dart';
+import '../../../domains/providers/fee_repository_provider.dart';
 import '../../common/layout/admin_scaffold.dart';
 import '../../common/widgets/admin_layout/admin_empty_state.dart';
 import '../../common/widgets/admin_layout/admin_filter_card.dart';
@@ -16,46 +19,11 @@ import '../../common/widgets/admin_layout/admin_loading_placeholder.dart';
 import '../../common/widgets/admin_layout/admin_page_header.dart';
 import '../../common/widgets/admin_layout/admin_spacing.dart';
 import '../../common/widgets/admin_layout/admin_table_helpers.dart';
+import '../../common/widgets/data_table_widget.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Local models
 // ─────────────────────────────────────────────────────────────────────────────
-
-class _FeeStructure {
-  const _FeeStructure({
-    required this.id,
-    required this.feeCategory,
-    required this.customFeeHead,
-    required this.amount,
-    required this.dueDate,
-    this.standardName,
-    this.description,
-    this.installmentPlan,
-  });
-
-  final String id;
-  final String feeCategory;
-  final String customFeeHead;
-  final double amount;
-  final String dueDate;
-  final String? standardName;
-  final String? description;
-  final List<dynamic>? installmentPlan;
-
-  factory _FeeStructure.fromJson(Map<String, dynamic> json) => _FeeStructure(
-    id: json['id'].toString(),
-    feeCategory: json['fee_category']?.toString() ?? '',
-    customFeeHead: json['custom_fee_head']?.toString() ?? '',
-    amount: (json['amount'] as num?)?.toDouble() ?? 0,
-    dueDate: json['due_date']?.toString() ?? '',
-    standardName: json['standard']?['name'] as String?,
-    description: json['description'] as String?,
-    installmentPlan: json['installment_plan'] as List<dynamic>?,
-  );
-
-  String get displayLabel =>
-      customFeeHead.trim().isNotEmpty ? customFeeHead : feeCategory;
-}
 
 class _InstallmentRow {
   const _InstallmentRow({
@@ -179,306 +147,20 @@ class _StudentFeeRow {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Repository
-// ─────────────────────────────────────────────────────────────────────────────
+Future<List<_StudentFeeRow>> _parseStudentFeeRowsAsync(
+  List<dynamic> raw,
+) async {
+  if (raw.isEmpty) return const [];
+  final maps = raw
+      .map((e) => Map<String, dynamic>.from(e as Map))
+      .toList(growable: false);
+  return compute(_studentFeeRowsFromMaps, maps);
+}
 
-class _FeeRepository {
-  _FeeRepository(this._dio);
-  final DioClient _dio;
-  static const List<String> feeCategories = [
-    'TUITION',
-    'TRANSPORT',
-    'LIBRARY',
-    'LABORATORY',
-    'SPORTS',
-    'EXAMINATION',
-    'MISCELLANEOUS',
-  ];
-
-  bool _isUuid(String? value) {
-    if (value == null) return false;
-    final v = value.trim();
-    if (v.isEmpty) return false;
-    return RegExp(
-      r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$',
-    ).hasMatch(v);
-  }
-
-  Future<List<Map<String, dynamic>>> listYears(String schoolId) async {
-    final resp = await _dio.dio.get<Map<String, dynamic>>(
-      ApiConstants.academicYears,
-      queryParameters: {'school_id': schoolId},
-    );
-    return ((resp.data?['items'] as List?) ?? [])
-        .map((e) => Map<String, dynamic>.from(e as Map))
-        .toList();
-  }
-
-  Future<List<Map<String, dynamic>>> listStandards(
-    String schoolId,
-    String academicYearId,
-  ) async {
-    final resp = await _dio.dio.get<Map<String, dynamic>>(
-      ApiConstants.standards,
-      queryParameters: {
-        'school_id': schoolId,
-        'academic_year_id': academicYearId,
-      },
-    );
-    return ((resp.data?['items'] as List?) ?? [])
-        .map((e) => Map<String, dynamic>.from(e as Map))
-        .toList();
-  }
-
-  Future<List<Map<String, dynamic>>> listSections({
-    required String schoolId,
-    required String academicYearId,
-    required String standardId,
-  }) async {
-    final resp = await _dio.dio.get<Map<String, dynamic>>(
-      ApiConstants.sections,
-      queryParameters: {
-        'school_id': schoolId,
-        'academic_year_id': academicYearId,
-        'standard_id': standardId,
-      },
-    );
-    return ((resp.data?['items'] as List?) ?? [])
-        .map((e) => Map<String, dynamic>.from(e as Map))
-        .toList();
-  }
-
-  Future<List<_FeeStructure>> listStructures(
-    String standardId, {
-    String? academicYearId,
-  }) async {
-    final resp = await _dio.dio.get<dynamic>(
-      ApiConstants.feeStructuresList,
-      queryParameters: {
-        'standard_id': standardId,
-        if (academicYearId != null) 'academic_year_id': academicYearId,
-      },
-    );
-    final raw = resp.data is List
-        ? resp.data as List
-        : ((resp.data as Map?)?['items'] as List? ?? []);
-    return raw
-        .map((e) => _FeeStructure.fromJson(Map<String, dynamic>.from(e as Map)))
-        .toList();
-  }
-
-  Future<void> createStructure({
-    required String standardId,
-    required String academicYearId,
-    required String feeCategory,
-    required double amount,
-    required String dueDate,
-    String? customFeeHead,
-    String? description,
-    List<Map<String, dynamic>>? installmentPlan,
-  }) async {
-    await _dio.dio.post<dynamic>(
-      ApiConstants.feeStructures,
-      data: {
-        'structures': [
-          {
-            'standard_id': standardId,
-            'academic_year_id': academicYearId,
-            'fee_category': feeCategory,
-            'amount': amount,
-            'due_date': dueDate,
-            if (customFeeHead != null && customFeeHead.isNotEmpty)
-              'custom_fee_head': customFeeHead,
-            if (description != null && description.isNotEmpty)
-              'description': description,
-            if (installmentPlan != null && installmentPlan.isNotEmpty)
-              'installment_plan': installmentPlan,
-          },
-        ],
-      },
-    );
-  }
-
-  Future<void> createStructuresBatch({
-    required List<Map<String, dynamic>> structures,
-  }) async {
-    await _dio.dio.post<dynamic>(
-      ApiConstants.feeStructures,
-      data: {'structures': structures},
-    );
-  }
-
-  Future<void> updateStructure({
-    required String structureId,
-    double? amount,
-    String? dueDate,
-    String? description,
-    bool? applyToAllClasses,
-  }) async {
-    await _dio.dio.patch<dynamic>(
-      ApiConstants.feeStructureById(structureId),
-      data: {
-        if (amount != null) 'amount': amount,
-        if (dueDate != null) 'due_date': dueDate,
-        if (description != null) 'description': description,
-        if (applyToAllClasses != null)
-          'apply_to_all_classes': applyToAllClasses,
-      },
-    );
-  }
-
-  Future<void> deleteStructure(
-    String structureId, {
-    bool deleteLinkedEntries = false,
-  }) async {
-    await _dio.dio.delete<dynamic>(
-      ApiConstants.feeStructureById(structureId),
-      queryParameters: {
-        if (deleteLinkedEntries) 'delete_linked_entries': true,
-      },
-    );
-  }
-
-  Future<Map<String, dynamic>> generateLedger(
-    String standardId, {
-    String? academicYearId,
-  }) async {
-    final resp = await _dio.dio.post<Map<String, dynamic>>(
-      ApiConstants.feeLedgerGenerate,
-      data: {
-        'standard_id': standardId,
-        if (academicYearId != null) 'academic_year_id': academicYearId,
-      },
-    );
-    return resp.data ?? {};
-  }
-
-  Future<Map<String, dynamic>> generateStudentLedger({
-    required String studentId,
-    required String standardId,
-    String? academicYearId,
-    String? paymentCycle,
-  }) async {
-    final resp = await _dio.dio.post<Map<String, dynamic>>(
-      ApiConstants.feeLedgerGenerateStudent,
-      data: {
-        'student_id': studentId,
-        'standard_id': standardId,
-        if (academicYearId != null) 'academic_year_id': academicYearId,
-        if (paymentCycle != null && paymentCycle.isNotEmpty)
-          'payment_cycle': paymentCycle,
-      },
-    );
-    return resp.data ?? {};
-  }
-
-  /// New: class-wise student fee summary — one row per student
-  Future<Map<String, dynamic>> listClassFeeStudents({
-    required String standardId,
-    String? academicYearId,
-    String? section,
-    String? paymentCycle,
-    String? status,
-  }) async {
-    final resp = await _dio.dio.get<Map<String, dynamic>>(
-      ApiConstants.feeLedgerClassStudents,
-      queryParameters: {
-        'standard_id': standardId,
-        if (_isUuid(academicYearId)) 'academic_year_id': academicYearId,
-        if (section != null && section.trim().isNotEmpty) 'section': section.trim(),
-        if (paymentCycle != null && paymentCycle.trim().isNotEmpty)
-          'payment_cycle': paymentCycle.trim(),
-        if (status != null && status.isNotEmpty) 'status': status,
-      },
-    );
-    return resp.data ?? {};
-  }
-
-  Future<Map<String, dynamic>> recordPayment({
-    required String studentId,
-    required String feeLedgerId,
-    required double amount,
-    required String paymentMode,
-    required String paymentDate,
-    String? referenceNumber,
-    String? transactionRef,
-  }) async {
-    final resp = await _dio.dio.post<Map<String, dynamic>>(
-      ApiConstants.feePayments,
-      data: {
-        'student_id': studentId,
-        'fee_ledger_id': feeLedgerId,
-        'amount': amount,
-        'payment_mode': paymentMode,
-        'payment_date': paymentDate,
-        if (referenceNumber != null && referenceNumber.isNotEmpty)
-          'reference_number': referenceNumber,
-        if (transactionRef != null && transactionRef.isNotEmpty)
-          'transaction_ref': transactionRef,
-      },
-    );
-    return resp.data ?? {};
-  }
-
-  Future<Map<String, dynamic>> allocatePayment({
-    required String studentId,
-    required double amount,
-    required String paymentMode,
-    String? paymentCycle,
-    required String paymentDate,
-    String? academicYearId,
-    String? referenceNumber,
-    String? transactionRef,
-  }) async {
-    final resp = await _dio.dio.post<Map<String, dynamic>>(
-      ApiConstants.feePaymentsAllocate,
-      data: {
-        'student_id': studentId,
-        'amount': amount,
-        'payment_mode': paymentMode,
-        if (paymentCycle != null && paymentCycle.trim().isNotEmpty)
-          'payment_cycle': paymentCycle.trim(),
-        'payment_date': paymentDate,
-        if (_isUuid(academicYearId)) 'academic_year_id': academicYearId,
-        if (referenceNumber != null && referenceNumber.isNotEmpty)
-          'reference_number': referenceNumber,
-        if (transactionRef != null && transactionRef.isNotEmpty)
-          'transaction_ref': transactionRef,
-      },
-    );
-    return resp.data ?? {};
-  }
-
-  Future<Map<String, dynamic>> getFeeAnalytics({
-    String? academicYearId,
-    String? standardId,
-  }) async {
-    final resp = await _dio.dio.get<Map<String, dynamic>>(
-      ApiConstants.feeAnalytics,
-      queryParameters: {
-        if (_isUuid(academicYearId)) 'academic_year_id': academicYearId,
-        if (_isUuid(standardId)) 'standard_id': standardId,
-      },
-    );
-    return resp.data ?? {};
-  }
-
-  Future<List<Map<String, dynamic>>> getDefaulters({
-    String? academicYearId,
-    String? standardId,
-  }) async {
-    final resp = await _dio.dio.get<Map<String, dynamic>>(
-      ApiConstants.feeDefaulters,
-      queryParameters: {
-        if (_isUuid(academicYearId)) 'academic_year_id': academicYearId,
-        if (_isUuid(standardId)) 'standard_id': standardId,
-      },
-    );
-    return ((resp.data?['defaulters'] as List?) ?? [])
-        .map((e) => Map<String, dynamic>.from(e as Map))
-        .toList();
-  }
+List<_StudentFeeRow> _studentFeeRowsFromMaps(
+  List<Map<String, dynamic>> maps,
+) {
+  return maps.map(_StudentFeeRow.fromJson).toList(growable: false);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -496,7 +178,8 @@ class FeeManagementScreen extends ConsumerStatefulWidget {
 class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
-  late final _FeeRepository _repo;
+
+  FeeRepository get _repo => ref.read(feeRepositoryProvider);
 
   List<Map<String, dynamic>> _years = [];
   List<Map<String, dynamic>> _standards = [];
@@ -508,8 +191,12 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
   String? _statusFilter;
 
   // Tab data
-  List<_FeeStructure> _structures = [];
+  static const int _feeStudentPageSize = 50;
+
+  List<FeeStructureItem> _structures = [];
   List<_StudentFeeRow> _students = [];
+  int _feeStudentPage = 1;
+  int _feeStudentTotal = 0;
   Map<String, dynamic> _analytics = {};
   List<Map<String, dynamic>> _defaulters = [];
   final Map<String, String> _studentPreferredCycle = {};
@@ -525,6 +212,8 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
       _statusFilter = null;
       _structures = [];
       _students = [];
+      _feeStudentPage = 1;
+      _feeStudentTotal = 0;
       _analytics = {};
       _defaulters = [];
       _sections = [];
@@ -536,7 +225,6 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
-    _repo = _FeeRepository(ref.read(dioClientProvider));
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging) _onTabChanged(_tabController.index);
     });
@@ -600,7 +288,9 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
       });
       await _loadSections();
       await _onTabChanged(_tabController.index);
-    } catch (_) {}
+    } catch (e, stack) {
+      CrashReporter.log(e, stack);
+    }
   }
 
   Future<void> _loadSections() async {
@@ -622,7 +312,8 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
         final valid = items.any((s) => s['name']?.toString() == _selectedSection);
         if (!valid) _selectedSection = null;
       });
-    } catch (_) {
+    } catch (e, stack) {
+      CrashReporter.log(e, stack);
       setState(() {
         _sections = [];
         _selectedSection = null;
@@ -683,16 +374,18 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
         section: _selectedSection,
         paymentCycle: _paymentCycleFilter,
         status: _statusFilter,
+        page: _feeStudentPage,
+        pageSize: _feeStudentPageSize,
       );
       final rawStudents = data['items'] as List<dynamic>? ?? [];
+      final parsed =
+          await _parseStudentFeeRowsAsync(rawStudents);
+      final apiTotal =
+          (data['total'] as num?)?.toInt() ?? parsed.length;
       if (mounted) {
         setState(() {
-          _students = rawStudents
-              .map(
-                (e) =>
-                    _StudentFeeRow.fromJson(Map<String, dynamic>.from(e as Map)),
-              )
-              .toList();
+          _students = parsed;
+          _feeStudentTotal = apiTotal;
         });
       }
     } catch (e) {
@@ -746,6 +439,7 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
   /// the student list after Apply while on Structures / Analytics / Defaulters.
   Future<void> _applyFeeFilters() async {
     setState(() {
+      _feeStudentPage = 1;
       _loading = true;
       _error = null;
     });
@@ -758,7 +452,13 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
       if (_selectedStandardId != null) {
         await _loadStudents(quiet: true);
       } else {
-        if (mounted) setState(() => _students = []);
+        if (mounted) {
+          setState(() {
+            _students = [];
+            _feeStudentTotal = 0;
+            _feeStudentPage = 1;
+          });
+        }
       }
       await _loadAnalytics(quiet: true);
       await _loadDefaulters(quiet: true);
@@ -804,7 +504,7 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
     }
     bool verified = false;
 
-    double _suggestedAmountForCycle(String cycle) {
+    double suggestedAmountForCycle(String cycle) {
       final outstandingInstallments = student.installments
           .where((i) => i.hasOutstanding)
           .toList()
@@ -848,7 +548,7 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
       return total;
     }
 
-    List<_InstallmentRow> _nextInstallmentsForCycle(String cycle) {
+    List<_InstallmentRow> nextInstallmentsForCycle(String cycle) {
       final outstandingInstallments = student.installments
           .where((i) => i.hasOutstanding)
           .toList()
@@ -870,7 +570,7 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
       return outstandingInstallments;
     }
 
-    amountCtrl.text = _suggestedAmountForCycle(paymentCycle).toStringAsFixed(2);
+    amountCtrl.text = suggestedAmountForCycle(paymentCycle).toStringAsFixed(2);
 
     final shouldSubmit = await showDialog<bool>(
       context: context,
@@ -902,7 +602,7 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                       ),
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
-                        initialValue: paymentCycle,
+                        value: paymentCycle,
                         decoration: const InputDecoration(
                           labelText: 'Payment Cycle',
                           border: OutlineInputBorder(),
@@ -925,7 +625,7 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                           final next = v ?? 'YEARLY';
                           setDialogState(() {
                             paymentCycle = next;
-                            amountCtrl.text = _suggestedAmountForCycle(next)
+                            amountCtrl.text = suggestedAmountForCycle(next)
                                 .toStringAsFixed(2);
                           });
                         },
@@ -945,7 +645,7 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                       const SizedBox(height: 10),
                       Builder(
                         builder: (_) {
-                          final targets = _nextInstallmentsForCycle(paymentCycle);
+                          final targets = nextInstallmentsForCycle(paymentCycle);
                           final title = paymentCycle == 'MONTHLY'
                               ? 'Next monthly installment target'
                               : paymentCycle == 'QUARTERLY'
@@ -1183,7 +883,7 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
           content: SizedBox(
             width: 360,
             child: DropdownButtonFormField<String>(
-              initialValue: paymentCycle,
+              value: paymentCycle,
               decoration: const InputDecoration(
                 labelText: 'Payment Cycle',
                 border: OutlineInputBorder(),
@@ -1387,12 +1087,12 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                             ),
                             const SizedBox(height: 8),
                             DropdownButtonFormField<String>(
-                              initialValue: feeCategory,
+                              value: feeCategory,
                               decoration: const InputDecoration(
                                 labelText: 'Fee Category',
                                 border: OutlineInputBorder(),
                               ),
-                              items: _FeeRepository.feeCategories
+                              items: FeeRepository.feeCategories
                                   .map(
                                     (e) => DropdownMenuItem<String>(
                                       value: e,
@@ -1578,7 +1278,7 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
     }
   }
 
-  Future<void> _editStructure(_FeeStructure structure) async {
+  Future<void> _editStructure(FeeStructureItem structure) async {
     final amountCtrl = TextEditingController(
       text: structure.amount.toStringAsFixed(2),
     );
@@ -1702,7 +1402,7 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
     }
   }
 
-  Future<void> _deleteStructure(_FeeStructure structure) async {
+  Future<void> _deleteStructure(FeeStructureItem structure) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1757,6 +1457,7 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
           ),
         );
         if (confirmLinked == true) {
+          if (!mounted) return;
           final finalConfirm = await showDialog<bool>(
             context: context,
             builder: (ctx) => AlertDialog(
@@ -1947,6 +1648,8 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                 _selectedYearId = v;
                 _structures = [];
                 _students = [];
+                _feeStudentPage = 1;
+                _feeStudentTotal = 0;
                 _analytics = {};
                 _defaulters = [];
                 _sections = [];
@@ -1979,6 +1682,8 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
                 _selectedStandardId = v;
                 _structures = [];
                 _students = [];
+                _feeStudentPage = 1;
+                _feeStudentTotal = 0;
                 _selectedSection = null;
               });
               await _loadSections();
@@ -2013,7 +1718,10 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
               ),
             ],
             onChanged: (v) {
-              setState(() => _selectedSection = v);
+              setState(() {
+                _selectedSection = v;
+                _feeStudentPage = 1;
+              });
               if (_selectedStandardId != null) {
                 _loadStudents();
               }
@@ -2053,7 +1761,10 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
               ),
             ],
             onChanged: (v) {
-              setState(() => _paymentCycleFilter = v);
+              setState(() {
+                _paymentCycleFilter = v;
+                _feeStudentPage = 1;
+              });
               if (_selectedStandardId != null) {
                 _loadStudents();
               }
@@ -2086,7 +1797,10 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
               ),
             ],
             onChanged: (v) {
-              setState(() => _statusFilter = v);
+              setState(() {
+                _statusFilter = v;
+                _feeStudentPage = 1;
+              });
               if (_selectedStandardId != null) {
                 _loadStudents();
               }
@@ -2146,78 +1860,85 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
           )
         else
           Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                headingRowColor: adminTableHeadingRowColor(),
-                horizontalMargin: AdminSpacing.md,
-                columnSpacing: AdminSpacing.lg,
-                columns: const [
-                  DataColumn(label: Text('Fee Head')),
-                  DataColumn(label: Text('Category')),
-                  DataColumn(label: Text('Class')),
-                  DataColumn(label: Text('Amount')),
-                  DataColumn(label: Text('Due Date')),
-                  DataColumn(label: Text('Description')),
-                  DataColumn(label: Text('Actions')),
-                ],
-                rows: _structures.asMap().entries.map((entry) {
-                  final s = entry.value;
-                  return DataRow(
-                    color: adminDataRowColor(entry.key),
-                    cells: [
-                      DataCell(Text(s.displayLabel)),
-                      DataCell(Text(s.feeCategory)),
-                      DataCell(Text(s.standardName ?? '-')),
-                      DataCell(Text(_fmt(s.amount))),
-                      DataCell(Text(s.dueDate)),
-                      DataCell(Text(s.description?.trim().isNotEmpty == true ? s.description! : '-')),
-                      DataCell(
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            InkWell(
-                              onTap: () => _editStructure(s),
-                              borderRadius: BorderRadius.circular(18),
-                              child: Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: AdminColors.primarySubtle,
-                                  borderRadius: BorderRadius.circular(18),
-                                  border: Border.all(color: AdminColors.primaryAction.withValues(alpha: 0.22)),
-                                ),
-                                child: Icon(
-                                  Icons.edit_outlined,
-                                  color: AdminColors.primaryAction,
-                                  size: 16,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            InkWell(
-                              onTap: () => _deleteStructure(s),
-                              borderRadius: BorderRadius.circular(18),
-                              child: Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: AdminColors.dangerSurface,
-                                  borderRadius: BorderRadius.circular(18),
-                                  border: Border.all(color: AdminColors.danger.withValues(alpha: 0.25)),
-                                ),
-                                child: Icon(
-                                  Icons.delete_outline,
-                                  color: AdminColors.danger,
-                                  size: 16,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
+            child: AdminDataTable(
+              columns: const [
+                'Fee Head',
+                'Category',
+                'Class',
+                'Amount',
+                'Due Date',
+                'Description',
+                'Actions',
+              ],
+              showPagination: false,
+              rows: _structures.asMap().entries.map((entry) {
+                final s = entry.value;
+                return DataRow(
+                  color: adminDataRowColor(entry.key),
+                  cells: [
+                    DataCell(Text(s.displayLabel)),
+                    DataCell(Text(s.feeCategory)),
+                    DataCell(Text(s.standardName ?? '-')),
+                    DataCell(Text(_fmt(s.amount))),
+                    DataCell(Text(s.dueDate)),
+                    DataCell(
+                      Text(
+                        s.description?.trim().isNotEmpty == true
+                            ? s.description!
+                            : '-',
                       ),
-                    ],
-                  );
-                }).toList(),
-              ),
+                    ),
+                    DataCell(
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          InkWell(
+                            onTap: () => _editStructure(s),
+                            borderRadius: BorderRadius.circular(18),
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: AdminColors.primarySubtle,
+                                borderRadius: BorderRadius.circular(18),
+                                border: Border.all(
+                                  color: AdminColors.primaryAction
+                                      .withValues(alpha: 0.22),
+                                ),
+                              ),
+                              child: Icon(
+                                Icons.edit_outlined,
+                                color: AdminColors.primaryAction,
+                                size: 16,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          InkWell(
+                            onTap: () => _deleteStructure(s),
+                            borderRadius: BorderRadius.circular(18),
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: AdminColors.dangerSurface,
+                                borderRadius: BorderRadius.circular(18),
+                                border: Border.all(
+                                  color:
+                                      AdminColors.danger.withValues(alpha: 0.25),
+                                ),
+                              ),
+                              child: Icon(
+                                Icons.delete_outline,
+                                color: AdminColors.danger,
+                                size: 16,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              }).toList(),
             ),
           ),
       ],
@@ -2227,104 +1948,116 @@ class _FeeManagementScreenState extends ConsumerState<FeeManagementScreen>
   // ── Tab 0: Students ─────────────────────────────────────────────────────────
 
   Widget _buildStudentsTab() {
-    if (_students.isEmpty) {
-      final noClass = _selectedStandardId == null;
+    final noClass = _selectedStandardId == null;
+    if (noClass) {
       return AdminEmptyState(
         icon: Icons.people_outline,
-        title: noClass ? 'Select a class' : 'No students in view',
-        message: noClass
-            ? 'Choose class and year in filters, then Apply.'
-            : 'Adjust cycle/status filters or click Load students to refresh.',
+        title: 'Select a class',
+        message:
+            'Choose class and year in filters, then Apply.',
+      );
+    }
+    if (_students.isEmpty && _feeStudentTotal == 0) {
+      return AdminEmptyState(
+        icon: Icons.people_outline,
+        title: 'No students in view',
+        message:
+            'Adjust cycle/status filters or tap Apply / Load students to refresh.',
         action: FilledButton.icon(
           icon: const Icon(Icons.refresh_rounded, size: 18),
           label: const Text('Load students'),
-          onPressed: noClass ? null : _loadStudents,
+          onPressed: _loadStudents,
         ),
       );
     }
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: DataTable(
-        headingRowColor: adminTableHeadingRowColor(),
-        horizontalMargin: AdminSpacing.md,
-        columnSpacing: AdminSpacing.lg,
-        columns: const [
-          DataColumn(label: Text('Student')),
-          DataColumn(label: Text('Action')),
-          DataColumn(label: Text('Adm. No.')),
-          DataColumn(label: Text('Class')),
-          DataColumn(label: Text('Cycle')),
-          DataColumn(label: Text('Parent')),
-          DataColumn(label: Text('Parent Phone')),
-          DataColumn(label: Text('Student Phone')),
-          DataColumn(label: Text('Billed')),
-          DataColumn(label: Text('Paid')),
-          DataColumn(label: Text('Outstanding')),
-          DataColumn(label: Text('Status')),
-        ],
-        rows: _students.asMap().entries.map((entry) {
-          final s = entry.value;
-          final statusLabel = s.status.toUpperCase();
-          final statusColor = statusLabel == 'OVERDUE'
-              ? AdminColors.danger
-              : statusLabel == 'PAID'
-              ? AdminColors.success
-              : statusLabel == 'PARTIAL'
-              ? const Color(0xFFEA580C)
-              : AdminColors.textSecondary;
-          return DataRow(
-            color: adminDataRowColor(entry.key),
-            cells: [
-              DataCell(Text(s.studentName ?? s.admissionNumber ?? '-')),
-              DataCell(
-                s.installments.isEmpty
-                    ? OutlinedButton.icon(
-                        onPressed: () => _assignLedgerForStudent(
-                          s,
-                          continueToPayment: true,
-                        ),
-                        icon: const Icon(Icons.playlist_add, size: 16),
-                        label: const Text('Assign + Update'),
-                      )
-                    : ElevatedButton.icon(
-                        onPressed: s.installments.any((i) => i.hasOutstanding)
-                            ? () => _recordPaymentForStudent(
-                                s,
-                                preferredCycle: _studentPreferredCycle[s.studentId],
-                              )
-                            : null,
-                        icon: const Icon(Icons.edit_note, size: 16),
-                        label: const Text('Update'),
+    return AdminDataTable(
+      columns: const [
+        'Student',
+        'Action',
+        'Adm. No.',
+        'Class',
+        'Cycle',
+        'Parent',
+        'Parent Phone',
+        'Student Phone',
+        'Billed',
+        'Paid',
+        'Outstanding',
+        'Status',
+      ],
+      rows: _students.asMap().entries.map((entry) {
+        final s = entry.value;
+        final statusLabel = s.status.toUpperCase();
+        final statusColor = statusLabel == 'OVERDUE'
+            ? AdminColors.danger
+            : statusLabel == 'PAID'
+            ? AdminColors.success
+            : statusLabel == 'PARTIAL'
+            ? const Color(0xFFEA580C)
+            : AdminColors.textSecondary;
+        return DataRow(
+          color: adminDataRowColor(entry.key),
+          cells: [
+            DataCell(Text(s.studentName ?? s.admissionNumber ?? '-')),
+            DataCell(
+              s.installments.isEmpty
+                  ? OutlinedButton.icon(
+                      onPressed: () => _assignLedgerForStudent(
+                        s,
+                        continueToPayment: true,
                       ),
+                      icon: const Icon(Icons.playlist_add, size: 16),
+                      label: const Text('Assign + Update'),
+                    )
+                  : ElevatedButton.icon(
+                      onPressed:
+                          s.installments.any((i) => i.hasOutstanding)
+                          ? () => _recordPaymentForStudent(
+                              s,
+                              preferredCycle:
+                                  _studentPreferredCycle[s.studentId],
+                            )
+                          : null,
+                      icon: const Icon(Icons.edit_note, size: 16),
+                      label: const Text('Update'),
+                    ),
+            ),
+            DataCell(Text(s.admissionNumber ?? '-')),
+            DataCell(
+              Text(
+                '${s.standardName ?? ''} ${s.section != null ? '(${s.section})' : ''}'
+                    .trim(),
               ),
-              DataCell(Text(s.admissionNumber ?? '-')),
-              DataCell(
-                Text(
-                  '${s.standardName ?? ''} ${s.section != null ? '(${s.section})' : ''}'
-                      .trim(),
+            ),
+            DataCell(Text(s.paymentCycle)),
+            DataCell(Text(s.parentName ?? '-')),
+            DataCell(Text(s.parentPhone ?? '-')),
+            DataCell(Text(s.studentPhone ?? '-')),
+            DataCell(Text(_fmt(s.totalBilled))),
+            DataCell(Text(_fmt(s.totalPaid))),
+            DataCell(Text(_fmt(s.totalOutstanding))),
+            DataCell(
+              Text(
+                statusLabel,
+                style: TextStyle(
+                  color: statusColor,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-              DataCell(Text(s.paymentCycle)),
-              DataCell(Text(s.parentName ?? '-')),
-              DataCell(Text(s.parentPhone ?? '-')),
-              DataCell(Text(s.studentPhone ?? '-')),
-              DataCell(Text(_fmt(s.totalBilled))),
-              DataCell(Text(_fmt(s.totalPaid))),
-              DataCell(Text(_fmt(s.totalOutstanding))),
-              DataCell(
-                Text(
-                  statusLabel,
-                  style: TextStyle(
-                    color: statusColor,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-          );
-        }).toList(),
-      ),
+            ),
+          ],
+        );
+      }).toList(),
+      totalItems: _feeStudentTotal > 0 ? _feeStudentTotal : _students.length,
+      currentPage:
+          _feeStudentPage < 1 ? 1 : _feeStudentPage,
+      pageSize: _feeStudentPageSize,
+      showPagination: _feeStudentTotal > _feeStudentPageSize,
+      onPageChanged: (next) {
+        setState(() => _feeStudentPage = next);
+        _loadStudents(quiet: true);
+      },
     );
   }
 

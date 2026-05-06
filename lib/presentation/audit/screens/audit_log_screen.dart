@@ -107,7 +107,7 @@ class _AuditLogScreenState extends ConsumerState<AuditLogScreen> {
                             data: (list) => DropdownButtonFormField<String?>(
                               key: ValueKey<String?>(
                                   'audit_action_${_selectedAction ?? 'null'}'),
-                              initialValue: _selectedAction,
+                              value: _selectedAction,
                               isExpanded: true,
                               decoration: const InputDecoration(
                                 labelText: 'Action',
@@ -174,7 +174,7 @@ class _AuditLogScreenState extends ConsumerState<AuditLogScreen> {
                                 DropdownButtonFormField<String?>(
                               key: ValueKey<String?>(
                                   'audit_entity_${_selectedEntityType ?? 'null'}'),
-                              initialValue: _selectedEntityType,
+                              value: _selectedEntityType,
                               isExpanded: true,
                               decoration: const InputDecoration(
                                 labelText: 'Entity Type',

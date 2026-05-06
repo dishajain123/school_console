@@ -28,129 +28,123 @@ class _NavItem {
 // Full ordered list — indices referenced by _itemsForUser() below.
 const _allItems = [
   // 0 — Dashboard
-  _NavItem(icon: Icons.dashboard_outlined, selectedIcon: Icons.dashboard, label: 'Dashboard', route: RouteNames.dashboard),
+  _NavItem(
+    icon: Icons.dashboard_outlined,
+    selectedIcon: Icons.dashboard,
+    label: 'Dashboard',
+    route: RouteNames.dashboard,
+  ),
   // 1 — Approvals
-  _NavItem(icon: Icons.verified_user_outlined, selectedIcon: Icons.verified_user, label: 'Approvals', route: RouteNames.approvals),
+  _NavItem(
+    icon: Icons.verified_user_outlined,
+    selectedIcon: Icons.verified_user,
+    label: 'Approvals',
+    route: RouteNames.approvals,
+  ),
   // 2 — Enrollment (roster view)
-  _NavItem(icon: Icons.how_to_reg_outlined, selectedIcon: Icons.how_to_reg, label: 'Enrollment', route: RouteNames.enrollment),
+  _NavItem(
+    icon: Icons.how_to_reg_outlined,
+    selectedIcon: Icons.how_to_reg,
+    label: 'Enrollment',
+    route: RouteNames.enrollment,
+  ),
   // 3 — Student Lifecycle (Phase 14/15) — unified transfer/exit/re-enroll
-  _NavItem(icon: Icons.manage_accounts_outlined, selectedIcon: Icons.manage_accounts, label: 'Lifecycle', route: RouteNames.lifecycleManagement),
+  _NavItem(
+    icon: Icons.manage_accounts_outlined,
+    selectedIcon: Icons.manage_accounts,
+    label: 'Lifecycle',
+    route: RouteNames.lifecycleManagement,
+  ),
   // 4 — Teacher Assignments (Phase 4)
-  _NavItem(icon: Icons.assignment_ind_outlined, selectedIcon: Icons.assignment_ind, label: 'Teacher Assign.', route: RouteNames.teacherAssignments),
+  _NavItem(
+    icon: Icons.assignment_ind_outlined,
+    selectedIcon: Icons.assignment_ind,
+    label: 'Teacher Assign.',
+    route: RouteNames.teacherAssignments,
+  ),
   // 5 — Promotion (Phase 7)
-  _NavItem(icon: Icons.trending_up_outlined, selectedIcon: Icons.trending_up, label: 'Promotion', route: RouteNames.promotion),
+  _NavItem(
+    icon: Icons.trending_up_outlined,
+    selectedIcon: Icons.trending_up,
+    label: 'Promotion',
+    route: RouteNames.promotion,
+  ),
   // 6 — Classes/Sections
-  _NavItem(icon: Icons.class_outlined, selectedIcon: Icons.class_, label: 'Classes', route: RouteNames.academicStructure),
+  _NavItem(
+    icon: Icons.class_outlined,
+    selectedIcon: Icons.class_,
+    label: 'Classes',
+    route: RouteNames.academicStructure,
+  ),
   // 7 — Academic Years
-  _NavItem(icon: Icons.account_tree_outlined, selectedIcon: Icons.account_tree, label: 'Acad. Years', route: RouteNames.academics),
+  _NavItem(
+    icon: Icons.account_tree_outlined,
+    selectedIcon: Icons.account_tree,
+    label: 'Acad. Years',
+    route: RouteNames.academics,
+  ),
   // 8 — Role Profiles
-  _NavItem(icon: Icons.badge_outlined, selectedIcon: Icons.badge, label: 'Profiles', route: RouteNames.roleProfiles),
+  _NavItem(
+    icon: Icons.badge_outlined,
+    selectedIcon: Icons.badge,
+    label: 'Profiles',
+    route: RouteNames.roleProfiles,
+  ),
   // 9 — Fees (Phase 8)
-  _NavItem(icon: Icons.payments_outlined, selectedIcon: Icons.payments, label: 'Fees', route: RouteNames.fees),
+  _NavItem(
+    icon: Icons.payments_outlined,
+    selectedIcon: Icons.payments,
+    label: 'Fees',
+    route: RouteNames.fees,
+  ),
   // 10 — Examination (Phase 10)
-  _NavItem(icon: Icons.analytics_outlined, selectedIcon: Icons.analytics, label: 'Examination', route: RouteNames.examination),
+  _NavItem(
+    icon: Icons.analytics_outlined,
+    selectedIcon: Icons.analytics,
+    label: 'Examination',
+    route: RouteNames.examination,
+  ),
   // 11 — Reports & Analytics (Phase 11)
-  _NavItem(icon: Icons.bar_chart_outlined, selectedIcon: Icons.bar_chart, label: 'Reports', route: RouteNames.reports),
+  _NavItem(
+    icon: Icons.bar_chart_outlined,
+    selectedIcon: Icons.bar_chart,
+    label: 'Reports',
+    route: RouteNames.reports,
+  ),
   // 12 — Communication (Phase 12)
-  _NavItem(icon: Icons.campaign_outlined, selectedIcon: Icons.campaign, label: 'Communication', route: RouteNames.communication),
+  _NavItem(
+    icon: Icons.campaign_outlined,
+    selectedIcon: Icons.campaign,
+    label: 'Communication',
+    route: RouteNames.communication,
+  ),
   // 13 — Documents (Phase 13)
-  _NavItem(icon: Icons.folder_outlined, selectedIcon: Icons.folder, label: 'Documents', route: RouteNames.documents),
+  _NavItem(
+    icon: Icons.folder_outlined,
+    selectedIcon: Icons.folder,
+    label: 'Documents',
+    route: RouteNames.documents,
+  ),
   // 14 — Audit Log (after Documents, before Settings)
-  _NavItem(icon: Icons.history_toggle_off, selectedIcon: Icons.history, label: 'Audit Log', route: RouteNames.audit),
+  _NavItem(
+    icon: Icons.history_toggle_off,
+    selectedIcon: Icons.history,
+    label: 'Audit Log',
+    route: RouteNames.audit,
+  ),
   // 15 — Settings
-  _NavItem(icon: Icons.settings_outlined, selectedIcon: Icons.settings, label: 'Settings', route: RouteNames.settings),
+  _NavItem(
+    icon: Icons.settings_outlined,
+    selectedIcon: Icons.settings,
+    label: 'Settings',
+    route: RouteNames.settings,
+  ),
 ];
 
-/// Returns the navigation items visible to [user] based on role and permissions.
+/// Staff Admin console — same gate as [authControllerProvider] (STAFF_ADMIN only).
 List<_NavItem> _itemsForUser(AdminUser user) {
-  final role = user.role.toUpperCase();
-  final perms = user.permissions;
-  final byRoute = {for (final item in _allItems) item.route: item};
-  void addRoute(List<_NavItem> list, String route) {
-    final item = byRoute[route];
-    if (item != null) list.add(item);
-  }
-
-  // Staff Admin (web console) sees full navigation for the school.
-  if (role == 'STAFF_ADMIN') return _allItems;
-
-  // TRUSTEE: read-only — Reports, Fees view, Examination view
-  if (role == 'TRUSTEE') {
-    return [
-      byRoute[RouteNames.dashboard]!,
-      byRoute[RouteNames.reports]!,
-      byRoute[RouteNames.fees]!,
-      byRoute[RouteNames.examination]!,
-    ];
-  }
-
-  final visible = <_NavItem>[];
-  addRoute(visible, RouteNames.dashboard);
-
-  // Approvals
-  if (role == 'PRINCIPAL' || user.canReview) {
-    addRoute(visible, RouteNames.approvals);
-  }
-
-  // Enrollment & Lifecycle — PRINCIPAL or user:manage
-  if (role == 'PRINCIPAL' || perms.contains('user:manage')) {
-    addRoute(visible, RouteNames.enrollment); // Enrollment roster
-    addRoute(visible, RouteNames.lifecycleManagement); // Lifecycle management
-  }
-
-  // Teacher Assignments — PRINCIPAL or teacher_assignment:manage
-  if (role == 'PRINCIPAL' || perms.contains('teacher_assignment:manage')) {
-    addRoute(visible, RouteNames.teacherAssignments);
-  }
-
-  // Promotion — PRINCIPAL or student:promote
-  if (role == 'PRINCIPAL' || perms.contains('student:promote')) {
-    addRoute(visible, RouteNames.promotion);
-  }
-
-  // Classes + Academic Years + Profiles — PRINCIPAL or settings:manage
-  if (role == 'PRINCIPAL' || perms.contains('settings:manage')) {
-    addRoute(visible, RouteNames.academicStructure);
-    addRoute(visible, RouteNames.academics);
-    addRoute(visible, RouteNames.roleProfiles);
-  }
-
-  // Fees — fee:read or PRINCIPAL
-  if (role == 'PRINCIPAL' || perms.contains('fee:read') || perms.contains('fee:create')) {
-    addRoute(visible, RouteNames.fees);
-  }
-
-  // Examination — PRINCIPAL or result:read
-  if (role == 'PRINCIPAL' || perms.contains('result:read')) {
-    addRoute(visible, RouteNames.examination);
-  }
-
-  // Reports — PRINCIPAL or reports:read
-  if (role == 'PRINCIPAL' || perms.contains('reports:read')) {
-    addRoute(visible, RouteNames.reports);
-  }
-
-  // Communication — PRINCIPAL or announcement:create
-  if (role == 'PRINCIPAL' || perms.contains('announcement:create')) {
-    addRoute(visible, RouteNames.communication);
-  }
-
-  // Documents — PRINCIPAL or document:manage
-  if (role == 'PRINCIPAL' || perms.contains('document:manage')) {
-    addRoute(visible, RouteNames.documents);
-  }
-
-  // Audit Log — after Documents, before Settings
-  if (role == 'PRINCIPAL' || user.canReview) {
-    addRoute(visible, RouteNames.audit);
-  }
-
-  // Settings — only users who can manage settings
-  if (role == 'PRINCIPAL' || perms.contains('settings:manage')) {
-    addRoute(visible, RouteNames.settings);
-  }
-
-  return visible;
+  if (user.role.toUpperCase() != 'STAFF_ADMIN') return const [];
+  return List<_NavItem>.from(_allItems);
 }
 
 // ── Sidebar widget ────────────────────────────────────────────────────────────
@@ -247,7 +241,8 @@ class AdminSidebar extends ConsumerWidget {
                       children: [
                         Text(
                           BrandConstants.schoolDisplayName,
-                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          style: Theme.of(context).textTheme.titleSmall
+                              ?.copyWith(
                                 fontWeight: FontWeight.w800,
                                 letterSpacing: -0.35,
                                 color: AdminColors.textPrimary,
@@ -256,34 +251,34 @@ class AdminSidebar extends ConsumerWidget {
                         const SizedBox(height: 2),
                         Text(
                           BrandConstants.adminConsoleTitle,
-                          style:
-                              Theme.of(context).textTheme.labelSmall?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                    color: AdminColors.primaryAction,
-                                    letterSpacing: 0.15,
-                                  ),
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: AdminColors.primaryAction,
+                                letterSpacing: 0.15,
+                              ),
                         ),
                         const SizedBox(height: AdminSpacing.sm),
                         Text(
                           'Console',
-                          style:
-                              Theme.of(context).textTheme.labelMedium?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                    color: AdminColors.textMuted,
-                                    fontSize: 11,
-                                  ),
+                          style: Theme.of(context).textTheme.labelMedium
+                              ?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: AdminColors.textMuted,
+                                fontSize: 11,
+                              ),
                         ),
                         const SizedBox(height: 2),
                         Text(
                           user.email ?? user.phone ?? user.role,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style:
-                              Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: AdminColors.textSecondary,
-                                    fontSize: 11,
-                                    height: 1.25,
-                                  ),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: AdminColors.textSecondary,
+                                fontSize: 11,
+                                height: 1.25,
+                              ),
                         ),
                       ],
                     ),

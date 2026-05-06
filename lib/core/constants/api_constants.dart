@@ -7,12 +7,32 @@ class ApiConstants {
   // Override with:
   // flutter run -d chrome --dart-define=ADMIN_API_BASE_URL=http://127.0.0.1:8000/api/v1
   // flutter run -d android --dart-define=ADMIN_API_BASE_URL=http://10.0.2.2:8000/api/v1
+  // Release/profile: --dart-define=ADMIN_API_BASE_URL=https://api.example.com/api/v1
   static const String _baseUrlEnv = String.fromEnvironment(
     'ADMIN_API_BASE_URL',
-    defaultValue: 'http://127.0.0.1:8000/api/v1',
+    defaultValue: '',
   );
   static String get baseUrl {
-    if (_baseUrlEnv.isNotEmpty) return _normalize(_baseUrlEnv);
+    final raw = _baseUrlEnv.trim();
+    if (kReleaseMode || kProfileMode) {
+      if (raw.isEmpty) {
+        throw Exception(
+          'ADMIN_API_BASE_URL must be set in release/profile builds. '
+          'Use e.g. --dart-define=ADMIN_API_BASE_URL=https://your-host/api/v1',
+        );
+      }
+      final normalized = _normalize(raw);
+      if (kReleaseMode && !normalized.startsWith('https://')) {
+        throw Exception(
+          'ADMIN_API_BASE_URL must use https:// in release builds '
+          '(got: $normalized).',
+        );
+      }
+      return normalized;
+    }
+
+    // kDebugMode: optional define (http / localhost OK for local backends).
+    if (raw.isNotEmpty) return _normalize(raw);
     if (kIsWeb) {
       final host = Uri.base.host.isEmpty ? '127.0.0.1' : Uri.base.host;
       final safeHost = (host == '0.0.0.0' || host == '::') ? '127.0.0.1' : host;

@@ -1,11 +1,16 @@
+import 'dart:async';
+
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:dio/dio.dart';
 
+import '../../../core/cache/timed_memory_cache.dart';
+import '../../../core/logging/crash_reporter.dart';
 import '../../../core/theme/admin_colors.dart';
 import '../../../data/models/role_profiles/role_profile_item.dart';
 import '../../../domains/providers/active_year_provider.dart';
 import '../../../domains/providers/auth_provider.dart';
+import '../../../domains/providers/role_profile_list_provider.dart';
 import '../../../domains/providers/role_profile_provider.dart';
 import '../../common/layout/admin_scaffold.dart';
 import '../../common/widgets/admin_layout/admin_empty_state.dart';
@@ -31,6 +36,9 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
     'PRINCIPAL',
     'TRUSTEE',
   ];
+  static const int _profilePageSize = 50;
+  static const Duration _searchDebounce = Duration(milliseconds: 400);
+
   late final TabController _tabController;
   final _searchController = TextEditingController();
   List<Map<String, dynamic>> _years = const [];
@@ -39,6 +47,9 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
   List<String> _sections = const [];
   String? _selectedStandardId;
   String? _selectedSection;
+
+  int _profilePage = 1;
+  Timer? _searchDebounceTimer;
 
   @override
   void initState() {
@@ -52,17 +63,37 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
           _selectedSection = null;
           _sections = const [];
         }
+        _profilePage = 1;
       });
     });
-    _searchController.addListener(() {
-      setState(() {});
-    });
+    _searchController.addListener(_onSearchChanged);
     _loadAcademicYears();
+  }
+
+  void _onSearchChanged() {
+    _searchDebounceTimer?.cancel();
+    _searchDebounceTimer = Timer(_searchDebounce, () {
+      if (!mounted) return;
+      setState(() => _profilePage = 1);
+    });
+  }
+
+  RoleProfileListQuery _profileQuery() {
+    return RoleProfileListQuery(
+      role: _currentRole,
+      search: _searchController.text,
+      standardId: _isStudentTab ? _selectedStandardId : null,
+      section: _isStudentTab ? _selectedSection : null,
+      page: _profilePage,
+      pageSize: _profilePageSize,
+    );
   }
 
   @override
   void dispose() {
+    _searchDebounceTimer?.cancel();
     _tabController.dispose();
+    _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
     super.dispose();
   }
@@ -90,7 +121,9 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
       });
       ref.read(activeAcademicYearProvider.notifier).setYear(_selectedYearId);
       await _loadStandards();
-    } catch (_) {}
+    } catch (e, stack) {
+      CrashReporter.log(e, stack);
+    }
   }
 
   Future<void> _loadStandards() async {
@@ -100,11 +133,15 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
           await repository.listStandards(academicYearId: _selectedYearId);
       if (!mounted) return;
       setState(() => _standards = standards);
-    } catch (_) {}
+    } catch (e, stack) {
+      CrashReporter.log(e, stack);
+    }
   }
 
   void _resetFilters() {
+    _searchDebounceTimer?.cancel();
     _searchController.clear();
+    TimedMemoryCache.invalidatePrefix('role_profiles_v1|');
     final preferredYearId = ref.read(activeAcademicYearProvider);
     final preferred =
         _years.where((y) => y['id']?.toString() == preferredYearId).toList();
@@ -113,6 +150,7 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
       _selectedStandardId = null;
       _selectedSection = null;
       _sections = const [];
+      _profilePage = 1;
       _selectedYearId = preferred.isNotEmpty
           ? preferred.first['id']?.toString()
           : active.isNotEmpty
@@ -132,7 +170,8 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
       );
       if (!mounted) return;
       setState(() => _sections = sections);
-    } catch (_) {
+    } catch (e, stack) {
+      CrashReporter.log(e, stack);
       if (!mounted) return;
       setState(() => _sections = const []);
     }
@@ -140,7 +179,7 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
 
   @override
   Widget build(BuildContext context) {
-    final repository = ref.watch(roleProfileRepositoryProvider);
+    final profilesAsync = ref.watch(roleProfileListProvider(_profileQuery()));
 
     return AdminScaffold(
       title: 'Role profiles',
@@ -152,7 +191,7 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
             const AdminPageHeader(
               title: 'Role profiles',
               subtitle:
-                  'Browse people by role, narrow students with class and section, then search. Scroll the table to see everyone in view.',
+                  'Browse people by role, narrow students with class and section, then search. Results load in pages — use the pager under the table.',
             ),
             Material(
               color: AdminColors.surface,
@@ -199,7 +238,7 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
                     child: DropdownButtonFormField<String?>(
                       key: ValueKey<String?>(
                           'rp_year_${_selectedYearId ?? 'null'}_${_years.length}'),
-                      initialValue: _selectedYearId,
+                      value: _selectedYearId,
                       decoration: const InputDecoration(
                         labelText: 'Academic Year',
                         isDense: true,
@@ -223,6 +262,7 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
                           _selectedStandardId = null;
                           _selectedSection = null;
                           _sections = const [];
+                          _profilePage = 1;
                         });
                         ref
                             .read(activeAcademicYearProvider.notifier)
@@ -254,7 +294,7 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
                       child: DropdownButtonFormField<String?>(
                         key: ValueKey<String?>(
                             'rp_std_${_selectedStandardId ?? 'null'}_${_standards.length}'),
-                        initialValue: _selectedStandardId,
+                        value: _selectedStandardId,
                         decoration: const InputDecoration(
                           labelText: 'Class',
                           isDense: true,
@@ -277,6 +317,7 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
                             _selectedStandardId = value;
                             _selectedSection = null;
                             _sections = const [];
+                            _profilePage = 1;
                           });
                           if (value != null) {
                             await _loadSectionsForStandard(value);
@@ -290,7 +331,7 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
                       child: DropdownButtonFormField<String?>(
                         key: ValueKey<String?>(
                             'rp_sec_${_selectedSection ?? 'null'}_${_sections.length}'),
-                        initialValue: _selectedSection,
+                        value: _selectedSection,
                         decoration: const InputDecoration(
                           labelText: 'Section',
                           isDense: true,
@@ -311,6 +352,7 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
                         onChanged: (value) {
                           setState(() {
                             _selectedSection = value;
+                            _profilePage = 1;
                           });
                         },
                       ),
@@ -320,92 +362,84 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
             ),
             const SizedBox(height: AdminSpacing.sm),
             Expanded(
-              child: FutureBuilder<RoleProfileListData>(
-                future: repository.listAllProfiles(
-                  role: _currentRole,
-                  search: _searchController.text,
-                  // Keep students visible right after approval/profile creation,
-                  // even before academic-year enrollment is assigned.
-                  academicYearId: null,
-                  standardId: _isStudentTab ? _selectedStandardId : null,
-                  section: _isStudentTab ? _selectedSection : null,
+              child: profilesAsync.when(
+                loading: () => const AdminLoadingPlaceholder(
+                  message: 'Loading profiles…',
+                  height: 320,
                 ),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const AdminLoadingPlaceholder(
-                      message: 'Loading profiles…',
-                      height: 320,
-                    );
-                  }
-                  if (snapshot.hasError) {
-                    return Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(AdminSpacing.lg),
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 520),
-                          child: Material(
-                            color: AdminColors.dangerSurface,
-                            borderRadius: BorderRadius.circular(8),
-                            child: Padding(
-                              padding: const EdgeInsets.all(AdminSpacing.md),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                error: (err, _) => Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(AdminSpacing.lg),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 520),
+                      child: Material(
+                        color: AdminColors.dangerSurface,
+                        borderRadius: BorderRadius.circular(8),
+                        child: Padding(
+                          padding: const EdgeInsets.all(AdminSpacing.md),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Row(
                                 children: [
-                                  Row(
-                                    children: [
-                                      Icon(
-                                        Icons.error_outline_rounded,
-                                        color: AdminColors.danger,
-                                        size: 28,
-                                      ),
-                                      const SizedBox(width: AdminSpacing.sm),
-                                      Text(
-                                        'Could not load profiles',
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .titleSmall
-                                            ?.copyWith(
-                                              color: AdminColors.textPrimary,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                      ),
-                                    ],
+                                  Icon(
+                                    Icons.error_outline_rounded,
+                                    color: AdminColors.danger,
+                                    size: 28,
                                   ),
-                                  const SizedBox(height: AdminSpacing.sm),
-                                  SelectableText(
-                                    _readableError(snapshot.error),
+                                  const SizedBox(width: AdminSpacing.sm),
+                                  Text(
+                                    'Could not load profiles',
                                     style: Theme.of(context)
                                         .textTheme
-                                        .bodySmall
+                                        .titleSmall
                                         ?.copyWith(
-                                          color: AdminColors.danger,
-                                          height: 1.4,
+                                          color: AdminColors.textPrimary,
+                                          fontWeight: FontWeight.w600,
                                         ),
-                                  ),
-                                  const SizedBox(height: AdminSpacing.md),
-                                  Align(
-                                    alignment: Alignment.centerLeft,
-                                    child: FilledButton.icon(
-                                      icon: const Icon(
-                                        Icons.refresh_rounded,
-                                        size: 18,
-                                      ),
-                                      label: const Text('Retry'),
-                                      onPressed: () => setState(() {}),
-                                    ),
                                   ),
                                 ],
                               ),
-                            ),
+                              const SizedBox(height: AdminSpacing.sm),
+                              SelectableText(
+                                _readableError(err),
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(
+                                      color: AdminColors.danger,
+                                      height: 1.4,
+                                    ),
+                              ),
+                              const SizedBox(height: AdminSpacing.md),
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: FilledButton.icon(
+                                  icon: const Icon(
+                                    Icons.refresh_rounded,
+                                    size: 18,
+                                  ),
+                                  label: const Text('Retry'),
+                                  onPressed: () {
+                                    TimedMemoryCache.invalidatePrefix(
+                                      'role_profiles_v1|',
+                                    );
+                                    ref.invalidate(
+                                      roleProfileListProvider(_profileQuery()),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
-                    );
-                  }
-
-                  final data = snapshot.data;
-                  final items = data?.items ?? const <RoleProfileItem>[];
+                    ),
+                  ),
+                ),
+                data: (data) {
+                  final items = data.items;
                   if (items.isEmpty) {
                     return const AdminEmptyState(
                       icon: Icons.people_outline,
@@ -414,6 +448,12 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
                           'Change role tab, filters, or search, then try again.',
                     );
                   }
+
+                  final pageIdx = data.page;
+                  final pgSize = data.pageSize;
+                  final totalPages = data.totalPages > 0
+                      ? data.totalPages
+                      : (((data.total) / (pgSize.clamp(1, 9999))).ceil());
 
                   return AdminDataTable(
                     columns: [
@@ -432,10 +472,13 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
                           ),
                         )
                         .toList(),
-                    totalItems: data?.total ?? items.length,
-                    currentPage: 1,
-                    pageSize: items.isEmpty ? 1 : items.length,
-                    showPagination: false,
+                    totalItems: data.total,
+                    currentPage: pageIdx < 1 ? 1 : pageIdx,
+                    pageSize: pgSize < 1 ? _profilePageSize : pgSize,
+                    showPagination: totalPages > 1,
+                    onPageChanged: (nextPage) {
+                      setState(() => _profilePage = nextPage);
+                    },
                   );
                 },
               ),
@@ -632,11 +675,13 @@ class _RoleProfilesScreenState extends ConsumerState<RoleProfilesScreen>
                   parentId: parentId,
                   studentIds: resolvedStudentIds,
                 );
+                TimedMemoryCache.invalidatePrefix('role_profiles_v1|');
                 if (!mounted || !ctx.mounted) return;
                 Navigator.of(ctx).pop();
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Children linked successfully.')),
                 );
+                ref.invalidate(roleProfileListProvider(_profileQuery()));
               },
               child: const Text('Save'),
             ),

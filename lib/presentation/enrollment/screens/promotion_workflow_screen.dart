@@ -7,9 +7,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/logging/crash_reporter.dart';
 import '../../../core/theme/admin_colors.dart';
 import '../../../domains/providers/auth_provider.dart';
 import '../../../domains/providers/enrollment_provider.dart';
+import '../../../domains/providers/enrollment_screen_providers.dart';
 import '../../../data/repositories/enrollment_repository.dart';
 import '../../common/layout/admin_scaffold.dart';
 import '../../common/widgets/admin_layout/admin_loading_placeholder.dart';
@@ -172,122 +174,91 @@ class _PreviewItem {
   }
 }
 
-// ── Repository ────────────────────────────────────────────────────────────────
+List<_AcademicYear> _promotionYearsFrom(List<Map<String, dynamic>> items) {
+  return items
+      .map(
+        (m) => _AcademicYear(
+          id: m['id'].toString(),
+          name: m['name'].toString(),
+          isActive: m['is_active'] == true,
+        ),
+      )
+      .toList();
+}
 
-class _PromotionRepository {
-  _PromotionRepository(this._api);
-  final EnrollmentRepository _api;
+List<_Standard> _promotionStandardsFrom(List<Map<String, dynamic>> items) {
+  return items
+          .map(
+            (m) => _Standard(
+              id: m['id'].toString(),
+              name: m['name'].toString(),
+              level: (m['level'] as num?)?.toInt() ?? 0,
+            ),
+          )
+          .toList()
+        ..sort((a, b) => a.level.compareTo(b.level));
+}
 
-  Future<List<_AcademicYear>> listYears(String schoolId) async {
-    final items = await _api.listAcademicYears(schoolId: schoolId);
-    return items.map((e) {
-      final m = e;
-      return _AcademicYear(
-        id: m['id'].toString(),
-        name: m['name'].toString(),
-        isActive: m['is_active'] == true,
-      );
-    }).toList();
-  }
+List<_Section> _promotionSectionsFrom(List<Map<String, dynamic>> items) {
+  return items
+          .map(
+            (m) => _Section(
+              id: m['id'].toString(),
+              name: m['name'].toString(),
+            ),
+          )
+          .toList()
+        ..sort((a, b) => a.name.compareTo(b.name));
+}
 
-  Future<List<_Standard>> listStandards(
-    String schoolId,
-    String academicYearId,
-  ) async {
-    final items = await _api.listStandards(
-      schoolId: schoolId,
-      academicYearId: academicYearId,
-    );
-    return items.map((e) {
-      final m = e;
-      return _Standard(
-        id: m['id'].toString(),
-        name: m['name'].toString(),
-        level: (m['level'] as num?)?.toInt() ?? 0,
-      );
-    }).toList()..sort((a, b) => a.level.compareTo(b.level));
-  }
+Future<List<_PreviewItem>> _promotionPreview(
+  EnrollmentRepository api, {
+  required String sourceYearId,
+  required String targetYearId,
+  String? standardId,
+  String? sectionId,
+}) async {
+  final data = await api.previewPromotion(
+    sourceYearId: sourceYearId,
+    targetYearId: targetYearId,
+    standardId: standardId,
+    sectionId: sectionId,
+  );
+  final raw = (data['items'] as List?) ?? [];
+  return raw
+      .map((e) => _PreviewItem.fromJson(Map<String, dynamic>.from(e as Map)))
+      .toList();
+}
 
-  Future<List<_Section>> listSections({
-    required String schoolId,
-    required String academicYearId,
-    required String standardId,
-  }) async {
-    final items = await _api.listSections(
-      schoolId: schoolId,
-      academicYearId: academicYearId,
-      standardId: standardId,
-    );
-    final sections =
-        items
-            .map(
-              (e) =>
-                  _Section(id: e['id'].toString(), name: e['name'].toString()),
-            )
-            .toList()
-          ..sort((a, b) => a.name.compareTo(b.name));
-    return sections;
-  }
-
-  Future<List<_PreviewItem>> preview({
-    required String sourceYearId,
-    required String targetYearId,
-    String? standardId,
-    String? sectionId,
-  }) async {
-    final data = await _api.previewPromotion(
-      sourceYearId: sourceYearId,
-      targetYearId: targetYearId,
-      standardId: standardId,
-      sectionId: sectionId,
-    );
-    final items = (data['items'] as List?) ?? [];
-    return items
-        .map((e) => _PreviewItem.fromJson(Map<String, dynamic>.from(e as Map)))
-        .toList();
-  }
-
-  Future<Map<String, dynamic>> execute({
-    required String sourceYearId,
-    required String targetYearId,
-    required List<_PreviewItem> items,
-  }) async {
-    final payload = items.map((item) {
-      final m = <String, dynamic>{
-        'student_id': item.studentId,
-        'mapping_id': item.mappingId,
-        'decision': item.decision.apiValue,
-      };
-      if (item.decision == _Decision.promote ||
-          item.decision == _Decision.repeat) {
-        if (item.targetStandardId != null) {
-          m['target_standard_id'] = item.targetStandardId;
-        }
-        if (item.targetSectionId != null) {
-          m['target_section_id'] = item.targetSectionId;
-        }
+Future<Map<String, dynamic>> _promotionExecute(
+  EnrollmentRepository api, {
+  required String sourceYearId,
+  required String targetYearId,
+  required List<_PreviewItem> items,
+}) async {
+  final payload = items.map((item) {
+    final m = <String, dynamic>{
+      'student_id': item.studentId,
+      'mapping_id': item.mappingId,
+      'decision': item.decision.apiValue,
+    };
+    if (item.decision == _Decision.promote ||
+        item.decision == _Decision.repeat) {
+      if (item.targetStandardId != null) {
+        m['target_standard_id'] = item.targetStandardId;
       }
-      return m;
-    }).toList();
+      if (item.targetSectionId != null) {
+        m['target_section_id'] = item.targetSectionId;
+      }
+    }
+    return m;
+  }).toList();
 
-    return _api.executePromotion(
-      sourceYearId: sourceYearId,
-      targetYearId: targetYearId,
-      items: payload.cast<Map<String, dynamic>>(),
-    );
-  }
-
-  Future<Map<String, dynamic>> copyTeacherAssignments({
-    required String sourceYearId,
-    required String targetYearId,
-    bool overwriteExisting = false,
-  }) async {
-    return _api.copyTeacherAssignments(
-      sourceYearId: sourceYearId,
-      targetYearId: targetYearId,
-      overwriteExisting: overwriteExisting,
-    );
-  }
+  return api.executePromotion(
+    sourceYearId: sourceYearId,
+    targetYearId: targetYearId,
+    items: payload.cast<Map<String, dynamic>>(),
+  );
 }
 
 // ── Screen ────────────────────────────────────────────────────────────────────
@@ -302,7 +273,7 @@ class PromotionWorkflowScreen extends ConsumerStatefulWidget {
 
 class _PromotionWorkflowScreenState
     extends ConsumerState<PromotionWorkflowScreen> {
-  late final _PromotionRepository _repo;
+  EnrollmentRepository get _repo => ref.read(enrollmentRepositoryProvider);
 
   List<_AcademicYear> _years = [];
   List<_Standard> _sourceStandards = [];
@@ -327,8 +298,10 @@ class _PromotionWorkflowScreenState
   @override
   void initState() {
     super.initState();
-    _repo = _PromotionRepository(ref.read(enrollmentRepositoryProvider));
-    _loadYears();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _loadYears();
+    });
   }
 
   String? get _schoolId =>
@@ -341,7 +314,9 @@ class _PromotionWorkflowScreenState
       _error = null;
     });
     try {
-      final years = await _repo.listYears(_schoolId!);
+      ref.invalidate(schoolEnrollmentYearsProvider);
+      final maps = await ref.read(schoolEnrollmentYearsProvider.future);
+      final years = _promotionYearsFrom(maps);
       setState(() => _years = years);
     } catch (e) {
       setState(() => _error = e.toString());
@@ -353,13 +328,19 @@ class _PromotionWorkflowScreenState
   Future<void> _loadTargetStandards() async {
     if (_schoolId == null || _targetYearId == null) return;
     try {
-      final stds = await _repo.listStandards(_schoolId!, _targetYearId!);
+      final stds = _promotionStandardsFrom(
+        await _repo.listStandards(
+          schoolId: _schoolId!,
+          academicYearId: _targetYearId!,
+        ),
+      );
       if (!mounted) return;
       setState(() {
         _targetStandards = stds;
         _targetSectionsByStandard.clear();
       });
-    } catch (_) {
+    } catch (e, stack) {
+      CrashReporter.log(e, stack);
       setState(() => _targetStandards = []);
     }
   }
@@ -367,9 +348,15 @@ class _PromotionWorkflowScreenState
   Future<void> _loadSourceStandards() async {
     if (_schoolId == null || _sourceYearId == null) return;
     try {
-      final stds = await _repo.listStandards(_schoolId!, _sourceYearId!);
+      final stds = _promotionStandardsFrom(
+        await _repo.listStandards(
+          schoolId: _schoolId!,
+          academicYearId: _sourceYearId!,
+        ),
+      );
       setState(() => _sourceStandards = stds);
-    } catch (_) {
+    } catch (e, stack) {
+      CrashReporter.log(e, stack);
       setState(() => _sourceStandards = []);
     }
   }
@@ -384,14 +371,17 @@ class _PromotionWorkflowScreenState
       return;
     }
     try {
-      final sections = await _repo.listSections(
-        schoolId: _schoolId!,
-        academicYearId: _sourceYearId!,
-        standardId: _filterStandardId!,
+      final sections = _promotionSectionsFrom(
+        await _repo.listSections(
+          schoolId: _schoolId!,
+          academicYearId: _sourceYearId!,
+          standardId: _filterStandardId!,
+        ),
       );
       if (!mounted) return;
       setState(() => _sourceSections = sections);
-    } catch (_) {
+    } catch (e, stack) {
+      CrashReporter.log(e, stack);
       if (!mounted) return;
       setState(() => _sourceSections = []);
     }
@@ -406,14 +396,17 @@ class _PromotionWorkflowScreenState
       return;
     }
     try {
-      final sections = await _repo.listSections(
-        schoolId: _schoolId!,
-        academicYearId: _targetYearId!,
-        standardId: standardId,
+      final sections = _promotionSectionsFrom(
+        await _repo.listSections(
+          schoolId: _schoolId!,
+          academicYearId: _targetYearId!,
+          standardId: standardId,
+        ),
       );
       if (!mounted) return;
       setState(() => _targetSectionsByStandard[standardId] = sections);
-    } catch (_) {
+    } catch (e, stack) {
+      CrashReporter.log(e, stack);
       if (!mounted) return;
       setState(() => _targetSectionsByStandard[standardId] = const []);
     }
@@ -509,7 +502,8 @@ class _PromotionWorkflowScreenState
       _successMessage = null;
     });
     try {
-      final items = await _repo.preview(
+      final items = await _promotionPreview(
+        _repo,
         sourceYearId: _sourceYearId!,
         targetYearId: _targetYearId!,
         standardId: _filterStandardId,
@@ -578,7 +572,8 @@ class _PromotionWorkflowScreenState
       _successMessage = null;
     });
     try {
-      final result = await _repo.execute(
+      final result = await _promotionExecute(
+        _repo,
         sourceYearId: _sourceYearId!,
         targetYearId: _targetYearId!,
         items: selectedItems,
@@ -633,6 +628,7 @@ class _PromotionWorkflowScreenState
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    ref.watch(schoolEnrollmentYearsProvider);
     final user = ref.watch(authControllerProvider).valueOrNull;
     final isPrincipalOrSuper =
         user != null &&

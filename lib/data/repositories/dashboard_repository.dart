@@ -1,5 +1,6 @@
 // lib/data/repositories/dashboard_repository.dart  [Admin Console]
 
+import '../../core/logging/crash_reporter.dart';
 import '../../core/constants/api_constants.dart';
 import '../../core/network/dio_client.dart';
 import '../models/academics/academic_year_item.dart';
@@ -24,7 +25,8 @@ class DashboardRepository {
     try {
       await _dio.dio.get<Map<String, dynamic>>(ApiConstants.health);
       reachable = true;
-    } catch (_) {
+    } catch (e, stack) {
+      CrashReporter.log(e, stack);
       partial.add('Could not reach health endpoint.');
     }
 

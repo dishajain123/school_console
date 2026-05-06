@@ -6,13 +6,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../data/models/academics/academic_phase3_overview.dart';
 import '../../../data/models/academics/academic_year_item.dart';
-import '../../../data/models/academics/section_item.dart';
 import '../../../data/models/academics/standard_item.dart';
-import '../../../data/models/academics/subject_item.dart';
+import '../../../domains/providers/academic_phase3_provider.dart';
 import '../../../domains/providers/active_year_provider.dart';
-import '../../../domains/providers/academic_provider.dart';
-import '../../../domains/providers/auth_provider.dart';
+import '../../../domains/providers/repository_providers.dart';
 import '../../../core/theme/admin_colors.dart';
 import '../../common/layout/admin_scaffold.dart';
 import '../../common/widgets/admin_layout/admin_empty_state.dart';
@@ -46,80 +45,46 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen>
     super.dispose();
   }
 
-  Future<_Phase3Data> _loadAll() async {
-    final auth = ref.read(authControllerProvider).valueOrNull;
-    final repo = ref.read(academicRepositoryProvider);
-    final schoolId = await repo.resolveSchoolId(auth?.schoolId);
-    final years = await repo.listYears(schoolId: schoolId);
-    final active = years
-        .where((y) => y.isActive)
-        .cast<AcademicYearItem?>()
-        .firstWhere(
-          (y) => y != null,
-          orElse: () => years.isNotEmpty ? years.first : null,
-        );
-    final yearId = (_previewYearId != null &&
-            years.any((y) => y.id == _previewYearId))
-        ? _previewYearId
-        : active?.id;
-    final standards = await repo.listStandards(
-      schoolId: schoolId,
-      academicYearId: yearId,
-    );
-    final sections = await repo.listSections(
-      schoolId: schoolId,
-      academicYearId: yearId,
-    );
-    final subjects = await repo.listSubjects(schoolId: schoolId);
-    return _Phase3Data(
-      schoolId: schoolId,
-      years: years,
-      activeYearId: yearId,
-      standards: standards,
-      sections: sections,
-      subjects: subjects,
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
+    final phase3Async = ref.watch(
+      academicPhase3Provider(
+        AcademicPhase3Query(
+          previewYearId: _previewYearId,
+          reloadNonce: _reloadSeed,
+        ),
+      ),
+    );
+
     return AdminScaffold(
       title: 'Academic years',
       child: Padding(
         padding: const EdgeInsets.all(AdminSpacing.pagePadding),
-        child: FutureBuilder<_Phase3Data>(
-          key: ValueKey(_reloadSeed),
-          future: _loadAll(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const AdminLoadingPlaceholder(
-                message: 'Loading academic structure…',
-                height: 360,
-              );
-            }
-            if (snapshot.hasError) {
-              final theme = Theme.of(context);
-              return Center(
+        child: phase3Async.when(
+          loading: () => const AdminLoadingPlaceholder(
+            message: 'Loading academic structure…',
+            height: 360,
+          ),
+          error: (e, _) => Center(
+            child: Padding(
+              padding: const EdgeInsets.all(AdminSpacing.lg),
+              child: Material(
+                color: AdminColors.dangerSurface,
+                borderRadius: BorderRadius.circular(10),
                 child: Padding(
-                  padding: const EdgeInsets.all(AdminSpacing.lg),
-                  child: Material(
-                    color: AdminColors.dangerSurface,
-                    borderRadius: BorderRadius.circular(10),
-                    child: Padding(
-                      padding: const EdgeInsets.all(AdminSpacing.md),
-                      child: SelectableText(
-                        snapshot.error.toString(),
-                        textAlign: TextAlign.center,
-                        style: theme.textTheme.bodySmall?.copyWith(
+                  padding: const EdgeInsets.all(AdminSpacing.md),
+                  child: SelectableText(
+                    e.toString(),
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: AdminColors.danger,
                         ),
-                      ),
-                    ),
                   ),
                 ),
-              );
-            }
-            final data = snapshot.data!;
+              ),
+            ),
+          ),
+          data: (data) {
             final activeYear = data.activeYearId == null
                 ? null
                 : data.years.where((y) => y.id == data.activeYearId).firstOrNull;
@@ -211,7 +176,7 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen>
   }
 
   Widget _buildHeroStrip(
-    _Phase3Data data,
+    AcademicPhase3Overview data,
     AcademicYearItem? activeYear,
     AcademicYearItem? previewYear,
   ) {
@@ -256,7 +221,7 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen>
                     key: ValueKey(
                       'preview_year_${previewYear?.id ?? 'none'}_${data.years.length}',
                     ),
-                    initialValue: previewYear?.id,
+                    value: previewYear?.id,
                     decoration: const InputDecoration(
                       labelText: 'Year',
                       isDense: true,
@@ -330,7 +295,7 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen>
     );
   }
 
-  Widget _buildYears(_Phase3Data data) {
+  Widget _buildYears(AcademicPhase3Overview data) {
     return Card(
       margin: EdgeInsets.zero,
       elevation: 0,
@@ -455,7 +420,7 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen>
     );
   }
 
-  Widget _buildStandards(_Phase3Data data) {
+  Widget _buildStandards(AcademicPhase3Overview data) {
     return Card(
       margin: EdgeInsets.zero,
       elevation: 0,
@@ -532,7 +497,7 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen>
     );
   }
 
-  Widget _buildSections(_Phase3Data data) {
+  Widget _buildSections(AcademicPhase3Overview data) {
     return Card(
       margin: EdgeInsets.zero,
       elevation: 0,
@@ -627,7 +592,7 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen>
     );
   }
 
-  Widget _buildSubjects(_Phase3Data data) {
+  Widget _buildSubjects(AcademicPhase3Overview data) {
     return Card(
       margin: EdgeInsets.zero,
       elevation: 0,
@@ -864,7 +829,7 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen>
     );
   }
 
-  Future<void> _createSection(_Phase3Data data) async {
+  Future<void> _createSection(AcademicPhase3Overview data) async {
     final secCtrl = TextEditingController();
     StandardItem? selected = data.standards.isNotEmpty
         ? data.standards.first
@@ -881,7 +846,7 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen>
               mainAxisSize: MainAxisSize.min,
               children: [
                 DropdownButtonFormField<String>(
-                  initialValue: selected?.id,
+                  value: selected?.id,
                   items: data.standards
                       .map(
                         (s) =>
@@ -938,7 +903,7 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen>
     );
   }
 
-  Future<void> _createSubject(_Phase3Data data) async {
+  Future<void> _createSubject(AcademicPhase3Overview data) async {
     final nameCtrl = TextEditingController();
     final codeCtrl = TextEditingController();
     String? selectedStandardId;
@@ -968,7 +933,7 @@ class _AcademicYearsScreenState extends ConsumerState<AcademicYearsScreen>
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String?>(
-                  initialValue: selectedStandardId,
+                  value: selectedStandardId,
                   items: [
                     const DropdownMenuItem<String?>(
                       value: null,
@@ -1081,24 +1046,6 @@ class _StatBadge extends StatelessWidget {
       ),
     );
   }
-}
-
-class _Phase3Data {
-  _Phase3Data({
-    required this.schoolId,
-    required this.years,
-    required this.activeYearId,
-    required this.standards,
-    required this.sections,
-    required this.subjects,
-  });
-
-  final String schoolId;
-  final List<AcademicYearItem> years;
-  final String? activeYearId;
-  final List<StandardItem> standards;
-  final List<SectionItem> sections;
-  final List<SubjectItem> subjects;
 }
 
 extension _FirstOrNullExt<T> on Iterable<T> {

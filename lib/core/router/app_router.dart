@@ -4,10 +4,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../constants/route_constants.dart';
+import '../rbac/admin_route_access.dart';
 import '../../domains/providers/auth_provider.dart';
 import '../../presentation/approvals/screens/approval_detail_screen.dart';
 import '../../presentation/approvals/screens/approval_queue_screen.dart';
 import '../../presentation/audit/screens/audit_log_screen.dart';
+import '../../presentation/auth/screens/access_denied_screen.dart';
 import '../../presentation/auth/screens/admin_login_screen.dart';
 import '../../presentation/dashboard/screens/dashboard_screen.dart';
 import '../../presentation/academics/screens/academic_years_screen.dart';
@@ -34,7 +36,6 @@ final goRouterProvider = Provider<GoRouter>((ref) {
 });
 
 GoRouter buildRouter(Ref ref) {
-
   return GoRouter(
     initialLocation: RouteNames.login,
     redirect: (context, state) {
@@ -49,12 +50,26 @@ GoRouter buildRouter(Ref ref) {
 
       if (!isLoggedIn && !isLoginPage) return RouteNames.login;
       if (isLoggedIn && isLoginPage) return RouteNames.dashboard;
+
+      final user = authState.valueOrNull;
+      final path = normalizeRouterPath(state.matchedLocation);
+      if (isLoggedIn &&
+          user != null &&
+          !isLoginPage &&
+          !routeAccessAllowedForUser(user, path)) {
+        return RouteNames.accessDenied;
+      }
       return null;
     },
     routes: [
       GoRoute(
         path: RouteNames.login,
         builder: (context, state) => const AdminLoginScreen(),
+      ),
+
+      GoRoute(
+        path: RouteNames.accessDenied,
+        builder: (context, state) => const AccessDeniedScreen(),
       ),
 
       GoRoute(

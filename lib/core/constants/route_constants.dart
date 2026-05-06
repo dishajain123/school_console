@@ -2,6 +2,9 @@
 class RouteNames {
   static const String login = '/login';
 
+  /// Shown when a signed-in user opens a route they are not permitted to use.
+  static const String accessDenied = '/access-denied';
+
   /// Signed-in landing (sidebar home).
   static const String dashboard = '/dashboard';
 
@@ -30,10 +33,6 @@ class RouteNames {
 
   // Phase 2 — Role Profiles & Identifiers
   static const String roleProfiles = '/role-profiles';
-  static const String identifierConfigs = '/role-profiles/identifier-configs';
-
-  // Phase 5 — Admin Modules
-  static const String users = '/users';
 
   // Phase 8 — Fees Management
   static const String fees = '/fees';

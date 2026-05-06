@@ -28,384 +28,17 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/logging/crash_reporter.dart';
 import '../../../core/theme/admin_colors.dart';
 import '../../../domains/providers/auth_provider.dart';
+import '../../../data/models/lifecycle/lifecycle_models.dart';
+import '../../../data/repositories/lifecycle_admin_repository.dart';
 import '../../../domains/providers/enrollment_provider.dart';
-import '../../../data/repositories/enrollment_repository.dart';
+import '../../../domains/providers/lifecycle_management_providers.dart';
 import '../../common/layout/admin_scaffold.dart';
 import '../../common/widgets/admin_layout/admin_loading_placeholder.dart';
 import '../../common/widgets/admin_layout/admin_page_header.dart';
 import '../../common/widgets/admin_layout/admin_spacing.dart';
-
-// ── Local models ──────────────────────────────────────────────────────────────
-
-class _StudentSummary {
-  const _StudentSummary({
-    required this.profileRole,
-    required this.studentId,
-    required this.userId,
-    required this.fullName,
-    required this.email,
-    required this.admissionNumber,
-    required this.currentStandardName,
-    required this.currentSectionName,
-    required this.currentStatus,
-    required this.currentMappingId,
-    required this.currentAcademicYearId,
-    required this.currentStandardId,
-  });
-
-  /// Backend role: STUDENT, TEACHER, PARENT, PRINCIPAL, TRUSTEE.
-  final String profileRole;
-  final String studentId;
-  final String userId;
-  final String? fullName;
-  final String? email;
-  final String? admissionNumber;
-  final String? currentStandardName;
-  final String? currentSectionName;
-  final String? currentStatus;
-  final String? currentMappingId;
-  final String? currentAcademicYearId;
-  final String? currentStandardId;
-
-  bool get isEnrollmentLifecycleTarget =>
-      profileRole == 'STUDENT' && studentId.trim().isNotEmpty;
-
-  factory _StudentSummary.fromJson(Map<String, dynamic> j) {
-    final role = (j['role'] as String?)?.toUpperCase() ?? 'STUDENT';
-    return _StudentSummary(
-      profileRole: role,
-      studentId: j['student_id']?.toString() ?? j['id']?.toString() ?? '',
-      userId: j['user_id']?.toString() ?? '',
-      fullName: j['full_name'] as String?,
-      email: j['email'] as String?,
-      admissionNumber: j['admission_number'] as String?,
-      currentStandardName: j['standard_name'] as String?,
-      currentSectionName: j['section'] as String?,
-      currentStatus: j['enrollment_status'] as String?,
-      currentMappingId: j['mapping_id'] as String?,
-      currentAcademicYearId: j['academic_year_id'] as String?,
-      currentStandardId: j['standard_id'] as String?,
-    );
-  }
-
-  /// Maps GET /role-profiles list items (shape varies by role).
-  factory _StudentSummary.fromRoleProfile(Map<String, dynamic> j) {
-    final role = (j['role'] as String?)?.toUpperCase() ?? 'STUDENT';
-    switch (role) {
-      case 'TEACHER':
-        return _StudentSummary(
-          profileRole: 'TEACHER',
-          studentId: '',
-          userId: j['user_id']?.toString() ?? '',
-          fullName: j['full_name'] as String?,
-          email: j['email'] as String?,
-          admissionNumber:
-              j['employee_id']?.toString() ?? j['identifier']?.toString(),
-          currentStandardName: j['specialization'] as String?,
-          currentSectionName: null,
-          currentStatus: null,
-          currentMappingId: null,
-          currentAcademicYearId: null,
-          currentStandardId: null,
-        );
-      case 'PARENT':
-        return _StudentSummary(
-          profileRole: 'PARENT',
-          studentId: '',
-          userId: j['user_id']?.toString() ?? '',
-          fullName: j['full_name'] as String?,
-          email: j['email'] as String?,
-          admissionNumber:
-              j['parent_code']?.toString() ?? j['identifier']?.toString(),
-          currentStandardName: j['occupation'] as String?,
-          currentSectionName: j['relation']?.toString(),
-          currentStatus: null,
-          currentMappingId: null,
-          currentAcademicYearId: null,
-          currentStandardId: null,
-        );
-      case 'PRINCIPAL':
-      case 'TRUSTEE':
-        return _StudentSummary(
-          profileRole: role,
-          studentId: '',
-          userId: j['user_id']?.toString() ?? '',
-          fullName: j['full_name'] as String?,
-          email: j['email'] as String?,
-          admissionNumber: j['identifier']?.toString(),
-          currentStandardName: null,
-          currentSectionName: null,
-          currentStatus: j['status']?.toString(),
-          currentMappingId: null,
-          currentAcademicYearId: null,
-          currentStandardId: null,
-        );
-      default:
-        return _StudentSummary(
-          profileRole: 'STUDENT',
-          studentId: j['student_id']?.toString() ?? '',
-          userId: j['user_id']?.toString() ?? '',
-          fullName: j['full_name'] as String?,
-          email: j['email'] as String?,
-          admissionNumber: j['admission_number'] as String?,
-          currentStandardName: null,
-          currentSectionName: j['section'] as String?,
-          currentStatus: j['enrollment_completed'] == true ? 'ACTIVE' : null,
-          currentMappingId: null,
-          currentAcademicYearId: null,
-          currentStandardId: j['standard_id']?.toString(),
-        );
-    }
-  }
-
-  _StudentSummary copyWith({
-    String? currentStandardName,
-    String? currentSectionName,
-    String? currentStatus,
-    String? currentMappingId,
-    String? currentAcademicYearId,
-    String? currentStandardId,
-  }) {
-    return _StudentSummary(
-      profileRole: profileRole,
-      studentId: studentId,
-      userId: userId,
-      fullName: fullName,
-      email: email,
-      admissionNumber: admissionNumber,
-      currentStandardName: currentStandardName ?? this.currentStandardName,
-      currentSectionName: currentSectionName ?? this.currentSectionName,
-      currentStatus: currentStatus ?? this.currentStatus,
-      currentMappingId: currentMappingId ?? this.currentMappingId,
-      currentAcademicYearId: currentAcademicYearId ?? this.currentAcademicYearId,
-      currentStandardId: currentStandardId ?? this.currentStandardId,
-    );
-  }
-}
-
-class _HistoryEntry {
-  const _HistoryEntry({
-    required this.id,
-    required this.academicYearName,
-    required this.standardName,
-    required this.sectionName,
-    required this.rollNumber,
-    required this.status,
-    required this.admissionType,
-    required this.joinedOn,
-    this.leftOn,
-    this.exitReason,
-  });
-
-  final String id;
-  final String? academicYearName;
-  final String? standardName;
-  final String? sectionName;
-  final String? rollNumber;
-  final String status;
-  final String? admissionType;
-  final String? joinedOn;
-  final String? leftOn;
-  final String? exitReason;
-
-  factory _HistoryEntry.fromJson(Map<String, dynamic> j) => _HistoryEntry(
-        id: j['id']?.toString() ?? '',
-        academicYearName: j['academic_year_name'] as String?,
-        standardName: j['standard_name'] as String?,
-        sectionName: j['section_name'] as String?,
-        rollNumber: j['roll_number'] as String?,
-        status: j['status']?.toString() ?? 'UNKNOWN',
-        admissionType: j['admission_type'] as String?,
-        joinedOn: j['joined_on'] as String?,
-        leftOn: j['left_on'] as String?,
-        exitReason: j['exit_reason'] as String?,
-      );
-}
-
-class _AcademicYear {
-  const _AcademicYear({required this.id, required this.name, required this.isActive});
-  final String id;
-  final String name;
-  final bool isActive;
-}
-
-class _Standard {
-  const _Standard({required this.id, required this.name, required this.level});
-  final String id;
-  final String name;
-  final int level;
-}
-
-class _Section {
-  const _Section({required this.id, required this.name});
-  final String id;
-  final String name;
-}
-
-// ── Repository ────────────────────────────────────────────────────────────────
-
-class _LifecycleRepository {
-  _LifecycleRepository(this._api);
-  final EnrollmentRepository _api;
-
-  Future<List<_StudentSummary>> searchRoleProfiles({
-    required String role,
-    String? search,
-    String? academicYearId,
-    String? standardId,
-    String? section,
-  }) async {
-    final items = await _api.searchRoleProfiles(
-      role: role,
-      search: search,
-      academicYearId: academicYearId,
-      standardId: standardId,
-      section: section,
-      pageSize: 100,
-    );
-    return items
-        .map((e) => _StudentSummary.fromRoleProfile(
-              Map<String, dynamic>.from(e as Map),
-            ))
-        .toList();
-  }
-
-  Future<List<_StudentSummary>> listStudentsByClassFilters({
-    required String standardId,
-    required String academicYearId,
-    String? sectionId,
-  }) async {
-    final data = await _api.getRoster(
-      standardId: standardId,
-      academicYearId: academicYearId,
-      sectionId: sectionId,
-    );
-    final mappings = (data['mappings'] as List?) ?? [];
-    return mappings.map((e) {
-      final m = Map<String, dynamic>.from(e as Map);
-      return _StudentSummary(
-        profileRole: 'STUDENT',
-        studentId: m['student_id']?.toString() ?? '',
-        userId: '',
-        fullName: m['student_name'] as String?,
-        email: null,
-        admissionNumber: m['admission_number'] as String?,
-        currentStandardName: m['standard_name'] as String?,
-        currentSectionName:
-            (m['section_name'] as String?) ?? (m['section'] as String?),
-        currentStatus: m['status']?.toString(),
-        currentMappingId: m['id']?.toString(),
-        currentAcademicYearId: academicYearId,
-        currentStandardId: standardId,
-      );
-    }).toList();
-  }
-
-  Future<List<_HistoryEntry>> getHistory(String studentId) async {
-    final data = await _api.getStudentHistory(studentId);
-    final history = (data['history'] as List?) ?? [];
-    return history
-        .map((e) => _HistoryEntry.fromJson(Map<String, dynamic>.from(e as Map)))
-        .toList();
-  }
-
-  Future<void> transferStudent({
-    required String mappingId,
-    required String newStandardId,
-    String? newSectionId,
-    String? newRollNumber,
-    required String transferReason,
-    String? effectiveDate,
-  }) async {
-    await _api.transferStudent(
-      mappingId: mappingId,
-      newStandardId: newStandardId,
-      newSectionId: newSectionId,
-      newRollNumber: newRollNumber,
-      transferReason: transferReason,
-      effectiveDate: effectiveDate,
-    );
-  }
-
-  Future<void> exitStudent({
-    required String mappingId,
-    required String status,
-    required String leftOn,
-    required String exitReason,
-  }) async {
-    await _api.exitStudent(
-      mappingId: mappingId,
-      status: status,
-      leftOn: leftOn,
-      exitReason: exitReason,
-    );
-  }
-
-  Future<void> completeMapping(String mappingId) async {
-    await _api.completeMapping(mappingId);
-  }
-
-  Future<void> reenrollStudent({
-    required String studentId,
-    required String targetYearId,
-    required String standardId,
-    String? sectionId,
-    String? rollNumber,
-    String admissionType = 'READMISSION',
-  }) async {
-    await _api.reenrollStudent(
-      studentId: studentId,
-      targetYearId: targetYearId,
-      standardId: standardId,
-      sectionId: sectionId,
-      rollNumber: rollNumber,
-      admissionType: admissionType,
-    );
-  }
-
-  Future<List<_AcademicYear>> getAcademicYears() async {
-    final items = await _api.listAcademicYears();
-    return items.map((e) {
-      final m = Map<String, dynamic>.from(e as Map);
-      return _AcademicYear(
-        id: m['id']?.toString() ?? '',
-        name: m['name']?.toString() ?? '',
-        isActive: m['is_active'] == true,
-      );
-    }).toList();
-  }
-
-  Future<List<_Standard>> getStandards() async {
-    final items = await _api.listStandards();
-    return items.map((e) {
-      final m = Map<String, dynamic>.from(e as Map);
-      return _Standard(
-        id: m['id']?.toString() ?? '',
-        name: m['name']?.toString() ?? '',
-        level: (m['level'] as num?)?.toInt() ?? 0,
-      );
-    }).toList();
-  }
-
-  Future<List<_Section>> getSections({
-    required String standardId,
-    required String academicYearId,
-  }) async {
-    final items = await _api.listSections(
-      standardId: standardId,
-      academicYearId: academicYearId,
-    );
-    return items.map((e) {
-      final m = e;
-      return _Section(
-        id: m['id']?.toString() ?? '',
-        name: m['name']?.toString() ?? '',
-      );
-    }).toList();
-  }
-}
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 
@@ -419,17 +52,18 @@ class LifecycleManagementScreen extends ConsumerStatefulWidget {
 
 class _LifecycleManagementScreenState
     extends ConsumerState<LifecycleManagementScreen> {
-  late final _LifecycleRepository _repo;
+  late final LifecycleAdminRepository _repo;
+  ProviderSubscription<AsyncValue<LifecycleMetaBundle>>? _metaSubscription;
   final _searchCtrl = TextEditingController();
   Timer? _searchDebounce;
   int _searchRequestSeq = 0;
 
-  List<_StudentSummary> _searchResults = [];
-  _StudentSummary? _selected;
-  List<_HistoryEntry> _history = [];
-  List<_AcademicYear> _years = [];
-  List<_Standard> _standards = [];
-  List<_Section> _filterSections = [];
+  List<LifecycleStudentSummary> _searchResults = [];
+  LifecycleStudentSummary? _selected;
+  List<LifecycleHistoryEntry> _history = [];
+  List<LifecycleAcademicYear> _years = [];
+  List<LifecycleStandard> _standards = [];
+  List<LifecycleSection> _filterSections = [];
   String? _filterYearId;
   String? _filterStandardId;
   String? _filterSectionName;
@@ -443,7 +77,7 @@ class _LifecycleManagementScreenState
   String? _error;
   String? _successMsg;
 
-  _HistoryEntry? _currentActionableMapping() {
+  LifecycleHistoryEntry? _currentActionableMapping() {
     for (final item in _history) {
       if (item.status == 'ACTIVE' || item.status == 'HOLD') return item;
     }
@@ -453,39 +87,38 @@ class _LifecycleManagementScreenState
   @override
   void initState() {
     super.initState();
-    _repo = _LifecycleRepository(ref.read(enrollmentRepositoryProvider));
-    _loadMeta();
+    _repo = LifecycleAdminRepository(ref.read(enrollmentRepositoryProvider));
+    _metaSubscription = ref.listenManual(lifecycleMetaProvider, (previous, next) {
+      next.when(
+        data: (bundle) {
+          if (!mounted || _years.isNotEmpty) return;
+          setState(() {
+            _years = bundle.years;
+            _standards = bundle.standards;
+            final activeYear = bundle.years
+                .where((y) => y.isActive)
+                .cast<LifecycleAcademicYear?>()
+                .firstWhere(
+                  (y) => y != null,
+                  orElse: () =>
+                      bundle.years.isNotEmpty ? bundle.years.first : null,
+                );
+            _filterYearId = activeYear?.id;
+          });
+          _loadFilterSections().then((_) => _search());
+        },
+        loading: () {},
+        error: (_, errorStack) {},
+      );
+    });
   }
 
   @override
   void dispose() {
+    _metaSubscription?.close();
     _searchDebounce?.cancel();
     _searchCtrl.dispose();
     super.dispose();
-  }
-
-  Future<void> _loadMeta() async {
-    final user = ref.read(authControllerProvider).valueOrNull;
-    if (user == null) return;
-    try {
-      final results = await Future.wait([
-        _repo.getAcademicYears(),
-        _repo.getStandards(),
-      ]);
-      if (mounted) {
-        setState(() {
-          _years = results[0] as List<_AcademicYear>;
-          _standards = results[1] as List<_Standard>;
-          final activeYear = _years.where((y) => y.isActive).cast<_AcademicYear?>().firstWhere(
-                (y) => y != null,
-                orElse: () => _years.isNotEmpty ? _years.first : null,
-              );
-          _filterYearId = activeYear?.id;
-        });
-        await _loadFilterSections();
-        await _search();
-      }
-    } catch (_) {}
   }
 
   Future<void> _loadFilterSections() async {
@@ -513,7 +146,8 @@ class _LifecycleManagementScreenState
           _filterSectionName = null;
         }
       });
-    } catch (_) {
+    } catch (e, stack) {
+      CrashReporter.log(e, stack);
       if (mounted) {
         setState(() {
           _filterSections = [];
@@ -526,7 +160,7 @@ class _LifecycleManagementScreenState
   String? _selectedYearName() {
     final id = _filterYearId;
     if (id == null) return null;
-    final year = _years.where((y) => y.id == id).cast<_AcademicYear?>().firstWhere(
+    final year = _years.where((y) => y.id == id).cast<LifecycleAcademicYear?>().firstWhere(
           (y) => y != null,
           orElse: () => null,
         );
@@ -536,14 +170,14 @@ class _LifecycleManagementScreenState
   String? _selectedStandardName() {
     final id = _filterStandardId;
     if (id == null) return null;
-    final standard = _standards.where((s) => s.id == id).cast<_Standard?>().firstWhere(
+    final standard = _standards.where((s) => s.id == id).cast<LifecycleStandard?>().firstWhere(
           (s) => s != null,
           orElse: () => null,
         );
     return standard?.name;
   }
 
-  List<_StudentSummary> _filteredSearchResults() {
+  List<LifecycleStudentSummary> _filteredSearchResults() {
     final selectedStandardName = _selectedStandardName();
     final q = _searchCtrl.text.trim().toLowerCase();
     return _searchResults.where((s) {
@@ -571,7 +205,7 @@ class _LifecycleManagementScreenState
     }).toList(growable: false);
   }
 
-  List<_HistoryEntry> _filteredHistory() {
+  List<LifecycleHistoryEntry> _filteredHistory() {
     final selectedYearName = _selectedYearName();
     final selectedStandardName = _selectedStandardName();
     return _history.where((h) {
@@ -610,7 +244,7 @@ class _LifecycleManagementScreenState
       _history = [];
     });
     try {
-      late final List<_StudentSummary> results;
+      late final List<LifecycleStudentSummary> results;
       final yearId = _filterYearId;
       final standardId = _filterStandardId;
       final sectionName = _filterSectionName;
@@ -655,7 +289,7 @@ class _LifecycleManagementScreenState
     }
   }
 
-  Future<void> _selectStudent(_StudentSummary s) async {
+  Future<void> _selectStudent(LifecycleStudentSummary s) async {
     setState(() {
       _selected = s;
       _searchResults = [];
@@ -671,7 +305,7 @@ class _LifecycleManagementScreenState
     try {
       final h = await _repo.getHistory(s.studentId);
       if (mounted) {
-        final current = h.where((e) => e.status == 'ACTIVE' || e.status == 'HOLD').cast<_HistoryEntry?>().firstWhere(
+        final current = h.where((e) => e.status == 'ACTIVE' || e.status == 'HOLD').cast<LifecycleHistoryEntry?>().firstWhere(
               (e) => e != null,
               orElse: () => h.isNotEmpty ? h.first : null,
             );
@@ -715,7 +349,9 @@ class _LifecycleManagementScreenState
           }
         });
       }
-    } catch (_) {} finally {
+    } catch (e, stack) {
+      CrashReporter.log(e, stack);
+    } finally {
       if (mounted) setState(() => _historyLoading = false);
     }
   }
@@ -729,7 +365,7 @@ class _LifecycleManagementScreenState
 
     String? targetStandardId;
     String? targetSectionId;
-    List<_Section> sections = [];
+    List<LifecycleSection> sections = [];
     bool loadingSections = false;
     final reasonCtrl = TextEditingController();
 
@@ -746,7 +382,9 @@ class _LifecycleManagementScreenState
                 academicYearId: yearId,
               );
               setDlgState(() => sections = secs);
-            } catch (_) {} finally {
+            } catch (e, stack) {
+              CrashReporter.log(e, stack);
+            } finally {
               setDlgState(() => loadingSections = false);
             }
           }
@@ -791,7 +429,7 @@ class _LifecycleManagementScreenState
                           });
                           final activeYear = _years.firstWhere(
                             (y) => y.isActive,
-                            orElse: () => _years.isNotEmpty ? _years.first : const _AcademicYear(id: '', name: '', isActive: false),
+                            orElse: () => _years.isNotEmpty ? _years.first : const LifecycleAcademicYear(id: '', name: '', isActive: false),
                           );
                           if (activeYear.id.isNotEmpty) loadSections(v, activeYear.id);
                         }
@@ -873,7 +511,7 @@ class _LifecycleManagementScreenState
                         (current.standardName ?? '') !=
                             (_standards.firstWhere(
                               (st) => st.id == targetStandardId,
-                              orElse: () => const _Standard(id: '', name: '', level: 0),
+                              orElse: () => const LifecycleStandard(id: '', name: '', level: 0),
                             ).name);
                     if (mounted) {
                       setState(() => _successMsg = isClassChange
@@ -1074,7 +712,7 @@ class _LifecycleManagementScreenState
     String? targetYearId;
     String? targetStandardId;
     String? targetSectionId;
-    List<_Section> sections = [];
+    List<LifecycleSection> sections = [];
     bool loadingSections = false;
     String admissionType = 'READMISSION';
     final rollCtrl = TextEditingController();
@@ -1092,7 +730,9 @@ class _LifecycleManagementScreenState
                 academicYearId: yearId,
               );
               setDlgState(() => sections = secs);
-            } catch (_) {} finally {
+            } catch (e, stack) {
+              CrashReporter.log(e, stack);
+            } finally {
               setDlgState(() => loadingSections = false);
             }
           }
@@ -1281,6 +921,7 @@ class _LifecycleManagementScreenState
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    ref.watch(lifecycleMetaProvider);
 
     return AdminScaffold(
       title: 'Student lifecycle',
@@ -1543,7 +1184,7 @@ class _LifecycleManagementScreenState
                                     _filterSectionName = null;
                                     final activeYear = _years
                                         .where((y) => y.isActive)
-                                        .cast<_AcademicYear?>()
+                                        .cast<LifecycleAcademicYear?>()
                                         .firstWhere(
                                           (y) => y != null,
                                           orElse: () =>
@@ -1779,7 +1420,7 @@ class _LifecycleManagementScreenState
                                 shrinkWrap: true,
                                 physics: const NeverScrollableScrollPhysics(),
                                 itemCount: _filteredHistory().length,
-                                separatorBuilder: (_, __) =>
+                                separatorBuilder: (_, ignored) =>
                                     const Divider(height: 1),
                                 itemBuilder: (_, i) {
                                   final h = _filteredHistory()[i];
@@ -1930,7 +1571,7 @@ class _LifecycleManagementScreenState
     );
   }
 
-  String _searchResultSubtitle(_StudentSummary s) {
+  String _searchResultSubtitle(LifecycleStudentSummary s) {
     switch (s.profileRole) {
       case 'TEACHER':
         final id = s.admissionNumber ?? '—';
@@ -1951,14 +1592,14 @@ class _LifecycleManagementScreenState
     }
   }
 
-  String _searchResultTrailing(_StudentSummary s) {
+  String _searchResultTrailing(LifecycleStudentSummary s) {
     if (s.profileRole == 'STUDENT') {
       return s.currentStatus ?? '—';
     }
     return s.profileRole;
   }
 
-  String _idLineForSelected(_StudentSummary s) {
+  String _idLineForSelected(LifecycleStudentSummary s) {
     switch (s.profileRole) {
       case 'TEACHER':
         return 'Employee ID: ${s.admissionNumber ?? '—'}';

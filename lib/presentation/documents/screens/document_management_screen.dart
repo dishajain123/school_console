@@ -17,6 +17,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:dio/dio.dart';
 
+import '../../../core/logging/crash_reporter.dart';
 import '../../../core/theme/admin_colors.dart';
 import '../../../domains/providers/active_year_provider.dart';
 import '../../../domains/providers/admin_document_provider.dart';
@@ -70,6 +71,9 @@ class _StudentDocumentSummary {
 class _DocumentManagementScreenState
     extends ConsumerState<DocumentManagementScreen>
     with SingleTickerProviderStateMixin {
+  // Cache documents by filter tuple so revisits paint instantly while we refresh.
+  static final Map<String, List<AdminDocument>> _documentsCache = {};
+
   late final TabController _tabController;
   late final AdminDocumentRepository _repo;
 
@@ -91,15 +95,27 @@ class _DocumentManagementScreenState
   String? _error;
   String? _success;
   Timer? _filterDebounce;
+  int _documentsRequestVersion = 0;
+
+  void _setStateIfMounted(VoidCallback fn) {
+    if (!mounted) return;
+    setState(fn);
+  }
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     _repo = ref.read(adminDocumentRepositoryProvider);
-    _loadMeta();
-    _loadDocuments();
+    _bootstrap();
     _loadRequirements();
+  }
+
+  Future<void> _bootstrap() async {
+    // Resolve metadata first so the first documents call uses selected year/class
+    // and avoids a broad initial fetch followed by a second filtered fetch.
+    await _loadMeta();
+    await _loadDocuments();
   }
 
   Future<void> _loadMeta() async {
@@ -120,14 +136,15 @@ class _DocumentManagementScreenState
       if (yearId != null && yearId.isNotEmpty) {
         standards = await _repo.listStandards(yearId);
       }
-      if (!mounted) return;
-      setState(() {
+      _setStateIfMounted(() {
         _years = years;
         _selectedYearId = yearId;
         _standards = standards;
       });
       ref.read(activeAcademicYearProvider.notifier).setYear(yearId);
-    } catch (_) {}
+    } catch (e, stack) {
+      CrashReporter.log(e, stack);
+    }
   }
 
   @override
@@ -163,8 +180,7 @@ class _DocumentManagementScreenState
   Future<void> _loadSectionsForSelectedClass() async {
     final standardId = _selectedStandardId;
     if (standardId == null || standardId.trim().isEmpty) {
-      if (!mounted) return;
-      setState(() {
+      _setStateIfMounted(() {
         _sections = [];
         _selectedSection = null;
       });
@@ -175,16 +191,15 @@ class _DocumentManagementScreenState
         standardId: standardId,
         academicYearId: _selectedYearId,
       );
-      if (!mounted) return;
-      setState(() {
+      _setStateIfMounted(() {
         _sections = sections;
         if (_selectedSection != null && !_sections.contains(_selectedSection)) {
           _selectedSection = null;
         }
       });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
+    } catch (e, stack) {
+      CrashReporter.log(e, stack);
+      _setStateIfMounted(() {
         _sections = [];
         _selectedSection = null;
       });
@@ -252,14 +267,25 @@ class _DocumentManagementScreenState
     }
   }
 
-  bool _canVerifyInUi(AdminDocument doc) {
-    if (!doc.hasFile) return false;
-    return doc.status.toUpperCase() == 'PENDING';
-  }
-
   Future<void> _loadDocuments() async {
     _filterDebounce?.cancel();
-    setState(() {
+    // Monotonic request id: stale responses from older requests are ignored.
+    final requestVersion = ++_documentsRequestVersion;
+    final cacheKey = [
+      _selectedYearId ?? '',
+      _selectedStandardId ?? '',
+      _selectedSection ?? '',
+      (_workflowStatusFilter ?? '').trim().toUpperCase(),
+    ].join('|');
+
+    final cached = _documentsCache[cacheKey];
+    if (cached != null) {
+      _allDocumentsRaw = cached;
+      _applyDocumentFilters();
+      _setStateIfMounted(() {});
+    }
+
+    _setStateIfMounted(() {
       _loading = true;
       _error = null;
     });
@@ -274,98 +300,33 @@ class _DocumentManagementScreenState
         section: sec,
         status: statusParam.isEmpty ? null : statusParam,
       );
-      if (!mounted) return;
-      setState(() {
+      _documentsCache[cacheKey] = all;
+      if (!mounted || requestVersion != _documentsRequestVersion) return;
+      _setStateIfMounted(() {
         _allDocumentsRaw = all;
         _applyDocumentFilters();
       });
     } catch (e) {
+      if (!mounted || requestVersion != _documentsRequestVersion) return;
       if (e is DioException && e.response?.statusCode == 429) {
-        setState(() => _error =
+        _setStateIfMounted(() => _error =
             'Too many requests in a short time. Please wait a second and try again.');
       } else {
-        setState(() => _error = e.toString());
+        _setStateIfMounted(() => _error = e.toString());
       }
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted && requestVersion == _documentsRequestVersion) {
+        _setStateIfMounted(() => _loading = false);
+      }
     }
   }
 
   Future<void> _loadRequirements() async {
     try {
       final reqs = await _repo.getRequirements();
-      setState(() => _requirements = reqs);
-    } catch (_) {}
-  }
-
-  Future<void> _verify(
-      AdminDocument doc, bool approve, {String? reason}) async {
-    if (!doc.hasFile) {
-      setState(() =>
-          _error = 'Cannot verify: no file uploaded for this document yet.');
-      return;
-    }
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    try {
-      await _repo.verifyDocument(doc.id,
-          approve: approve, reason: reason);
-      await _loadDocuments();
-      if (mounted) {
-        setState(() => _success =
-            approve ? 'Document approved.' : 'Document rejected.');
-      }
-    } catch (e) {
-      setState(() => _error = e.toString());
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  Future<void> _showRejectDialog(AdminDocument doc) async {
-    final reasonCtrl = TextEditingController();
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Reject Document'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-                'Rejecting ${doc.documentType.replaceAll('_', ' ')} for student ${doc.admissionNumber ?? doc.studentId}'),
-            const SizedBox(height: 8),
-            TextField(
-              controller: reasonCtrl,
-              decoration: const InputDecoration(
-                  labelText: 'Rejection reason (required)'),
-              maxLines: 2,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Cancel')),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: AdminColors.danger,
-              foregroundColor: AdminColors.textOnPrimary,
-            ),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Reject'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true && mounted) {
-      final reason = reasonCtrl.text.trim();
-      if (reason.isEmpty) {
-        setState(() => _error = 'Rejection requires a comment.');
-        return;
-      }
-      await _verify(doc, false, reason: reason);
+      _setStateIfMounted(() => _requirements = reqs);
+    } catch (e, stack) {
+      CrashReporter.log(e, stack);
     }
   }
 
@@ -375,16 +336,19 @@ class _DocumentManagementScreenState
       studentChoices = await _repo.listStudents(
         academicYearId: _selectedYearId,
       );
-    } catch (_) {}
+    } catch (e, stack) {
+      CrashReporter.log(e, stack);
+    }
 
     final studentIdCtrl = TextEditingController();
     String docType = 'BONAFIDE';
     final otherNameCtrl = TextEditingController();
-    String _fileNameInput = '';
-    Uint8List? _fileBytes;
-    String _contentType = 'application/pdf';
+    String fileNameInput = '';
+    Uint8List? fileBytes;
+    String contentType = 'application/pdf';
     String? pickedStudentId;
 
+    if (!mounted) return;
     await showDialog<void>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -459,7 +423,7 @@ class _DocumentManagementScreenState
                 const SizedBox(height: 8),
                 ElevatedButton.icon(
                   icon: const Icon(Icons.attach_file, size: 14),
-                  label: Text(_fileNameInput.isEmpty ? 'Choose File' : _fileNameInput),
+                  label: Text(fileNameInput.isEmpty ? 'Choose File' : fileNameInput),
                   onPressed: () {
                     final input = html.FileUploadInputElement()
                       ..accept = '.pdf,.jpg,.jpeg,.png'
@@ -474,13 +438,13 @@ class _DocumentManagementScreenState
                         final result = reader.result;
                         if (result is ByteBuffer) {
                           setDialog(() {
-                            _fileNameInput = file.name;
-                            _contentType = file.type.isNotEmpty
+                            fileNameInput = file.name;
+                            contentType = file.type.isNotEmpty
                                 ? file.type
-                                : (_fileNameInput.toLowerCase().endsWith('.pdf')
+                                : (fileNameInput.toLowerCase().endsWith('.pdf')
                                     ? 'application/pdf'
                                     : 'image/jpeg');
-                            _fileBytes = Uint8List.view(result);
+                            fileBytes = Uint8List.view(result);
                           });
                         }
                       });
@@ -497,18 +461,20 @@ class _DocumentManagementScreenState
             ElevatedButton(
               onPressed: () async {
                 if (studentIdCtrl.text.trim().isEmpty ||
-                    _fileNameInput.isEmpty ||
-                    _fileBytes == null ||
-                    _fileBytes!.isEmpty) return;
+                    fileNameInput.isEmpty ||
+                    fileBytes == null ||
+                    fileBytes!.isEmpty) {
+                  return;
+                }
                 Navigator.of(ctx).pop();
-                setState(() => _loading = true);
+                _setStateIfMounted(() => _loading = true);
                 try {
                   final note = docType == 'OTHER'
                       ? otherNameCtrl.text.trim()
                       : null;
                   if (docType == 'OTHER' && (note == null || note.isEmpty)) {
                     if (mounted) {
-                      setState(() => _error = 'Please enter Other document name.');
+                      _setStateIfMounted(() => _error = 'Please enter Other document name.');
                     }
                     return;
                   }
@@ -516,18 +482,18 @@ class _DocumentManagementScreenState
                     studentId: studentIdCtrl.text.trim(),
                     documentType: docType,
                     note: note,
-                    fileName: _fileNameInput,
-                    fileBytes: _fileBytes!,
-                    contentType: _contentType,
+                    fileName: fileNameInput,
+                    fileBytes: fileBytes!,
+                    contentType: contentType,
                   );
                   await _loadDocuments();
                   if (mounted) {
-                    setState(() => _success = 'Document uploaded successfully.');
+                    _setStateIfMounted(() => _success = 'Document uploaded successfully.');
                   }
                 } catch (e) {
-                  if (mounted) setState(() => _error = e.toString());
+                  _setStateIfMounted(() => _error = e.toString());
                 } finally {
-                  if (mounted) setState(() => _loading = false);
+                  _setStateIfMounted(() => _loading = false);
                 }
               },
               child: const Text('Upload'),
@@ -754,132 +720,6 @@ class _DocumentManagementScreenState
     );
   }
 
-  Future<void> _openDocument(AdminDocument doc) async {
-    if (!doc.hasFile) {
-      setState(() => _error = 'No file available for this document.');
-      return;
-    }
-    try {
-      final url = await _repo.getDownloadUrl(doc.id);
-      if (url != null && mounted) {
-        // Open in new browser tab (Flutter Web)
-        html.window.open(url, '_blank');
-      }
-    } catch (e) {
-      setState(() => _error = e.toString());
-    }
-  }
-
-  Future<void> _showDocumentReviewDialog(AdminDocument doc) async {
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Review document'),
-        content: SizedBox(
-          width: 420,
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  doc.studentName ?? 'Student',
-                  style: const TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 16),
-                ),
-                const SizedBox(height: 6),
-                Text('Admission: ${doc.admissionNumber ?? '—'}'),
-                Text('Student ID: ${doc.studentId}'),
-                const SizedBox(height: 8),
-                Text(
-                  'Document: ${doc.documentType.replaceAll('_', ' ')}',
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 4),
-                Text('Status: ${doc.status}'),
-                if (doc.isSynthetic) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    'This line shows a required document type with no submission yet. '
-                    'Use “Upload Document” when a file is ready.',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: AdminColors.textSecondary,
-                      height: 1.35,
-                    ),
-                  ),
-                ],
-                if (doc.combinedComment.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    'Comment: ${doc.combinedComment}',
-                    style: TextStyle(
-                        color: AdminColors.textSecondary, fontSize: 13),
-                  ),
-                ],
-                const SizedBox(height: 16),
-                if (!doc.hasFile)
-                  Text(
-                    'No file attached yet. Upload a file from “Upload Document” or wait for the family to upload.',
-                    style: TextStyle(color: const Color(0xFFEA580C)),
-                  )
-                else if (!_canVerifyInUi(doc) &&
-                    doc.status.toUpperCase() == 'APPROVED')
-                  const Text(
-                    'This document is already verified.',
-                    style: TextStyle(color: AdminColors.success),
-                  )
-                else if (!_canVerifyInUi(doc) &&
-                    doc.status.toUpperCase() == 'REJECTED')
-                  const Text(
-                    'This document was rejected. The family may upload again.',
-                    style: TextStyle(color: AdminColors.danger),
-                  ),
-              ],
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Close'),
-          ),
-          if (doc.hasFile)
-            OutlinedButton.icon(
-              onPressed: () async {
-                await _openDocument(doc);
-              },
-              icon: const Icon(Icons.open_in_new, size: 18),
-              label: const Text('View file'),
-            ),
-          if (_canVerifyInUi(doc)) ...[
-            TextButton(
-              style: TextButton.styleFrom(foregroundColor: AdminColors.danger),
-              onPressed: () {
-                Navigator.of(ctx).pop();
-                _showRejectDialog(doc);
-              },
-              child: const Text('Reject'),
-            ),
-            FilledButton.icon(
-              style: FilledButton.styleFrom(
-                backgroundColor: AdminColors.success,
-                foregroundColor: AdminColors.textOnPrimary,
-              ),
-              onPressed: () async {
-                Navigator.of(ctx).pop();
-                await _verify(doc, true);
-              },
-              icon: const Icon(Icons.check_circle_outline, size: 18),
-              label: const Text('Verify (approve)'),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return AdminScaffold(
@@ -925,10 +765,9 @@ class _DocumentManagementScreenState
                 ),
               ],
             ),
-            if (!_loading)
-              Padding(
-                padding: const EdgeInsets.only(bottom: AdminSpacing.sm),
-                child: AdminFilterCard(
+            Padding(
+              padding: const EdgeInsets.only(bottom: AdminSpacing.sm),
+              child: AdminFilterCard(
                   padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
                   headerGap: 6,
                   onReset: _resetUnifiedFilters,
@@ -1163,8 +1002,8 @@ class _DocumentManagementScreenState
                       );
                     },
                   ),
-                ),
               ),
+            ),
             Expanded(
               child: AdminSurfaceCard(
                 padding: EdgeInsets.zero,
@@ -1184,15 +1023,13 @@ class _DocumentManagementScreenState
                     ),
                     const Divider(height: 1),
                     Expanded(
-                      child: _loading
-                          ? const AdminLoadingPlaceholder()
-                          : TabBarView(
-                              controller: _tabController,
-                              children: [
-                                _buildAllDocumentsTab(),
-                                _buildRequirementsTab(),
-                              ],
-                            ),
+                      child: TabBarView(
+                        controller: _tabController,
+                        children: [
+                          _buildAllDocumentsTab(),
+                          _buildRequirementsTab(),
+                        ],
+                      ),
                     ),
                   ],
                 ),
@@ -1207,6 +1044,17 @@ class _DocumentManagementScreenState
   // ── Tab 0: All Documents ────────────────────────────────────────────────────
 
   Widget _buildAllDocumentsTab() {
+    if (_loading && _studentRows.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.fromLTRB(
+          AdminSpacing.md,
+          AdminSpacing.sm,
+          AdminSpacing.md,
+          AdminSpacing.md,
+        ),
+        child: AdminLoadingPlaceholder(message: 'Loading documents…'),
+      );
+    }
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         AdminSpacing.md,
@@ -1332,6 +1180,17 @@ class _DocumentManagementScreenState
   // ── Tab 1: Requirements ─────────────────────────────────────────────────────
 
   Widget _buildRequirementsTab() {
+    if (_loading && _requirements.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.fromLTRB(
+          AdminSpacing.md,
+          AdminSpacing.md,
+          AdminSpacing.md,
+          AdminSpacing.md,
+        ),
+        child: AdminLoadingPlaceholder(message: 'Loading requirements…'),
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1421,7 +1280,8 @@ class _DocumentManagementScreenState
     try {
       final dt = DateTime.parse(iso).toLocal();
       return '${dt.day}/${dt.month}/${dt.year}';
-    } catch (_) {
+    } catch (e, stack) {
+      CrashReporter.log(e, stack);
       return iso;
     }
   }

@@ -316,14 +316,13 @@ class _HeroChip extends StatelessWidget {
                 : AdminColors.textOnPrimary.withValues(alpha: 0.65),
           ),
           const SizedBox(width: 8),
-          Flexible(
-            child: Text(
-              label,
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: AdminColors.textOnPrimary.withValues(alpha: 0.95),
-                    fontWeight: FontWeight.w600,
-                  ),
-            ),
+          Text(
+            label,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: AdminColors.textOnPrimary.withValues(alpha: 0.95),
+                  fontWeight: FontWeight.w600,
+                ),
           ),
         ],
       ),

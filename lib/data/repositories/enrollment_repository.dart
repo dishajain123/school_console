@@ -1,62 +1,38 @@
 import '../../core/constants/api_constants.dart';
 import '../../core/network/dio_client.dart';
+import 'masters_repository.dart';
 
 class EnrollmentRepository {
-  EnrollmentRepository(this._client);
+  EnrollmentRepository(this._client) : _masters = MastersRepository(_client);
 
   final DioClient _client;
+  final MastersRepository _masters;
   static const int _roleProfilesMaxPageSize = 100;
 
   Future<List<Map<String, dynamic>>> listAcademicYears({
     String? schoolId,
-  }) async {
-    final resp = await _client.dio.get<Map<String, dynamic>>(
-      ApiConstants.academicYears,
-      queryParameters: {
-        if (schoolId != null && schoolId.isNotEmpty) 'school_id': schoolId,
-      },
-    );
-    return ((resp.data?['items'] as List?) ?? [])
-        .map((e) => Map<String, dynamic>.from(e as Map))
-        .toList();
-  }
+  }) =>
+      _masters.listAcademicYears(schoolId: schoolId);
 
   Future<List<Map<String, dynamic>>> listStandards({
     String? schoolId,
     String? academicYearId,
-  }) async {
-    final resp = await _client.dio.get<Map<String, dynamic>>(
-      ApiConstants.standards,
-      queryParameters: {
-        if (schoolId != null && schoolId.isNotEmpty) 'school_id': schoolId,
-        if (academicYearId != null && academicYearId.isNotEmpty)
-          'academic_year_id': academicYearId,
-      },
-    );
-    return ((resp.data?['items'] as List?) ?? [])
-        .map((e) => Map<String, dynamic>.from(e as Map))
-        .toList();
-  }
+  }) =>
+      _masters.listStandards(
+        schoolId: schoolId,
+        academicYearId: academicYearId,
+      );
 
   Future<List<Map<String, dynamic>>> listSections({
     String? schoolId,
     String? standardId,
     String? academicYearId,
-  }) async {
-    final resp = await _client.dio.get<Map<String, dynamic>>(
-      ApiConstants.sections,
-      queryParameters: {
-        if (schoolId != null && schoolId.isNotEmpty) 'school_id': schoolId,
-        if (standardId != null && standardId.isNotEmpty)
-          'standard_id': standardId,
-        if (academicYearId != null && academicYearId.isNotEmpty)
-          'academic_year_id': academicYearId,
-      },
-    );
-    return ((resp.data?['items'] as List?) ?? [])
-        .map((e) => Map<String, dynamic>.from(e as Map))
-        .toList();
-  }
+  }) =>
+      _masters.listSections(
+        schoolId: schoolId,
+        standardId: standardId,
+        academicYearId: academicYearId,
+      );
 
   Future<Map<String, dynamic>> getRoster({
     required String standardId,

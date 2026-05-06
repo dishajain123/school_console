@@ -1,13 +1,14 @@
 // lib/presentation/academics/screens/academic_structure_screen.dart  [Admin Console]
 // Phase 3: Standards (classes) and Sections management.
 // Only PRINCIPAL and STAFF_ADMIN can create/edit; STAFF with settings:manage can view.
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:dio/dio.dart';
 
-import '../../../core/constants/api_constants.dart';
-import '../../../core/network/dio_client.dart';
 import '../../../core/theme/admin_colors.dart';
+import '../../../data/repositories/academic_repository.dart';
+import '../../../domains/providers/repository_providers.dart';
+import '../../../domains/providers/academic_screen_providers.dart';
 import '../../../domains/providers/auth_provider.dart';
 import '../../common/layout/admin_scaffold.dart';
 import '../../common/widgets/admin_layout/admin_empty_state.dart';
@@ -68,232 +69,20 @@ class _ClassAssignment {
   final String subjectName;
   final String? teacherName;
   final String employeeCode;
-}
 
-// ── Repository ────────────────────────────────────────────────────────────────
-
-class _AcademicStructureRepository {
-  _AcademicStructureRepository(this._dio);
-  final DioClient _dio;
-
-  Future<List<_Standard>> listStandards({String? academicYearId}) async {
-    final resp = await _dio.dio.get<Map<String, dynamic>>(
-      ApiConstants.standards,
-      queryParameters: {
-        if (academicYearId != null) 'academic_year_id': academicYearId,
-      },
+  factory _ClassAssignment.fromAssignmentMap(Map<String, dynamic> m) {
+    final teacher = Map<String, dynamic>.from(
+      (m['teacher'] as Map?)?.cast<String, dynamic>() ?? {},
     );
-    final items = (resp.data?['items'] as List?) ?? [];
-    return items.map((e) {
-      final m = e as Map;
-      return _Standard(
-        id: m['id'].toString(),
-        name: m['name'].toString(),
-        level: (m['level'] as num?)?.toInt() ?? 0,
-        sectionCount: (m['section_count'] as num?)?.toInt() ?? 0,
-      );
-    }).toList();
-  }
-
-  Future<List<_Section>> listSections(
-    String standardId, {
-    String? academicYearId,
-  }) async {
-    final resp = await _dio.dio.get<Map<String, dynamic>>(
-      ApiConstants.sections,
-      queryParameters: {
-        'standard_id': standardId,
-        if (academicYearId != null) 'academic_year_id': academicYearId,
-      },
+    final subject = Map<String, dynamic>.from(
+      (m['subject'] as Map?)?.cast<String, dynamic>() ?? {},
     );
-    final items = (resp.data?['items'] as List?) ?? [];
-    return items.map((e) {
-      final m = e as Map;
-      return _Section(
-        id: m['id'].toString(),
-        name: m['name'].toString(),
-        capacity: (m['capacity'] as num?)?.toInt(),
-        standardId: standardId,
-      );
-    }).toList();
-  }
-
-  Future<void> createStandard({
-    required String name,
-    required int level,
-    required String academicYearId,
-  }) async {
-    await _dio.dio.post<dynamic>(
-      ApiConstants.standards,
-      data: {
-        'name': name.trim(),
-        'level': level,
-        'academic_year_id': academicYearId,
-      },
+    return _ClassAssignment(
+      section: m['section']?.toString() ?? '',
+      subjectName: subject['name']?.toString() ?? '',
+      teacherName: teacher['full_name']?.toString(),
+      employeeCode: teacher['employee_code']?.toString() ?? '',
     );
-  }
-  Future<void> updateStandard({
-    required String standardId,
-    required String name,
-    required int level,
-    required String academicYearId,
-  }) async {
-    await _dio.dio.patch<dynamic>(
-      ApiConstants.standardById(standardId),
-      data: {
-        'name': name.trim(),
-        'level': level,
-        'academic_year_id': academicYearId,
-      },
-    );
-  }
-
-  Future<void> deleteStandard(String standardId) async {
-    await _dio.dio.delete<dynamic>(ApiConstants.standardById(standardId));
-  }
-
-  Future<void> createSection({
-    required String standardId,
-    required String academicYearId,
-    required String sectionName,
-    int? capacity,
-  }) async {
-    await _dio.dio.post<dynamic>(
-      ApiConstants.sections,
-      data: {
-        'standard_id': standardId,
-        'academic_year_id': academicYearId,
-        'name': sectionName.trim().toUpperCase(),
-        if (capacity != null) 'capacity': capacity,
-      },
-    );
-  }
-  Future<void> updateSection({
-    required String sectionId,
-    required String sectionName,
-    int? capacity,
-  }) async {
-    await _dio.dio.patch<dynamic>(
-      ApiConstants.sectionById(sectionId),
-      data: {
-        'name': sectionName.trim().toUpperCase(),
-        'capacity': capacity,
-      },
-    );
-  }
-
-  Future<void> deleteSection(String sectionId) async {
-    await _dio.dio.delete<dynamic>(ApiConstants.sectionById(sectionId));
-  }
-
-  Future<List<Map<String, dynamic>>> listAcademicYears() async {
-    final resp =
-        await _dio.dio.get<Map<String, dynamic>>(ApiConstants.academicYears);
-    final items = (resp.data?['items'] as List?) ?? [];
-    return items.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-  }
-
-  Future<Map<String, dynamic>> createAcademicYear({
-    required String name,
-    required DateTime startDate,
-    required DateTime endDate,
-  }) async {
-    final resp = await _dio.dio.post<Map<String, dynamic>>(
-      ApiConstants.academicYears,
-      data: {
-        'name': name.trim(),
-        'start_date': _fmtDate(startDate),
-        'end_date': _fmtDate(endDate),
-      },
-    );
-    return Map<String, dynamic>.from(resp.data ?? {});
-  }
-
-  static String _fmtDate(DateTime d) {
-    final y = d.year.toString().padLeft(4, '0');
-    final m = d.month.toString().padLeft(2, '0');
-    final day = d.day.toString().padLeft(2, '0');
-    return '$y-$m-$day';
-  }
-
-  Future<List<_Subject>> listSubjects({String? standardId}) async {
-    final resp = await _dio.dio.get<Map<String, dynamic>>(
-      ApiConstants.subjects,
-      queryParameters: {if (standardId != null) 'standard_id': standardId},
-    );
-    final items = (resp.data?['items'] as List?) ?? [];
-    return items.map((e) {
-      final m = e as Map;
-      return _Subject(
-        id: m['id'].toString(),
-        name: m['name']?.toString() ?? '',
-        code: m['code']?.toString() ?? '',
-        standardId: m['standard_id']?.toString(),
-      );
-    }).toList();
-  }
-
-  Future<void> createSubject({
-    required String standardId,
-    required String name,
-    required String code,
-  }) async {
-    await _dio.dio.post<dynamic>(
-      ApiConstants.subjects,
-      data: {
-        'standard_id': standardId,
-        'name': name.trim(),
-        'code': code.trim().toUpperCase(),
-      },
-    );
-  }
-  Future<void> updateSubject({
-    required String subjectId,
-    required String standardId,
-    required String name,
-    required String code,
-  }) async {
-    await _dio.dio.patch<dynamic>(
-      ApiConstants.subjectById(subjectId),
-      data: {
-        'standard_id': standardId,
-        'name': name.trim(),
-        'code': code.trim().toUpperCase(),
-      },
-    );
-  }
-
-  Future<void> deleteSubject(String subjectId) async {
-    await _dio.dio.delete<dynamic>(ApiConstants.subjectById(subjectId));
-  }
-
-  Future<List<_ClassAssignment>> listTeacherAssignmentsForStandard({
-    required String standardId,
-    required String academicYearId,
-  }) async {
-    final resp = await _dio.dio.get<Map<String, dynamic>>(
-      ApiConstants.teacherAssignments,
-      queryParameters: {
-        'standard_id': standardId,
-        'academic_year_id': academicYearId,
-      },
-    );
-    final items = (resp.data?['items'] as List?) ?? [];
-    return items.map((e) {
-      final m = Map<String, dynamic>.from(e as Map);
-      final teacher = Map<String, dynamic>.from(
-        (m['teacher'] as Map?)?.cast<String, dynamic>() ?? {},
-      );
-      final subject = Map<String, dynamic>.from(
-        (m['subject'] as Map?)?.cast<String, dynamic>() ?? {},
-      );
-      return _ClassAssignment(
-        section: m['section']?.toString() ?? '',
-        subjectName: subject['name']?.toString() ?? '',
-        teacherName: teacher['full_name']?.toString(),
-        employeeCode: teacher['employee_code']?.toString() ?? '',
-      );
-    }).toList();
   }
 }
 
@@ -309,7 +98,11 @@ class AcademicStructureScreen extends ConsumerStatefulWidget {
 
 class _AcademicStructureScreenState
     extends ConsumerState<AcademicStructureScreen> {
-  late final _AcademicStructureRepository _repo;
+  AcademicRepository get _repo => ref.read(academicRepositoryProvider);
+
+  String? get _schoolId =>
+      ref.read(authControllerProvider).valueOrNull?.schoolId;
+
   List<Map<String, dynamic>> _years = [];
   String? _selectedYearId;
   List<_Standard> _standards = [];
@@ -323,15 +116,18 @@ class _AcademicStructureScreenState
   @override
   void initState() {
     super.initState();
-    final dio = ref.read(dioClientProvider);
-    _repo = _AcademicStructureRepository(dio);
-    _loadYears();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _loadYears();
+    });
   }
 
   Future<void> _loadYears() async {
     setState(() => _loading = true);
     try {
-      final years = await _repo.listAcademicYears();
+      ref.invalidate(academicStructureYearsProvider);
+      final years =
+          await ref.read(academicStructureYearsProvider.future);
       final active = years.firstWhere(
         (y) => y['is_active'] == true,
         orElse: () => years.isNotEmpty ? years.first : {},
@@ -432,12 +228,17 @@ class _AcademicStructureScreenState
                 }
                 Navigator.of(ctx).pop();
                 try {
-                  final created = await _repo.createAcademicYear(
+                  final sid = _schoolId;
+                  if (sid == null || sid.isEmpty) {
+                    throw Exception('School context is missing');
+                  }
+                  final created = await _repo.createAcademicYearReturningMap(
+                    schoolId: sid,
                     name: nameCtrl.text.trim(),
                     startDate: startDate!,
                     endDate: endDate!,
                   );
-                  final years = await _repo.listAcademicYears();
+                  final years = await _repo.listAcademicYearMaps(schoolId: sid);
                   final createdId = created['id']?.toString();
                   setState(() {
                     _years = years;
@@ -473,9 +274,20 @@ class _AcademicStructureScreenState
     if (_selectedYearId == null) return;
     setState(() => _loading = true);
     try {
-      final standards = await _repo.listStandards(
+      final maps = await _repo.listStandardsMaps(
+        schoolId: _schoolId,
         academicYearId: _selectedYearId,
       );
+      final standards = maps
+          .map(
+            (m) => _Standard(
+              id: m['id'].toString(),
+              name: m['name'].toString(),
+              level: (m['level'] as num?)?.toInt() ?? 0,
+              sectionCount: (m['section_count'] as num?)?.toInt() ?? 0,
+            ),
+          )
+          .toList();
       setState(() {
         _standards = standards;
         _selectedStandard = null;
@@ -498,17 +310,45 @@ class _AcademicStructureScreenState
       _loading = true;
     });
     try {
-      final sections = await _repo.listSections(
-        standard.id,
+      final sectionMaps = await _repo.listSectionsMaps(
+        schoolId: _schoolId,
+        standardId: standard.id,
         academicYearId: _selectedYearId,
       );
-      final subjects = await _repo.listSubjects(standardId: standard.id);
+      final sections = sectionMaps
+          .map(
+            (m) => _Section(
+              id: m['id'].toString(),
+              name: m['name'].toString(),
+              capacity: (m['capacity'] as num?)?.toInt(),
+              standardId: standard.id,
+            ),
+          )
+          .toList();
+      final subjectMaps = await _repo.listSubjectsMaps(
+        schoolId: _schoolId,
+        standardId: standard.id,
+      );
+      final subjects = subjectMaps
+          .map(
+            (m) => _Subject(
+              id: m['id'].toString(),
+              name: m['name']?.toString() ?? '',
+              code: m['code']?.toString() ?? '',
+              standardId: m['standard_id']?.toString(),
+            ),
+          )
+          .toList();
       List<_ClassAssignment> assignments = const [];
       try {
-        assignments = await _repo.listTeacherAssignmentsForStandard(
+        final assignMaps = await _repo.listTeacherAssignmentsForStandardMaps(
+          schoolId: _schoolId,
           standardId: standard.id,
           academicYearId: _selectedYearId!,
         );
+        assignments = assignMaps
+            .map(_ClassAssignment.fromAssignmentMap)
+            .toList();
       } on DioException catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -569,7 +409,7 @@ class _AcademicStructureScreenState
               Navigator.of(ctx).pop();
               if (_selectedStandard == null) return;
               try {
-                await _repo.createSubject(
+                await _repo.createSubjectScoped(
                   standardId: _selectedStandard!.id,
                   name: nameCtrl.text.trim(),
                   code: codeCtrl.text.trim(),
@@ -637,8 +477,9 @@ class _AcademicStructureScreenState
                   validator: (v) {
                     final n = int.tryParse((v ?? '').trim());
                     if (n == null) return 'Enter a valid number';
-                    if (n < 1 || n > 12)
+                    if (n < 1 || n > 12) {
                       return 'Level must be between 1 and 12';
+                    }
                     return null;
                   },
                 ),
@@ -667,7 +508,12 @@ class _AcademicStructureScreenState
                       }
                       setDialog(() => submitting = true);
                       try {
+                        final sid = _schoolId;
+                        if (sid == null || sid.isEmpty) {
+                          throw Exception('School context is missing');
+                        }
                         await _repo.createStandard(
+                          schoolId: sid,
                           name: nameCtrl.text.trim(),
                           level: int.parse(levelCtrl.text.trim()),
                           academicYearId: _selectedYearId!,
@@ -740,22 +586,29 @@ class _AcademicStructureScreenState
               Navigator.of(ctx).pop();
               if (_selectedYearId == null) return;
               try {
+                final sid = _schoolId;
+                if (sid == null || sid.isEmpty) {
+                  throw Exception('School context is missing');
+                }
                 await _repo.createSection(
+                  schoolId: sid,
                   standardId: _selectedStandard!.id,
                   academicYearId: _selectedYearId!,
                   sectionName: nameCtrl.text.trim(),
                   capacity: int.tryParse(capacityCtrl.text.trim()),
                 );
                 await _loadSections(_selectedStandard!);
-                if (mounted)
+                if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Section created')),
                   );
+                }
               } catch (e) {
-                if (mounted)
+                if (mounted) {
                   ScaffoldMessenger.of(
                     context,
                   ).showSnackBar(SnackBar(content: Text(e.toString())));
+                }
               }
             },
             child: const Text('Create'),
@@ -797,7 +650,7 @@ class _AcademicStructureScreenState
               Navigator.of(ctx).pop();
               if (_selectedYearId == null) return;
               try {
-                await _repo.updateStandard(
+                await _repo.patchStandard(
                   standardId: standard.id,
                   name: nameCtrl.text.trim(),
                   level: int.parse(levelCtrl.text.trim()),
@@ -896,9 +749,9 @@ class _AcademicStructureScreenState
             onPressed: () async {
               Navigator.of(ctx).pop();
               try {
-                await _repo.updateSection(
+                await _repo.patchSection(
                   sectionId: section.id,
-                  sectionName: nameCtrl.text,
+                  sectionName: nameCtrl.text.trim(),
                   capacity: int.tryParse(capCtrl.text.trim()),
                 );
                 if (_selectedStandard != null) {
@@ -996,11 +849,11 @@ class _AcademicStructureScreenState
               Navigator.of(ctx).pop();
               if (_selectedStandard == null) return;
               try {
-                await _repo.updateSubject(
+                await _repo.patchSubject(
                   subjectId: subject.id,
                   standardId: _selectedStandard!.id,
-                  name: nameCtrl.text,
-                  code: codeCtrl.text,
+                  name: nameCtrl.text.trim(),
+                  code: codeCtrl.text.trim(),
                 );
                 await _loadSections(_selectedStandard!);
                 if (mounted) {
@@ -1067,6 +920,7 @@ class _AcademicStructureScreenState
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    ref.watch(academicStructureYearsProvider);
 
     return AdminScaffold(
       title: 'Class setup',

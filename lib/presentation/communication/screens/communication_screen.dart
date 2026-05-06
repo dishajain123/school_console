@@ -1,152 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/constants/api_constants.dart';
-import '../../../core/network/dio_client.dart';
+import '../../../core/logging/crash_reporter.dart';
 import '../../../core/theme/admin_colors.dart';
-import '../../../domains/providers/active_year_provider.dart';
+import '../../../data/models/communication/admin_announcement_models.dart';
+import '../../../domains/providers/announcement_repository_provider.dart';
 import '../../../domains/providers/auth_provider.dart';
+import '../../../domains/providers/communication_providers.dart';
 import '../../common/layout/admin_scaffold.dart';
 import '../../common/widgets/admin_layout/admin_empty_state.dart';
 import '../../common/widgets/admin_layout/admin_filter_card.dart';
 import '../../common/widgets/admin_layout/admin_loading_placeholder.dart';
 import '../../common/widgets/admin_layout/admin_page_header.dart';
 import '../../common/widgets/admin_layout/admin_spacing.dart';
-
-class _Announcement {
-  const _Announcement({
-    required this.id,
-    required this.title,
-    required this.body,
-    required this.type,
-    required this.isActive,
-    required this.createdAt,
-    this.targetRole,
-    this.targetStandardId,
-    this.attachmentKey,
-  });
-
-  final String id;
-  final String title;
-  final String body;
-  final String type;
-  final bool isActive;
-  final String createdAt;
-  final String? targetRole;
-  final String? targetStandardId;
-  final String? attachmentKey;
-
-  factory _Announcement.fromJson(Map<String, dynamic> j) => _Announcement(
-        id: j['id']?.toString() ?? '',
-        title: j['title']?.toString() ?? '',
-        body: j['body']?.toString() ?? '',
-        type: j['type']?.toString() ?? 'GENERAL',
-        isActive: j['is_active'] != false,
-        createdAt: j['created_at']?.toString() ?? '',
-        targetRole: j['target_role'] as String?,
-        targetStandardId: j['target_standard_id']?.toString(),
-        attachmentKey: j['attachment_key'] as String?,
-      );
-
-  Color get typeColor {
-    switch (type.toUpperCase()) {
-      case 'URGENT':
-        return AdminColors.danger;
-      case 'FEE':
-        return const Color(0xFFEA580C);
-      case 'EXAM':
-        return AdminColors.primaryAction;
-      case 'EVENT':
-        return const Color(0xFF7C3AED);
-      default:
-        return AdminColors.success;
-    }
-  }
-}
-
-class _StandardOption {
-  const _StandardOption({required this.id, required this.name});
-  final String id;
-  final String name;
-}
-
-class _CommRepository {
-  _CommRepository(this._dio);
-  final DioClient _dio;
-
-  Future<List<_Announcement>> listAnnouncements(
-      {bool includeInactive = true}) async {
-    final r = await _dio.dio.get<Map<String, dynamic>>(
-      ApiConstants.announcements,
-      queryParameters: {'include_inactive': includeInactive},
-    );
-    return ((r.data?['items'] as List?) ?? [])
-        .map((e) => _Announcement.fromJson(Map<String, dynamic>.from(e as Map)))
-        .toList();
-  }
-
-  Future<_Announcement> createAnnouncement({
-    required String title,
-    required String body,
-    required String type,
-    String? targetRole,
-    String? targetStandardId,
-    String? attachmentKey,
-  }) async {
-    final r = await _dio.dio.post<Map<String, dynamic>>(
-      ApiConstants.announcements,
-      data: {
-        'title': title,
-        'body': body,
-        'type': type,
-        if (targetRole != null) 'target_role': targetRole,
-        if (targetStandardId != null) 'target_standard_id': targetStandardId,
-        if (attachmentKey != null && attachmentKey.trim().isNotEmpty)
-          'attachment_key': attachmentKey.trim(),
-      },
-    );
-    return _Announcement.fromJson(r.data ?? {});
-  }
-
-  Future<void> updateAnnouncement(String id, Map<String, dynamic> payload) async {
-    await _dio.dio
-        .patch<dynamic>(ApiConstants.announcementById(id), data: payload);
-  }
-
-  Future<void> deleteAnnouncement(String id) async {
-    await _dio.dio.delete<dynamic>(ApiConstants.announcementById(id));
-  }
-
-  Future<List<Map<String, dynamic>>> listYears() async {
-    final r =
-        await _dio.dio.get<Map<String, dynamic>>(ApiConstants.academicYears);
-    return ((r.data?['items'] as List?) ?? [])
-        .map((e) => Map<String, dynamic>.from(e as Map))
-        .toList();
-  }
-
-  Future<List<_StandardOption>> listStandards({String? academicYearId}) async {
-    final r = await _dio.dio.get<Map<String, dynamic>>(
-      ApiConstants.standards,
-      queryParameters: {
-        if (academicYearId != null && academicYearId.isNotEmpty)
-          'academic_year_id': academicYearId,
-      },
-    );
-    final items = ((r.data?['items'] as List?) ?? [])
-        .map((e) => Map<String, dynamic>.from(e as Map))
-        .toList();
-    return items
-        .map(
-          (m) => _StandardOption(
-            id: m['id']?.toString() ?? '',
-            name: m['name']?.toString() ?? '-',
-          ),
-        )
-        .where((s) => s.id.isNotEmpty)
-        .toList();
-  }
-}
 
 class CommunicationScreen extends ConsumerStatefulWidget {
   const CommunicationScreen({super.key});
@@ -157,11 +23,6 @@ class CommunicationScreen extends ConsumerStatefulWidget {
 }
 
 class _CommunicationScreenState extends ConsumerState<CommunicationScreen> {
-  late final _CommRepository _repo;
-
-  List<_Announcement> _announcements = [];
-  List<_StandardOption> _standards = [];
-  bool _loading = false;
   String? _error;
   String? _success;
   String _visibilityFilter = 'ACTIVE';
@@ -174,46 +35,10 @@ class _CommunicationScreenState extends ConsumerState<CommunicationScreen> {
     });
   }
 
-  @override
-  void initState() {
-    super.initState();
-    _repo = _CommRepository(ref.read(dioClientProvider));
-    _loadAnnouncements();
-    _loadStandards();
-  }
-
-  Future<void> _loadStandards() async {
-    try {
-      String? yearId = ref.read(activeAcademicYearProvider);
-      if (yearId == null) {
-        final years = await _repo.listYears();
-        final active = years.firstWhere(
-          (y) => y['is_active'] == true,
-          orElse: () => years.isNotEmpty ? years.first : <String, dynamic>{},
-        );
-        yearId = active['id']?.toString();
-      }
-      final list = await _repo.listStandards(academicYearId: yearId);
-      if (mounted) setState(() => _standards = list);
-    } catch (_) {}
-  }
-
-  Future<void> _loadAnnouncements() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    try {
-      final list = await _repo.listAnnouncements();
-      setState(() => _announcements = list);
-    } catch (e) {
-      setState(() => _error = e.toString());
-    } finally {
-      setState(() => _loading = false);
-    }
-  }
-
-  Future<void> _showCreateAnnouncementDialog({_Announcement? existing}) async {
+  Future<void> _showCreateAnnouncementDialog({
+    AdminAnnouncementItem? existing,
+    required List<AdminStandardOption> standards,
+  }) async {
     final titleCtrl = TextEditingController(text: existing?.title ?? '');
     final bodyCtrl = TextEditingController(text: existing?.body ?? '');
     String selectedType = existing?.type ?? 'GENERAL';
@@ -284,7 +109,7 @@ class _CommunicationScreenState extends ConsumerState<CommunicationScreen> {
                   items: [
                     const DropdownMenuItem<String?>(
                         value: null, child: Text('All Classes')),
-                    ..._standards.map(
+                    ...standards.map(
                       (s) =>
                           DropdownMenuItem<String?>(value: s.id, child: Text(s.name)),
                     ),
@@ -311,9 +136,10 @@ class _CommunicationScreenState extends ConsumerState<CommunicationScreen> {
                   return;
                 }
                 Navigator.of(ctx).pop();
+                final repo = ref.read(announcementRepositoryProvider);
                 try {
                   if (existing == null) {
-                    final created = await _repo.createAnnouncement(
+                    await repo.createAnnouncement(
                       title: titleCtrl.text.trim(),
                       body: bodyCtrl.text.trim(),
                       type: selectedType,
@@ -324,13 +150,11 @@ class _CommunicationScreenState extends ConsumerState<CommunicationScreen> {
                           : attachmentCtrl.text.trim(),
                     );
                     if (mounted) {
-                      setState(() {
-                        _announcements = [created, ..._announcements];
-                        _success = 'Announcement posted.';
-                      });
+                      ref.invalidate(announcementsListProvider);
+                      setState(() => _success = 'Announcement posted.');
                     }
                   } else {
-                    await _repo.updateAnnouncement(existing.id, {
+                    await repo.updateAnnouncement(existing.id, {
                       'title': titleCtrl.text.trim(),
                       'body': bodyCtrl.text.trim(),
                       'type': selectedType,
@@ -341,30 +165,10 @@ class _CommunicationScreenState extends ConsumerState<CommunicationScreen> {
                           : attachmentCtrl.text.trim(),
                     });
                     if (mounted) {
-                      setState(() {
-                        _announcements = _announcements
-                            .map((a) => a.id == existing.id
-                                ? _Announcement(
-                                    id: existing.id,
-                                    title: titleCtrl.text.trim(),
-                                    body: bodyCtrl.text.trim(),
-                                    type: selectedType,
-                                    isActive: existing.isActive,
-                                    createdAt: existing.createdAt,
-                                    targetRole: selectedRole,
-                                    targetStandardId: selectedStandardId,
-                                    attachmentKey:
-                                        attachmentCtrl.text.trim().isEmpty
-                                            ? null
-                                            : attachmentCtrl.text.trim(),
-                                  )
-                                : a)
-                            .toList();
-                        _success = 'Announcement updated.';
-                      });
+                      ref.invalidate(announcementsListProvider);
+                      setState(() => _success = 'Announcement updated.');
                     }
                   }
-                  await _loadAnnouncements();
                 } catch (e) {
                   if (mounted) setState(() => _error = e.toString());
                 }
@@ -382,14 +186,18 @@ class _CommunicationScreenState extends ConsumerState<CommunicationScreen> {
       final dt = DateTime.parse(iso).toLocal();
       return '${dt.day}/${dt.month}/${dt.year} '
           '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-    } catch (_) {
+    } catch (e, stack) {
+      CrashReporter.log(e, stack);
       return iso;
     }
   }
 
-  String _standardLabel(String? standardId) {
+  String _standardLabel(
+    List<AdminStandardOption> standards,
+    String? standardId,
+  ) {
     if (standardId == null || standardId.isEmpty) return 'All Classes';
-    for (final s in _standards) {
+    for (final s in standards) {
       if (s.id == standardId) return s.name;
     }
     return standardId;
@@ -398,6 +206,9 @@ class _CommunicationScreenState extends ConsumerState<CommunicationScreen> {
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(authControllerProvider).valueOrNull;
+    final announcementsAsync = ref.watch(announcementsListProvider);
+    final standards =
+        ref.watch(announcementStandardsProvider).valueOrNull ?? [];
     final canAnnounce = user != null &&
         (user.role.toUpperCase() == 'PRINCIPAL' ||
             user.role.toUpperCase() == 'STAFF_ADMIN' ||
@@ -434,12 +245,23 @@ class _CommunicationScreenState extends ConsumerState<CommunicationScreen> {
                 ),
               ),
             Expanded(
-              child: _loading
-                  ? const AdminLoadingPlaceholder(
-                      message: 'Loading announcements…',
-                      height: 320,
-                    )
-                  : _buildAnnouncements(canAnnounce),
+              child: announcementsAsync.when(
+                loading: () => const AdminLoadingPlaceholder(
+                  message: 'Loading announcements…',
+                  height: 320,
+                ),
+                error: (e, _) => Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(AdminSpacing.lg),
+                    child: SelectableText(
+                      e.toString(),
+                      style: const TextStyle(color: AdminColors.danger),
+                    ),
+                  ),
+                ),
+                data: (announcements) =>
+                    _buildAnnouncements(canAnnounce, announcements, standards),
+              ),
             ),
           ],
         ),
@@ -447,8 +269,12 @@ class _CommunicationScreenState extends ConsumerState<CommunicationScreen> {
     );
   }
 
-  Widget _buildAnnouncements(bool canCreate) {
-    final filtered = _announcements.where((a) {
+  Widget _buildAnnouncements(
+    bool canCreate,
+    List<AdminAnnouncementItem> announcements,
+    List<AdminStandardOption> standards,
+  ) {
+    final filtered = announcements.where((a) {
       if (_visibilityFilter == 'ACTIVE') return a.isActive;
       if (_visibilityFilter == 'DELETED') return !a.isActive;
       return true;
@@ -488,14 +314,16 @@ class _CommunicationScreenState extends ConsumerState<CommunicationScreen> {
               OutlinedButton.icon(
                 icon: const Icon(Icons.refresh, size: 18),
                 label: const Text('Refresh'),
-                onPressed: _loadAnnouncements,
+                onPressed: () => ref.invalidate(announcementsListProvider),
               ),
               if (canCreate) ...[
                 const SizedBox(width: AdminSpacing.xs),
                 FilledButton.icon(
                   icon: const Icon(Icons.add, size: 18),
                   label: const Text('New announcement'),
-                  onPressed: () => _showCreateAnnouncementDialog(),
+                  onPressed: () => _showCreateAnnouncementDialog(
+                    standards: standards,
+                  ),
                 ),
               ],
             ],
@@ -513,7 +341,7 @@ class _CommunicationScreenState extends ConsumerState<CommunicationScreen> {
           Expanded(
             child: ListView.separated(
               itemCount: filtered.length,
-              separatorBuilder: (_, __) =>
+              separatorBuilder: (_, ignored) =>
                   const Divider(height: 1, color: AdminColors.border),
               itemBuilder: (context, i) {
                 final a = filtered[i];
@@ -570,7 +398,7 @@ class _CommunicationScreenState extends ConsumerState<CommunicationScreen> {
                       ),
                       if (a.targetRole != null || a.targetStandardId != null)
                         Text(
-                          'Target: ${a.targetRole ?? 'ALL'} | Class: ${_standardLabel(a.targetStandardId)}',
+                          'Target: ${a.targetRole ?? 'ALL'} | Class: ${_standardLabel(standards, a.targetStandardId)}',
                           style: const TextStyle(
                             fontSize: 11,
                             color: AdminColors.primaryAction,
@@ -589,7 +417,10 @@ class _CommunicationScreenState extends ConsumerState<CommunicationScreen> {
                       ? PopupMenuButton<String>(
                           onSelected: (value) async {
                             if (value == 'edit') {
-                              _showCreateAnnouncementDialog(existing: a);
+                              _showCreateAnnouncementDialog(
+                                existing: a,
+                                standards: standards,
+                              );
                               return;
                             }
                             if (value == 'delete') {
@@ -622,8 +453,10 @@ class _CommunicationScreenState extends ConsumerState<CommunicationScreen> {
                                   false;
                               if (!ok || !mounted) return;
                               try {
-                                await _repo.deleteAnnouncement(a.id);
-                                await _loadAnnouncements();
+                                await ref
+                                    .read(announcementRepositoryProvider)
+                                    .deleteAnnouncement(a.id);
+                                ref.invalidate(announcementsListProvider);
                                 if (mounted) {
                                   setState(() => _success = 'Announcement deleted.');
                                 }

@@ -19,13 +19,12 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:dio/dio.dart';
 
-import '../../../core/constants/api_constants.dart';
-import '../../../core/network/dio_client.dart';
 import '../../../core/theme/admin_colors.dart';
+import '../../../data/repositories/teacher_assignments_repository.dart';
 import '../../../domains/providers/active_year_provider.dart';
 import '../../../domains/providers/auth_provider.dart';
+import '../../../domains/providers/teacher_assignments_repository_provider.dart';
 import '../../common/layout/admin_scaffold.dart';
 import '../../common/widgets/admin_layout/admin_empty_state.dart';
 import '../../common/widgets/admin_layout/admin_filter_card.dart';
@@ -165,363 +164,70 @@ class _LeaveRequestItem {
   }
 }
 
-// ── Repository ────────────────────────────────────────────────────────────────
+// Maps [TeacherAssignmentsRepository] payloads to UI models.
 
-class _TeacherAssignmentRepository {
-  _TeacherAssignmentRepository(this._dio);
-  final DioClient _dio;
+_Teacher _teacherFromRoleProfileMap(Map<String, dynamic> m) {
+  final teacherId = m['teacher_id']?.toString() ?? '';
+  final userId = m['user_id']?.toString() ?? '';
+  final selectionId = teacherId.isNotEmpty ? teacherId : 'user:$userId';
+  final identifier =
+      m['employee_id']?.toString() ?? m['identifier']?.toString() ?? '';
+  return _Teacher(
+    id: selectionId,
+    userId: userId,
+    hasProfile: teacherId.isNotEmpty,
+    name: m['full_name']?.toString() ?? '',
+    employeeCode: identifier,
+    email: m['email']?.toString() ?? '',
+    phone: m['phone']?.toString() ?? '',
+  );
+}
 
-  Future<T> _withNetworkGuard<T>(Future<T> Function() action) async {
-    try {
-      return await action();
-    } on DioException catch (e) {
-      final isNetwork =
-          e.type == DioExceptionType.connectionError ||
-          e.type == DioExceptionType.connectionTimeout ||
-          e.type == DioExceptionType.receiveTimeout ||
-          e.response == null;
-      if (!isNetwork) rethrow;
-
-      try {
-        await _dio.dio.get<Map<String, dynamic>>(ApiConstants.health);
-      } catch (_) {
-        throw Exception(
-          'Cannot reach backend server. Please ensure backend is running at ${_dio.dio.options.baseUrl}.',
-        );
-      }
-      throw Exception(
-        'Network interrupted while loading teacher assignments. Please retry.',
-      );
-    }
-  }
-
-  Future<List<_Assignment>> listByTeacher(
-    String teacherId,
-    String? yearId,
-  ) async {
-    final resp = await _withNetworkGuard(
-      () => _dio.dio.get<Map<String, dynamic>>(
-        ApiConstants.teacherAssignments,
-        queryParameters: {
-          'teacher_id': teacherId,
-          if (yearId != null) 'academic_year_id': yearId,
-        },
-      ),
+_DropdownItem _standardDropdown(Map<String, dynamic> m) => _DropdownItem(
+      id: m['id']?.toString() ?? '',
+      name: m['name']?.toString() ?? '',
     );
-    return ((resp.data?['items'] as List?) ?? [])
-        .map((e) => _Assignment.fromJson(Map<String, dynamic>.from(e as Map)))
-        .toList();
-  }
 
-  Future<List<_Assignment>> listByClass(
-    String standardId,
-    String section,
-    String? yearId,
-  ) async {
-    final resp = await _withNetworkGuard(
-      () => _dio.dio.get<Map<String, dynamic>>(
-        ApiConstants.teacherAssignments,
-        queryParameters: {
-          'standard_id': standardId,
-          'section': section,
-          if (yearId != null) 'academic_year_id': yearId,
-        },
-      ),
+_DropdownItem _sectionDropdown(Map<String, dynamic> m) => _DropdownItem(
+      id: m['name']?.toString() ?? '',
+      name: m['name']?.toString() ?? '',
     );
-    return ((resp.data?['items'] as List?) ?? [])
-        .map((e) => _Assignment.fromJson(Map<String, dynamic>.from(e as Map)))
-        .toList();
-  }
 
-  Future<List<_Assignment>> listByStandard(
-    String standardId,
-    String? yearId,
-  ) async {
-    final resp = await _withNetworkGuard(
-      () => _dio.dio.get<Map<String, dynamic>>(
-        ApiConstants.teacherAssignments,
-        queryParameters: {
-          'standard_id': standardId,
-          if (yearId != null) 'academic_year_id': yearId,
-        },
-      ),
+_DropdownItem _subjectDropdown(Map<String, dynamic> m) => _DropdownItem(
+      id: m['id']?.toString() ?? '',
+      name: '${m['name']} (${m['code']})',
     );
-    return ((resp.data?['items'] as List?) ?? [])
-        .map((e) => _Assignment.fromJson(Map<String, dynamic>.from(e as Map)))
-        .toList();
-  }
 
-  Future<void> create({
-    required String teacherId,
-    required String standardId,
-    required String section,
-    required String subjectId,
-    required String academicYearId,
-  }) async {
-    await _dio.dio.post<dynamic>(
-      ApiConstants.teacherAssignments,
-      data: {
-        'teacher_id': teacherId,
-        'standard_id': standardId,
-        'section': section,
-        'subject_id': subjectId,
-        'academic_year_id': academicYearId,
-      },
-    );
-  }
+List<_Assignment> _assignmentsFromMaps(List<Map<String, dynamic>> maps) => maps
+    .map(_Assignment.fromJson)
+    .toList(growable: false);
 
-  Future<void> update({
-    required String assignmentId,
-    required String standardId,
-    required String section,
-    required String subjectId,
-    required String academicYearId,
-  }) async {
-    await _dio.dio.patch<dynamic>(
-      ApiConstants.teacherAssignmentById(assignmentId),
-      data: {
-        'standard_id': standardId,
-        'section': section,
-        'subject_id': subjectId,
-        'academic_year_id': academicYearId,
-      },
-    );
-  }
+Future<List<_Teacher>> _loadTeachers(TeacherAssignmentsRepository repo) async {
+  final maps = await repo.listTeacherRoleProfileMaps();
+  return maps
+      .map(_teacherFromRoleProfileMap)
+      .where((t) => t.id.trim().isNotEmpty)
+      .toList(growable: false);
+}
 
-  Future<void> delete(String assignmentId) async {
-    await _dio.dio
-        .delete<dynamic>(ApiConstants.teacherAssignmentById(assignmentId));
-  }
+Future<List<_LeaveBalanceItem>> _leaveBalancesFromRepo(
+  TeacherAssignmentsRepository repo,
+  String teacherId, {
+  String? academicYearId,
+}) async {
+  final maps =
+      await repo.getTeacherLeaveBalances(teacherId, academicYearId: academicYearId);
+  return maps.map(_LeaveBalanceItem.fromJson).toList(growable: false);
+}
 
-  Future<Map<String, dynamic>> reenrollTeacher({
-    required String teacherId,
-    required String sourceYearId,
-    required String targetYearId,
-    bool overwriteExisting = false,
-  }) async {
-    final r = await _dio.dio.post<Map<String, dynamic>>(
-      ApiConstants.promotionReenrollTeacher(teacherId),
-      data: {
-        'source_year_id': sourceYearId,
-        'target_year_id': targetYearId,
-        'overwrite_existing': overwriteExisting,
-      },
-    );
-    return Map<String, dynamic>.from(r.data ?? const {});
-  }
-
-  Future<List<Map<String, dynamic>>> listYears() async {
-    final r =
-        await _dio.dio.get<Map<String, dynamic>>(ApiConstants.academicYears);
-    return ((r.data?['items'] as List?) ?? [])
-        .map((e) => Map<String, dynamic>.from(e as Map))
-        .toList();
-  }
-
-  Future<Map<String, dynamic>> createYear({
-    required String name,
-    required DateTime startDate,
-    required DateTime endDate,
-  }) async {
-    final r = await _dio.dio.post<Map<String, dynamic>>(
-      ApiConstants.academicYears,
-      data: {
-        'name': name.trim(),
-        'start_date': _fmtDate(startDate),
-        'end_date': _fmtDate(endDate),
-      },
-    );
-    return Map<String, dynamic>.from(r.data ?? {});
-  }
-
-  static String _fmtDate(DateTime d) {
-    final y = d.year.toString().padLeft(4, '0');
-    final m = d.month.toString().padLeft(2, '0');
-    final day = d.day.toString().padLeft(2, '0');
-    return '$y-$m-$day';
-  }
-
-  Future<List<_Teacher>> listTeachers() async {
-    final r = await _withNetworkGuard(
-      () => _dio.dio.get<Map<String, dynamic>>(
-        ApiConstants.roleProfiles,
-        queryParameters: {'role': 'TEACHER', 'page_size': 100},
-      ),
-    );
-    final items = (r.data?['items'] as List?) ?? [];
-    return items
-        .map((e) {
-          final m = Map<String, dynamic>.from(e as Map);
-          final teacherId = m['teacher_id']?.toString() ?? '';
-          final userId = m['user_id']?.toString() ?? '';
-          final selectionId = teacherId.isNotEmpty ? teacherId : 'user:$userId';
-          final identifier =
-              m['employee_id']?.toString() ?? m['identifier']?.toString() ?? '';
-          return _Teacher(
-            id: selectionId,
-            userId: userId,
-            hasProfile: teacherId.isNotEmpty,
-            name: m['full_name']?.toString() ?? '',
-            employeeCode: identifier,
-            email: m['email']?.toString() ?? '',
-            phone: m['phone']?.toString() ?? '',
-          );
-        })
-        .where((t) => t.id.trim().isNotEmpty)
-        .toList();
-  }
-
-  Future<Map<String, Map<String, dynamic>>> teacherEnrollmentStatusByUser({
-    String? academicYearId,
-  }) async {
-    final r = await _withNetworkGuard(
-      () => _dio.dio.get<Map<String, dynamic>>(
-        ApiConstants.enrollmentOnboardingQueue,
-        queryParameters: {
-          'role': 'TEACHER',
-          'pending_only': false,
-          if (academicYearId != null) 'academic_year_id': academicYearId,
-        },
-      ),
-    );
-    final items = (r.data?['items'] as List?) ?? [];
-    final map = <String, Map<String, dynamic>>{};
-    for (final item in items.whereType<Map>()) {
-      final row = Map<String, dynamic>.from(item);
-      final userId = (row['user_id'] ?? '').toString();
-      if (userId.isNotEmpty) {
-        map[userId] = row;
-      }
-    }
-    return map;
-  }
-
-  Future<Map<String, dynamic>> createTeacherProfile({
-    required String userId,
-    String? customEmployeeId,
-  }) async {
-    final r = await _dio.dio.post<Map<String, dynamic>>(
-      ApiConstants.roleProfilesTeacher,
-      data: {
-        'user_id': userId,
-        if (customEmployeeId != null && customEmployeeId.trim().isNotEmpty)
-          'custom_employee_id': customEmployeeId.trim(),
-      },
-    );
-    return r.data ?? <String, dynamic>{};
-  }
-
-  Future<List<_DropdownItem>> listStandards(String yearId) async {
-    final r = await _dio.dio.get<Map<String, dynamic>>(
-      ApiConstants.standards,
-      queryParameters: {'academic_year_id': yearId},
-    );
-    return ((r.data?['items'] as List?) ?? []).map((e) {
-      final m = Map<String, dynamic>.from(e as Map);
-      return _DropdownItem(
-        id: m['id']?.toString() ?? '',
-        name: m['name']?.toString() ?? '',
-      );
-    }).toList();
-  }
-
-  Future<List<_DropdownItem>> listSections(
-    String standardId,
-    String yearId,
-  ) async {
-    final r = await _dio.dio.get<Map<String, dynamic>>(
-      ApiConstants.sections,
-      queryParameters: {'standard_id': standardId, 'academic_year_id': yearId},
-    );
-    return ((r.data?['items'] as List?) ?? []).map((e) {
-      final m = Map<String, dynamic>.from(e as Map);
-      return _DropdownItem(
-        id: m['name']?.toString() ?? '',
-        name: m['name']?.toString() ?? '',
-      );
-    }).toList();
-  }
-
-  Future<List<_DropdownItem>> listSubjects({String? standardId}) async {
-    final r = await _dio.dio.get<Map<String, dynamic>>(
-      ApiConstants.subjects,
-      queryParameters: {
-        'page_size': 200,
-        if (standardId != null) 'standard_id': standardId,
-      },
-    );
-    return ((r.data?['items'] as List?) ?? []).map((e) {
-      final m = Map<String, dynamic>.from(e as Map);
-      return _DropdownItem(
-        id: m['id']?.toString() ?? '',
-        name: '${m['name']} (${m['code']})',
-      );
-    }).toList();
-  }
-
-  Future<List<_LeaveBalanceItem>> getTeacherLeaveBalances(
-    String teacherId, {
-    String? academicYearId,
-  }) async {
-    final resp = await _withNetworkGuard(
-      () => _dio.dio.get<List<dynamic>>(
-        ApiConstants.leaveBalanceTeacher(teacherId),
-        queryParameters: {
-          if (academicYearId != null) 'academic_year_id': academicYearId,
-        },
-      ),
-    );
-    return (resp.data ?? const <dynamic>[])
-        .whereType<Map>()
-        .map((e) => _LeaveBalanceItem.fromJson(Map<String, dynamic>.from(e)))
-        .toList();
-  }
-
-  Future<List<_LeaveRequestItem>> listTeacherLeaves(
-    String teacherId, {
-    String? academicYearId,
-  }) async {
-    final resp = await _withNetworkGuard(
-      () => _dio.dio.get<Map<String, dynamic>>(
-        ApiConstants.leave,
-        queryParameters: {
-          'teacher_id': teacherId,
-          if (academicYearId != null) 'academic_year_id': academicYearId,
-        },
-      ),
-    );
-    final items = (resp.data?['items'] as List?) ?? const [];
-    return items
-        .whereType<Map>()
-        .map((e) => _LeaveRequestItem.fromJson(Map<String, dynamic>.from(e)))
-        .toList();
-  }
-
-  Future<List<_LeaveBalanceItem>> setTeacherLeaveBalances({
-    required String teacherId,
-    required String? academicYearId,
-    required double casualDays,
-    required double sickDays,
-    required double earnedDays,
-  }) async {
-    final resp = await _withNetworkGuard(
-      () => _dio.dio.put<List<dynamic>>(
-        ApiConstants.leaveBalanceTeacher(teacherId),
-        data: {
-          'allocations': [
-            {'leave_type': 'CASUAL', 'total_days': casualDays},
-            {'leave_type': 'SICK', 'total_days': sickDays},
-            {'leave_type': 'EARNED', 'total_days': earnedDays},
-          ],
-          if (academicYearId != null) 'academic_year_id': academicYearId,
-        },
-      ),
-    );
-    return (resp.data ?? const <dynamic>[])
-        .whereType<Map>()
-        .map((e) => _LeaveBalanceItem.fromJson(Map<String, dynamic>.from(e)))
-        .toList();
-  }
+Future<List<_LeaveRequestItem>> _leaveRequestsFromRepo(
+  TeacherAssignmentsRepository repo,
+  String teacherId, {
+  String? academicYearId,
+}) async {
+  final maps =
+      await repo.listTeacherLeaves(teacherId, academicYearId: academicYearId);
+  return maps.map(_LeaveRequestItem.fromJson).toList(growable: false);
 }
 
 // ── Screen ────────────────────────────────────────────────────────────────────
@@ -538,7 +244,9 @@ class _TeacherAssignmentScreenState
     extends ConsumerState<TeacherAssignmentScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
-  late final _TeacherAssignmentRepository _repo;
+
+  TeacherAssignmentsRepository get _repo =>
+      ref.read(teacherAssignmentsRepositoryProvider);
 
   // Filter state
   List<Map<String, dynamic>> _years = [];
@@ -566,7 +274,6 @@ class _TeacherAssignmentScreenState
       if (_tabController.indexIsChanging) return;
       setState(() {});
     });
-    _repo = _TeacherAssignmentRepository(ref.read(dioClientProvider));
     _loadMeta();
   }
 
@@ -625,8 +332,8 @@ class _TeacherAssignmentScreenState
   Future<void> _loadMeta() async {
     setState(() => _loading = true);
     try {
-      final years = await _repo.listYears();
-      final teachers = await _repo.listTeachers();
+      final years = await _repo.listAcademicYears();
+      final teachers = await _loadTeachers(_repo);
       final preferredYearId = ref.read(activeAcademicYearProvider);
       final preferred = years.firstWhere(
         (y) => y['id']?.toString() == preferredYearId,
@@ -646,8 +353,8 @@ class _TeacherAssignmentScreenState
       });
       ref.read(activeAcademicYearProvider.notifier).setYear(_selectedYearId);
       if (_selectedYearId != null) {
-        final stds = await _repo.listStandards(_selectedYearId!);
-        setState(() => _standards = stds);
+        final maps = await _repo.listStandardMaps(_selectedYearId!);
+        setState(() => _standards = maps.map(_standardDropdown).toList());
       }
       await _refreshTeacherAssignmentStatus();
     } catch (e) {
@@ -741,12 +448,12 @@ class _TeacherAssignmentScreenState
                 }
                 Navigator.of(ctx).pop();
                 try {
-                  final created = await _repo.createYear(
+                  final created = await _repo.createAcademicYear(
                     name: nameCtrl.text.trim(),
                     startDate: startDate!,
                     endDate: endDate!,
                   );
-                  final years = await _repo.listYears();
+                  final years = await _repo.listAcademicYears();
                   final newYearId = created['id']?.toString();
                   setState(() {
                     _years = years;
@@ -754,8 +461,10 @@ class _TeacherAssignmentScreenState
                     _assignments = [];
                   });
                   if (_selectedYearId != null) {
-                    final stds = await _repo.listStandards(_selectedYearId!);
-                    setState(() => _standards = stds);
+                    final maps = await _repo.listStandardMaps(_selectedYearId!);
+                    setState(
+                      () => _standards = maps.map(_standardDropdown).toList(),
+                    );
                   }
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -791,9 +500,11 @@ class _TeacherAssignmentScreenState
       _error = null;
     });
     try {
-      final list = await _repo.listByTeacher(
-        _selectedTeacherId!,
-        _selectedYearId,
+      final list = _assignmentsFromMaps(
+        await _repo.listAssignmentsByTeacher(
+          _selectedTeacherId!,
+          _selectedYearId,
+        ),
       );
       setState(() => _assignments = list);
     } catch (e) {
@@ -814,11 +525,18 @@ class _TeacherAssignmentScreenState
     });
     try {
       final list = _filterSection == null || _filterSection!.trim().isEmpty
-          ? await _repo.listByStandard(_filterStandardId!, _selectedYearId)
-          : await _repo.listByClass(
-              _filterStandardId!,
-              _filterSection!,
-              _selectedYearId,
+          ? _assignmentsFromMaps(
+              await _repo.listAssignmentsByStandard(
+                _filterStandardId!,
+                _selectedYearId,
+              ),
+            )
+          : _assignmentsFromMaps(
+              await _repo.listAssignmentsByClass(
+                _filterStandardId!,
+                _filterSection!,
+                _selectedYearId,
+              ),
             );
       setState(() => _assignments = list);
     } catch (e) {
@@ -854,7 +572,7 @@ class _TeacherAssignmentScreenState
     );
     if (confirm != true) return;
     try {
-      await _repo.delete(id);
+      await _repo.deleteAssignment(id);
       setState(() {
         _assignments.removeWhere((a) => a.id == id);
         _success = 'Assignment removed.';
@@ -895,7 +613,7 @@ class _TeacherAssignmentScreenState
                     key: ValueKey(
                       'dlg_ct_${selTeacherId}_${selStandardId}_${sectionOptions.length}_${subjectOptions.length}',
                     ),
-                    initialValue: selTeacherId,
+                    value: selTeacherId,
                     decoration: const InputDecoration(
                       labelText: 'Teacher *',
                       border: OutlineInputBorder(),
@@ -920,7 +638,7 @@ class _TeacherAssignmentScreenState
                     key: ValueKey(
                       'dlg_cs_${selStandardId}_${sectionOptions.length}',
                     ),
-                    initialValue: selStandardId,
+                    value: selStandardId,
                     decoration: const InputDecoration(
                       labelText: 'Class *',
                       border: OutlineInputBorder(),
@@ -940,14 +658,15 @@ class _TeacherAssignmentScreenState
                         sectionOptions = [];
                       });
                       if (v != null) {
-                        final secs = await _repo.listSections(
+                        final secMaps = await _repo.listSectionMaps(
                           v,
                           _selectedYearId!,
                         );
-                        final subs = await _repo.listSubjects(standardId: v);
+                        final subMaps =
+                            await _repo.listSubjectMaps(standardId: v);
                         setDlgState(() {
-                          sectionOptions = secs;
-                          subjectOptions = subs;
+                          sectionOptions = secMaps.map(_sectionDropdown).toList();
+                          subjectOptions = subMaps.map(_subjectDropdown).toList();
                           selSection = null;
                           selSubjectId = null;
                         });
@@ -960,7 +679,7 @@ class _TeacherAssignmentScreenState
                     key: ValueKey(
                       'dlg_csec_${selSection}_${sectionOptions.length}',
                     ),
-                    initialValue: selSection,
+                    value: selSection,
                     decoration: const InputDecoration(
                       labelText: 'Section *',
                       border: OutlineInputBorder(),
@@ -983,7 +702,7 @@ class _TeacherAssignmentScreenState
                     key: ValueKey(
                       'dlg_csub_${selSubjectId}_${subjectOptions.length}',
                     ),
-                    initialValue: selSubjectId,
+                    value: selSubjectId,
                     decoration: const InputDecoration(
                       labelText: 'Subject *',
                       border: OutlineInputBorder(),
@@ -1055,7 +774,7 @@ class _TeacherAssignmentScreenState
                       );
                     }).toList();
                   }
-                  await _repo.create(
+                  await _repo.createAssignment(
                     teacherId: finalTeacherId,
                     standardId: selStandardId!,
                     section: selSection!,
@@ -1122,7 +841,7 @@ class _TeacherAssignmentScreenState
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String?>(
                   key: ValueKey('re_src_${sourceYearId}_${_years.length}'),
-                  initialValue: sourceYearId.isEmpty ? null : sourceYearId,
+                  value: sourceYearId.isEmpty ? null : sourceYearId,
                   decoration: const InputDecoration(
                     labelText: 'Source Academic Year',
                     border: OutlineInputBorder(),
@@ -1154,7 +873,7 @@ class _TeacherAssignmentScreenState
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String?>(
                   key: ValueKey('re_tgt_${targetYearId}_$sourceYearId'),
-                  initialValue: targetYearId.isEmpty ? null : targetYearId,
+                  value: targetYearId.isEmpty ? null : targetYearId,
                   decoration: const InputDecoration(
                     labelText: 'Target Academic Year',
                     border: OutlineInputBorder(),
@@ -1214,9 +933,9 @@ class _TeacherAssignmentScreenState
                   final errors = (result['error_count'] as num?)?.toInt() ?? 0;
                   _selectedYearId = targetYearId;
                   ref.read(activeAcademicYearProvider.notifier).setYear(targetYearId);
-                  final stds = await _repo.listStandards(targetYearId);
+                  final stdMaps = await _repo.listStandardMaps(targetYearId);
                   setState(() {
-                    _standards = stds;
+                    _standards = stdMaps.map(_standardDropdown).toList();
                     _success =
                         'Teacher re-enrolled: copied $copied, skipped $skipped, errors $errors. You can edit assignments below.';
                   });
@@ -1245,13 +964,15 @@ class _TeacherAssignmentScreenState
     String selSubjectId = assignment.subjectId;
     String selYearId = assignment.academicYearId;
     List<_DropdownItem> sectionOptions = [];
-    List<_DropdownItem> subjects = await _repo.listSubjects(
-      standardId: selStandardId,
-    );
+    final subMaps =
+        await _repo.listSubjectMaps(standardId: selStandardId);
+    List<_DropdownItem> subjects = subMaps.map(_subjectDropdown).toList();
 
     // Pre-load sections for the current standard
-    sectionOptions = await _repo.listSections(selStandardId, selYearId);
+    final secMaps = await _repo.listSectionMaps(selStandardId, selYearId);
+    sectionOptions = secMaps.map(_sectionDropdown).toList();
 
+    if (!mounted) return;
     await showDialog<void>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -1268,7 +989,7 @@ class _TeacherAssignmentScreenState
                   // Year
                   DropdownButtonFormField<String>(
                     key: ValueKey('ed_y_$selYearId'),
-                    initialValue: selYearId,
+                    value: selYearId,
                     decoration: const InputDecoration(
                       labelText: 'Academic Year *',
                       border: OutlineInputBorder(),
@@ -1288,7 +1009,7 @@ class _TeacherAssignmentScreenState
                   // Class
                   DropdownButtonFormField<String>(
                     key: ValueKey('ed_std_${selStandardId}_$selYearId'),
-                    initialValue: selStandardId,
+                    value: selStandardId,
                     decoration: const InputDecoration(
                       labelText: 'Class *',
                       border: OutlineInputBorder(),
@@ -1308,11 +1029,12 @@ class _TeacherAssignmentScreenState
                         sectionOptions = [];
                       });
                       if (v != null) {
-                        final secs = await _repo.listSections(v, selYearId);
-                        final subs = await _repo.listSubjects(standardId: v);
+                        final secMaps = await _repo.listSectionMaps(v, selYearId);
+                        final subMaps =
+                            await _repo.listSubjectMaps(standardId: v);
                         setDlgState(() {
-                          sectionOptions = secs;
-                          subjects = subs;
+                          sectionOptions = secMaps.map(_sectionDropdown).toList();
+                          subjects = subMaps.map(_subjectDropdown).toList();
                           selSection = '';
                           selSubjectId = '';
                         });
@@ -1325,7 +1047,7 @@ class _TeacherAssignmentScreenState
                     key: ValueKey(
                       'ed_sec_${selSection}_${sectionOptions.map((e) => e.id).join(',')}',
                     ),
-                    initialValue: sectionOptions.any((s) => s.id == selSection)
+                    value: sectionOptions.any((s) => s.id == selSection)
                         ? selSection
                         : null,
                     decoration: const InputDecoration(
@@ -1349,7 +1071,7 @@ class _TeacherAssignmentScreenState
                   // Subject
                   DropdownButtonFormField<String>(
                     key: ValueKey('ed_sub_${selSubjectId}_${subjects.length}'),
-                    initialValue: selSubjectId,
+                    value: selSubjectId,
                     decoration: const InputDecoration(
                       labelText: 'Subject *',
                       border: OutlineInputBorder(),
@@ -1378,7 +1100,7 @@ class _TeacherAssignmentScreenState
               onPressed: () async {
                 Navigator.of(ctx).pop();
                 try {
-                  await _repo.update(
+                  await _repo.updateAssignment(
                     assignmentId: assignment.id,
                     standardId: selStandardId,
                     section: selSection,
@@ -1426,11 +1148,13 @@ class _TeacherAssignmentScreenState
     }
 
     try {
-      final balances = await _repo.getTeacherLeaveBalances(
+      final balances = await _leaveBalancesFromRepo(
+        _repo,
         teacher.id,
         academicYearId: _selectedYearId,
       );
-      final leaves = await _repo.listTeacherLeaves(
+      final leaves = await _leaveRequestsFromRepo(
+        _repo,
         teacher.id,
         academicYearId: _selectedYearId,
       );
@@ -1608,7 +1332,8 @@ class _TeacherAssignmentScreenState
                           }
                           setDlgState(() => saving = true);
                           try {
-                            final updated = await _repo.setTeacherLeaveBalances(
+                            final updatedMaps =
+                                await _repo.setTeacherLeaveBalances(
                               teacherId: teacher.id,
                               academicYearId: _selectedYearId,
                               casualDays: casual,
@@ -1616,7 +1341,9 @@ class _TeacherAssignmentScreenState
                               earnedDays: earned,
                             );
                             setDlgState(() {
-                              localBalances = updated;
+                              localBalances = updatedMaps
+                                  .map(_LeaveBalanceItem.fromJson)
+                                  .toList();
                             });
                             if (ctx.mounted) {
                               Navigator.of(ctx).pop();
@@ -1711,7 +1438,7 @@ class _TeacherAssignmentScreenState
                   DropdownButtonFormField<String?>(
                     key: ValueKey<String?>(
                         'ta_year_${_selectedYearId}_${_years.length}'),
-                    initialValue: _selectedYearId,
+                    value: _selectedYearId,
                     decoration: const InputDecoration(
                       labelText: 'Academic year',
                       isDense: true,
@@ -1752,8 +1479,11 @@ class _TeacherAssignmentScreenState
                       });
                       ref.read(activeAcademicYearProvider.notifier).setYear(v);
                       if (v != null) {
-                        final stds = await _repo.listStandards(v);
-                        setState(() => _standards = stds);
+                        final maps = await _repo.listStandardMaps(v);
+                        setState(
+                          () => _standards =
+                              maps.map(_standardDropdown).toList(),
+                        );
                       }
                       await _refreshTeacherAssignmentStatus();
                     },
@@ -1910,7 +1640,7 @@ class _TeacherAssignmentScreenState
       key: ValueKey<String?>(
         'ta_teacher_${_selectedTeacherId}_${_visibleTeachers.length}_$_teacherStatusFilter',
       ),
-      initialValue: _selectedTeacherId,
+      value: _selectedTeacherId,
       decoration: const InputDecoration(
         labelText: 'Teacher',
         isDense: true,
@@ -2135,7 +1865,7 @@ class _TeacherAssignmentScreenState
                     key: ValueKey<String?>(
                       'ta_fstd_${_filterStandardId}_${_standards.length}',
                     ),
-                    initialValue: _filterStandardId,
+                    value: _filterStandardId,
                     decoration: const InputDecoration(
                       labelText: 'Class',
                       isDense: true,
@@ -2156,10 +1886,13 @@ class _TeacherAssignmentScreenState
                         _filterSections = [];
                       });
                       if (v != null && _selectedYearId != null) {
-                        final sections =
-                            await _repo.listSections(v, _selectedYearId!);
+                        final secMaps = await _repo.listSectionMaps(
+                          v,
+                          _selectedYearId!,
+                        );
                         if (!mounted) return;
-                        setState(() => _filterSections = sections);
+                        setState(() => _filterSections =
+                            secMaps.map(_sectionDropdown).toList());
                       }
                     },
                   ),
@@ -2170,7 +1903,7 @@ class _TeacherAssignmentScreenState
                     key: ValueKey<String>(
                       'ta_fsec_${_filterSection}_${_filterSections.length}_$_filterStandardId',
                     ),
-                    initialValue: () {
+                    value: () {
                       if (_filterSection == null || _filterSection!.isEmpty) {
                         return '';
                       }

@@ -9,6 +9,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/admin_colors.dart';
 import '../../../domains/providers/admin_document_provider.dart';
+import '../../../domains/providers/student_documents_overview_provider.dart';
+import '../../../data/models/documents/student_documents_overview.dart';
 import '../../common/layout/admin_scaffold.dart';
 import '../../common/widgets/admin_layout/admin_loading_placeholder.dart';
 import '../../common/widgets/admin_layout/admin_spacing.dart';
@@ -28,56 +30,13 @@ class DocumentStudentDetailScreen extends ConsumerStatefulWidget {
 
 class _DocumentStudentDetailScreenState
     extends ConsumerState<DocumentStudentDetailScreen> {
-  bool _loading = true;
-  String? _error;
-  List<AdminRequirementStatus> _checklist = [];
-  List<AdminDocument> _documents = [];
-  String _studentTitle = 'Student';
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
+  void _invalidateOverview() {
+    ref.invalidate(studentDocumentsOverviewProvider(widget.studentId));
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    final repo = ref.read(adminDocumentRepositoryProvider);
-    try {
-      final results = await Future.wait([
-        repo.listRequirementStatus(widget.studentId),
-        repo.listStudentDocuments(widget.studentId),
-      ]);
-      if (!mounted) return;
-      final checklist = results[0] as List<AdminRequirementStatus>;
-      final docs = results[1] as List<AdminDocument>;
-      final header = docs.isNotEmpty ? docs.first : null;
-      setState(() {
-        _checklist = checklist;
-        _documents = docs;
-        if (header != null) {
-          _studentTitle = header.studentName?.trim().isNotEmpty == true
-              ? header.studentName!
-              : _studentTitle;
-        }
-        _loading = false;
-      });
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = e.toString();
-          _loading = false;
-        });
-      }
-    }
-  }
-
-  bool get _allPendingReview {
-    if (_checklist.isEmpty) return false;
-    for (final r in _checklist) {
+  static bool _allPendingReview(List<AdminRequirementStatus> checklist) {
+    if (checklist.isEmpty) return false;
+    for (final r in checklist) {
       if (r.isCompleted) continue;
       if (!r.hasPendingFile) return false;
     }
@@ -92,7 +51,7 @@ class _DocumentStudentDetailScreenState
     final repo = ref.read(adminDocumentRepositoryProvider);
     try {
       await repo.verifyDocument(d.id, approve: approve, reason: reason);
-      await _load();
+      _invalidateOverview();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -224,7 +183,7 @@ class _DocumentStudentDetailScreenState
         note: documentType == 'OTHER' ? otherNote : null,
         academicYearId: academicYearId,
       );
-      await _load();
+      _invalidateOverview();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Uploaded.')),
@@ -239,8 +198,8 @@ class _DocumentStudentDetailScreenState
     }
   }
 
-  List<AdminDocument> get _requestedDocs {
-    final list = _documents
+  static List<AdminDocument> _requestedDocs(List<AdminDocument> documents) {
+    final list = documents
         .where((d) => !d.isSynthetic && d.status.toUpperCase() == 'REQUESTED')
         .toList();
     int key(AdminDocument d) {
@@ -252,25 +211,27 @@ class _DocumentStudentDetailScreenState
     return list;
   }
 
-  Set<String> get _requestedDocIds =>
-      _requestedDocs.map((d) => d.id).toSet();
+  static Set<String> _requestedDocIds(List<AdminDocument> requestedDocs) =>
+      requestedDocs.map((d) => d.id).toSet();
 
-  List<AdminDocument> get _otherDocumentRecords => _documents
-      .where((d) => !_requestedDocIds.contains(d.id))
-      .toList()
-    ..sort((a, b) {
-      final ta = DateTime.tryParse(a.updatedAt ?? a.createdAt)
-              ?.millisecondsSinceEpoch ??
-          0;
-      final tb = DateTime.tryParse(b.updatedAt ?? b.createdAt)
-              ?.millisecondsSinceEpoch ??
-          0;
-      return tb.compareTo(ta);
-    });
+  static List<AdminDocument> _otherDocumentRecords(
+    List<AdminDocument> documents,
+    Set<String> requestedDocIds,
+  ) =>
+      (documents.where((d) => !requestedDocIds.contains(d.id)).toList()
+        ..sort((a, b) {
+          final ta = DateTime.tryParse(a.updatedAt ?? a.createdAt)
+                  ?.millisecondsSinceEpoch ??
+              0;
+          final tb = DateTime.tryParse(b.updatedAt ?? b.createdAt)
+                  ?.millisecondsSinceEpoch ??
+              0;
+          return tb.compareTo(ta);
+        }));
 
-  AdminDocument? _docById(String? id) {
+  static AdminDocument? _docById(List<AdminDocument> documents, String? id) {
     if (id == null || id.trim().isEmpty) return null;
-    for (final d in _documents) {
+    for (final d in documents) {
       if (d.id == id) return d;
     }
     return null;
@@ -279,7 +240,8 @@ class _DocumentStudentDetailScreenState
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final requested = _requestedDocs;
+    final overviewAsync =
+        ref.watch(studentDocumentsOverviewProvider(widget.studentId));
 
     return AdminScaffold(
       title: 'Student documents',
@@ -306,108 +268,139 @@ class _DocumentStudentDetailScreenState
                 ),
               ],
             ),
-            if (_error != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: AdminSpacing.sm),
-                child: Material(
-                  color: AdminColors.dangerSurface,
-                  borderRadius: BorderRadius.circular(10),
+            Expanded(
+              child: overviewAsync.when(
+                loading: () =>
+                    const AdminLoadingPlaceholder(message: 'Loading…'),
+                error: (e, _) => Center(
                   child: Padding(
-                    padding: const EdgeInsets.all(AdminSpacing.md),
-                    child: SelectableText(
-                      _error!,
-                      style: TextStyle(color: AdminColors.danger, fontSize: 13),
+                    padding: const EdgeInsets.all(AdminSpacing.lg),
+                    child: Material(
+                      color: AdminColors.dangerSurface,
+                      borderRadius: BorderRadius.circular(10),
+                      child: Padding(
+                        padding: const EdgeInsets.all(AdminSpacing.md),
+                        child: SelectableText(
+                          e.toString(),
+                          style: const TextStyle(
+                            color: AdminColors.danger,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),
-              ),
-            if (_loading)
-              const Expanded(
-                child: AdminLoadingPlaceholder(message: 'Loading…'),
-              )
-            else
-              Expanded(
-                child: RefreshIndicator(
-                  color: AdminColors.primaryAction,
-                  onRefresh: _load,
-                  child: SingleChildScrollView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: EdgeInsets.only(bottom: AdminSpacing.lg),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _buildStudentHeroCard(theme),
-                        if (_allPendingReview && _checklist.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(
-                                top: AdminSpacing.md, bottom: AdminSpacing.sm),
-                            child: Material(
-                              color: const Color(0xFFE8F5E9),
-                              borderRadius: BorderRadius.circular(12),
-                              child: Padding(
-                                padding: const EdgeInsets.all(AdminSpacing.md),
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Icon(Icons.task_alt_rounded,
-                                        color: AdminColors.success, size: 22),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Text(
-                                        'Required items have files uploaded and are waiting for your review. '
-                                        'Use Approve or Reject in the checklist below.',
-                                        style: theme.textTheme.bodySmall?.copyWith(
-                                          color: AdminColors.textPrimary,
-                                          height: 1.4,
+                data: (StudentDocumentsOverview overview) {
+                  final requested = _requestedDocs(overview.documents);
+                  return RefreshIndicator(
+                    color: AdminColors.primaryAction,
+                    onRefresh: () async {
+                      _invalidateOverview();
+                      await ref.read(
+                        studentDocumentsOverviewProvider(widget.studentId)
+                            .future,
+                      );
+                    },
+                    child: SingleChildScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: EdgeInsets.only(bottom: AdminSpacing.lg),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _buildStudentHeroCard(
+                            theme,
+                            overview.studentTitle,
+                            overviewAsync.isLoading,
+                          ),
+                          if (_allPendingReview(overview.checklist) &&
+                              overview.checklist.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(
+                                top: AdminSpacing.md,
+                                bottom: AdminSpacing.sm,
+                              ),
+                              child: Material(
+                                color: const Color(0xFFE8F5E9),
+                                borderRadius: BorderRadius.circular(12),
+                                child: Padding(
+                                  padding:
+                                      const EdgeInsets.all(AdminSpacing.md),
+                                  child: Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Icon(
+                                        Icons.task_alt_rounded,
+                                        color: AdminColors.success,
+                                        size: 22,
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Text(
+                                          'Required items have files uploaded and are waiting for your review. '
+                                          'Use Approve or Reject in the checklist below.',
+                                          style: theme.textTheme.bodySmall
+                                              ?.copyWith(
+                                            color: AdminColors.textPrimary,
+                                            height: 1.4,
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                        if (requested.isNotEmpty) ...[
+                          if (requested.isNotEmpty) ...[
+                            _buildSectionTitle(
+                              theme,
+                              title: 'Requested',
+                              subtitle:
+                                  'These were requested from the school. Upload the official file here — it will move to review when attached.',
+                            ),
+                            const SizedBox(height: AdminSpacing.sm),
+                            ...requested.map(
+                              (d) => _buildRequestedCard(theme, d),
+                            ),
+                            const SizedBox(height: AdminSpacing.lg),
+                          ],
                           _buildSectionTitle(
                             theme,
-                            title: 'Requested',
+                            title: 'Required checklist',
                             subtitle:
-                                'These were requested from the school. Upload the official file here — it will move to review when attached.',
+                                'Program requirements for this class and academic year.',
                           ),
                           const SizedBox(height: AdminSpacing.sm),
-                          ...requested.map((d) => _buildRequestedCard(theme, d)),
+                          _buildChecklistSection(theme, overview),
                           const SizedBox(height: AdminSpacing.lg),
+                          _buildSectionTitle(
+                            theme,
+                            title: 'All other document records',
+                            subtitle: requested.isEmpty
+                                ? 'Complete history for this student.'
+                                : 'Other statuses (requested items are listed above).',
+                          ),
+                          const SizedBox(height: AdminSpacing.sm),
+                          _buildRecordsTable(theme, overview),
                         ],
-                        _buildSectionTitle(
-                          theme,
-                          title: 'Required checklist',
-                          subtitle:
-                              'Program requirements for this class and academic year.',
-                        ),
-                        const SizedBox(height: AdminSpacing.sm),
-                        _buildChecklistSection(theme),
-                        const SizedBox(height: AdminSpacing.lg),
-                        _buildSectionTitle(
-                          theme,
-                          title: 'All other document records',
-                          subtitle: requested.isEmpty
-                              ? 'Complete history for this student.'
-                              : 'Other statuses (requested items are listed above).',
-                        ),
-                        const SizedBox(height: AdminSpacing.sm),
-                        _buildRecordsTable(theme),
-                      ],
+                      ),
                     ),
-                  ),
-                ),
+                  );
+                },
               ),
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildStudentHeroCard(ThemeData theme) {
+  Widget _buildStudentHeroCard(
+    ThemeData theme,
+    String studentTitle,
+    bool reloadBusy,
+  ) {
     return AdminSurfaceCard(
       margin: const EdgeInsets.only(bottom: AdminSpacing.sm),
       padding: const EdgeInsets.symmetric(
@@ -419,7 +412,7 @@ class _DocumentStudentDetailScreenState
         children: [
           Expanded(
             child: Text(
-              _studentTitle,
+              studentTitle,
               style: theme.textTheme.headlineSmall?.copyWith(
                 fontWeight: FontWeight.w700,
                 letterSpacing: -0.2,
@@ -428,7 +421,7 @@ class _DocumentStudentDetailScreenState
           ),
           IconButton.filledTonal(
             tooltip: 'Refresh',
-            onPressed: _loading ? null : _load,
+            onPressed: reloadBusy ? null : _invalidateOverview,
             icon: const Icon(Icons.refresh_rounded),
           ),
         ],
@@ -574,8 +567,13 @@ class _DocumentStudentDetailScreenState
     );
   }
 
-  Widget _buildChecklistSection(ThemeData theme) {
-    if (_checklist.isEmpty) {
+  Widget _buildChecklistSection(
+    ThemeData theme,
+    StudentDocumentsOverview overview,
+  ) {
+    final checklist = overview.checklist;
+    final documents = overview.documents;
+    if (checklist.isEmpty) {
       return AdminSurfaceCard(
         child: Text(
           'No document requirements apply to this student’s class and year. '
@@ -589,8 +587,8 @@ class _DocumentStudentDetailScreenState
     }
 
     return Column(
-      children: _checklist.map((r) {
-        final rowDoc = _docById(r.latestDocumentId);
+      children: checklist.map((r) {
+        final rowDoc = _docById(documents, r.latestDocumentId);
         final status = (r.latestStatus ?? '—').toUpperCase();
         final borderColor = rowDoc?.statusColor ??
             AdminColors.borderSubtle;
@@ -757,8 +755,15 @@ class _DocumentStudentDetailScreenState
     );
   }
 
-  Widget _buildRecordsTable(ThemeData theme) {
-    final rows = _otherDocumentRecords;
+  Widget _buildRecordsTable(
+    ThemeData theme,
+    StudentDocumentsOverview overview,
+  ) {
+    final requested = _requestedDocs(overview.documents);
+    final rows = _otherDocumentRecords(
+      overview.documents,
+      _requestedDocIds(requested),
+    );
     if (rows.isEmpty) {
       return AdminSurfaceCard(
         child: Text(

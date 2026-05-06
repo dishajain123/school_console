@@ -1,12 +1,15 @@
 import 'package:dio/dio.dart';
 
+import '../../logging/crash_reporter.dart';
+import '../../auth/auth_logout_bus.dart';
 import '../../constants/api_constants.dart';
 import '../../storage/secure_storage.dart';
 
 class AuthInterceptor extends Interceptor {
-  AuthInterceptor(this._storage);
+  AuthInterceptor(this._storage, this._logoutBus);
 
   final SecureStorage _storage;
+  final AuthLogoutBus _logoutBus;
   bool _isRefreshing = false;
 
   @override
@@ -47,6 +50,7 @@ class AuthInterceptor extends Interceptor {
       final refreshToken = await _storage.readRefreshToken();
       if (refreshToken == null || refreshToken.trim().isEmpty) {
         await _storage.clearTokens();
+        _logoutBus.notifyLogout();
         handler.next(err);
         return;
       }
@@ -66,6 +70,7 @@ class AuthInterceptor extends Interceptor {
       final newAccessToken = refreshResp.data?['access_token']?.toString();
       if (newAccessToken == null || newAccessToken.isEmpty) {
         await _storage.clearTokens();
+        _logoutBus.notifyLogout();
         handler.next(err);
         return;
       }
@@ -90,8 +95,10 @@ class AuthInterceptor extends Interceptor {
       final retryResp = await retryDio.fetch<dynamic>(retryOptions);
       handler.resolve(retryResp);
       return;
-    } catch (_) {
+    } catch (e, stack) {
+      CrashReporter.log(e, stack);
       await _storage.clearTokens();
+      _logoutBus.notifyLogout();
       handler.next(err);
       return;
     } finally {

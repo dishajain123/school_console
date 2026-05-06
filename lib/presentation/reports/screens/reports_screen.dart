@@ -13,11 +13,12 @@ import 'dart:html' as html;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/constants/api_constants.dart';
-import '../../../core/network/dio_client.dart';
+import '../../../core/logging/crash_reporter.dart';
 import '../../../core/theme/admin_colors.dart';
 import '../../../domains/providers/active_year_provider.dart';
 import '../../../domains/providers/auth_provider.dart';
+import '../../../data/repositories/principal_reports_repository.dart';
+import '../../../domains/providers/principal_reports_repository_provider.dart';
 import '../../common/layout/admin_scaffold.dart';
 import '../../common/widgets/admin_layout/admin_empty_state.dart';
 import '../../common/widgets/admin_layout/admin_filter_card.dart';
@@ -25,109 +26,6 @@ import '../../common/widgets/admin_layout/admin_loading_placeholder.dart';
 import '../../common/widgets/admin_layout/admin_page_header.dart';
 import '../../common/widgets/admin_layout/admin_spacing.dart';
 import '../../common/widgets/admin_layout/admin_table_helpers.dart';
-
-// ── Repository ────────────────────────────────────────────────────────────────
-
-class _ReportsRepository {
-  _ReportsRepository(this._dio);
-  final DioClient _dio;
-
-  Future<List<Map<String, dynamic>>> listYears(String schoolId) async {
-    final r = await _dio.dio.get<Map<String, dynamic>>(
-      ApiConstants.academicYears,
-      queryParameters: {'school_id': schoolId},
-    );
-    return ((r.data?['items'] as List?) ?? [])
-        .map((e) => Map<String, dynamic>.from(e as Map))
-        .toList();
-  }
-
-  Future<List<Map<String, dynamic>>> listStandards(
-      String schoolId, String yearId) async {
-    final r = await _dio.dio.get<Map<String, dynamic>>(
-      ApiConstants.standards,
-      queryParameters: {'school_id': schoolId, 'academic_year_id': yearId},
-    );
-    return ((r.data?['items'] as List?) ?? [])
-        .map((e) => Map<String, dynamic>.from(e as Map))
-        .toList();
-  }
-
-  // Phase 11: GET /principal-reports/overview — KPI summary
-  Future<Map<String, dynamic>> getOverview({String? yearId}) async {
-    try {
-      final r = await _dio.dio.get<Map<String, dynamic>>(
-        ApiConstants.principalReportsOverview,
-        queryParameters: {
-          if (yearId != null) 'academic_year_id': yearId,
-        },
-      );
-      return r.data ?? {};
-    } catch (_) {
-      return {};
-    }
-  }
-
-  // Phase 11: GET /principal-reports/details — drill-down by metric/class/section
-  Future<Map<String, dynamic>> getDetails({
-    String? yearId,
-    String? metric,
-    String? standardId,
-    String? section,
-  }) async {
-    final r = await _dio.dio.get<Map<String, dynamic>>(
-      ApiConstants.principalReportsDetails,
-      queryParameters: {
-        if (yearId != null) 'academic_year_id': yearId,
-        if (metric != null) 'metric': metric,
-        if (standardId != null) 'standard_id': standardId,
-        if (section != null && section.trim().isNotEmpty) 'section': section,
-      },
-    );
-    return r.data ?? {};
-  }
-
-  // Phase 11: GET /fees/analytics — fee collection summary
-  Future<Map<String, dynamic>> getFeeAnalytics({
-    String? yearId,
-    String? standardId,
-  }) async {
-    final r = await _dio.dio.get<Map<String, dynamic>>(
-      ApiConstants.feeAnalytics,
-      queryParameters: {
-        if (yearId != null) 'academic_year_id': yearId,
-        if (standardId != null) 'standard_id': standardId,
-      },
-    );
-    return r.data ?? {};
-  }
-
-  // Phase 11: student strength — list students per class
-  Future<Map<String, dynamic>> getStudentStrength(
-      String schoolId, String yearId) async {
-    final r = await _dio.dio.get<Map<String, dynamic>>(
-      ApiConstants.students,
-      queryParameters: {
-        'academic_year_id': yearId,
-        'page': 1,
-        'page_size': 1,
-      },
-    );
-    return r.data ?? {};
-  }
-
-  Future<List<Map<String, dynamic>>> getDefaulters({String? yearId}) async {
-    final r = await _dio.dio.get<Map<String, dynamic>>(
-      ApiConstants.feeDefaulters,
-      queryParameters: {
-        if (yearId != null) 'academic_year_id': yearId,
-      },
-    );
-    return ((r.data?['defaulters'] as List?) ?? [])
-        .map((e) => Map<String, dynamic>.from(e as Map))
-        .toList();
-  }
-}
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 
@@ -141,7 +39,6 @@ class ReportsScreen extends ConsumerStatefulWidget {
 class _ReportsScreenState extends ConsumerState<ReportsScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
-  late final _ReportsRepository _repo;
 
   List<Map<String, dynamic>> _years = [];
   List<Map<String, dynamic>> _standards = [];
@@ -159,11 +56,15 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
   bool _loading = false;
   String? _error;
 
+  void _setStateIfMounted(VoidCallback fn) {
+    if (!mounted) return;
+    setState(fn);
+  }
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
-    _repo = _ReportsRepository(ref.read(dioClientProvider));
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging) _onTabChanged(_tabController.index);
     });
@@ -179,6 +80,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
   String? get _schoolId =>
       ref.read(authControllerProvider).valueOrNull?.schoolId;
 
+  PrincipalReportsRepository get _repo =>
+      ref.read(principalReportsRepositoryProvider);
+
   void _resetReportFilters() {
     setState(() {
       _filterStandardId = null;
@@ -193,10 +97,10 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
 
   Future<void> _loadYears() async {
     if (_schoolId == null) return;
-    setState(() => _loading = true);
+    _setStateIfMounted(() => _loading = true);
     try {
-      final years = await _repo.listYears(_schoolId!);
-      setState(() => _years = years);
+      final years = await _repo.listAcademicYears(_schoolId!);
+      _setStateIfMounted(() => _years = years);
       final preferredYearId = ref.read(activeAcademicYearProvider);
       final preferred = years.firstWhere(
         (y) => y['id']?.toString() == preferredYearId,
@@ -214,9 +118,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
         await _loadOverview();
       }
     } catch (e) {
-      setState(() => _error = e.toString());
+      _setStateIfMounted(() => _error = e.toString());
     } finally {
-      setState(() => _loading = false);
+      _setStateIfMounted(() => _loading = false);
     }
   }
 
@@ -224,8 +128,10 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
     if (_schoolId == null || _selectedYearId == null) return;
     try {
       final stds = await _repo.listStandards(_schoolId!, _selectedYearId!);
-      setState(() => _standards = stds);
-    } catch (_) {}
+      _setStateIfMounted(() => _standards = stds);
+    } catch (e, stack) {
+      CrashReporter.log(e, stack);
+    }
   }
 
   Future<void> _onTabChanged(int i) async {
@@ -243,22 +149,22 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
   }
 
   Future<void> _loadOverview() async {
-    setState(() {
+    _setStateIfMounted(() {
       _loading = true;
       _error = null;
     });
     try {
       final ov = await _repo.getOverview(yearId: _selectedYearId);
-      setState(() => _overview = ov);
+      _setStateIfMounted(() => _overview = ov);
     } catch (e) {
-      setState(() => _error = e.toString());
+      _setStateIfMounted(() => _error = e.toString());
     } finally {
-      setState(() => _loading = false);
+      _setStateIfMounted(() => _loading = false);
     }
   }
 
   Future<void> _loadFeeAnalytics() async {
-    setState(() {
+    _setStateIfMounted(() {
       _loading = true;
       _error = null;
     });
@@ -266,19 +172,19 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
       final d = await _repo.getFeeAnalytics(
           yearId: _selectedYearId, standardId: _filterStandardId);
       final def = await _repo.getDefaulters(yearId: _selectedYearId);
-      setState(() {
+      _setStateIfMounted(() {
         _feeData = d;
         _defaulters = def;
       });
     } catch (e) {
-      setState(() => _error = e.toString());
+      _setStateIfMounted(() => _error = e.toString());
     } finally {
-      setState(() => _loading = false);
+      _setStateIfMounted(() => _loading = false);
     }
   }
 
   Future<void> _loadDetails() async {
-    setState(() {
+    _setStateIfMounted(() {
       _loading = true;
       _error = null;
     });
@@ -289,11 +195,11 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
         standardId: _filterStandardId,
         section: _filterSection.isEmpty ? null : _filterSection,
       );
-      setState(() => _detailsData = d);
+      _setStateIfMounted(() => _detailsData = d);
     } catch (e) {
-      setState(() => _error = e.toString());
+      _setStateIfMounted(() => _error = e.toString());
     } finally {
-      setState(() => _loading = false);
+      _setStateIfMounted(() => _loading = false);
     }
   }
 
@@ -404,7 +310,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
                 border: OutlineInputBorder(),
                 contentPadding:
                     EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
-            value: _selectedYearId,
+            initialValue: _selectedYearId,
             items: _years
                 .map((y) => DropdownMenuItem<String>(
                     value: y['id']?.toString(),
@@ -430,7 +336,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
                 border: OutlineInputBorder(),
                 contentPadding:
                     EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
-            value: _filterStandardId,
+            initialValue: _filterStandardId,
             items: [
               const DropdownMenuItem<String?>(
                   value: null, child: Text('All Classes')),

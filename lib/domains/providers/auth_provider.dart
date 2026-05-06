@@ -2,7 +2,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
 import 'dart:async';
 
+import '../../core/auth/auth_logout_bus.dart';
 import '../../core/constants/api_constants.dart';
+import '../../core/logging/crash_reporter.dart';
 import '../../core/network/dio_client.dart';
 import '../../core/storage/secure_storage.dart';
 import '../../data/models/auth/admin_user.dart';
@@ -11,7 +13,10 @@ import '../../data/repositories/auth_repository.dart';
 final secureStorageProvider = Provider<SecureStorage>((ref) => SecureStorage());
 
 final dioClientProvider = Provider<DioClient>(
-  (ref) => DioClient(ref.watch(secureStorageProvider)),
+  (ref) => DioClient(
+    ref.watch(secureStorageProvider),
+    ref.watch(authLogoutBusProvider),
+  ),
 );
 
 final authRepositoryProvider = Provider<AuthRepository>(
@@ -22,10 +27,26 @@ final authRepositoryProvider = Provider<AuthRepository>(
 );
 
 class AuthController extends StateNotifier<AsyncValue<AdminUser?>> {
-  AuthController(this._repo, this._storage) : super(const AsyncLoading());
+  AuthController(
+    this._repo,
+    this._storage,
+    AuthLogoutBus logoutBus,
+  ) : super(const AsyncLoading()) {
+    _logoutSubscription = logoutBus.stream.listen((_) {
+      state = const AsyncData(null);
+    });
+  }
 
   final AuthRepository _repo;
   final SecureStorage _storage;
+
+  StreamSubscription<void>? _logoutSubscription;
+
+  @override
+  void dispose() {
+    _logoutSubscription?.cancel();
+    super.dispose();
+  }
 
   Future<void> login({
     String? email,
@@ -54,7 +75,16 @@ class AuthController extends StateNotifier<AsyncValue<AdminUser?>> {
           if (schoolId != null && schoolId.isNotEmpty) {
             resolvedUser = resolvedUser.copyWith(schoolId: schoolId);
           }
-        } catch (_) {}
+        } catch (e, stack) {
+          CrashReporter.log(e, stack);
+          await _storage.clearTokens();
+          throw Exception('Failed to resolve school context');
+        }
+        if (resolvedUser.schoolId == null ||
+            resolvedUser.schoolId!.trim().isEmpty) {
+          await _storage.clearTokens();
+          throw Exception('Failed to resolve school context');
+        }
       }
       if (resolvedUser.role.toUpperCase() != 'STAFF_ADMIN') {
         await _storage.clearTokens();
@@ -65,7 +95,8 @@ class AuthController extends StateNotifier<AsyncValue<AdminUser?>> {
         return;
       }
       state = AsyncData(resolvedUser);
-    } on TimeoutException catch (_, st) {
+    } on TimeoutException catch (e, st) {
+      CrashReporter.log(e, st);
       state = AsyncError(
         'Login request timed out. Please ensure backend is running and try again.',
         st,
@@ -144,7 +175,13 @@ class AuthController extends StateNotifier<AsyncValue<AdminUser?>> {
           if (schoolId != null && schoolId.isNotEmpty) {
             user = user.copyWith(schoolId: schoolId);
           }
-        } catch (_) {}
+        } catch (e, stack) {
+          CrashReporter.log(e, stack);
+          throw Exception('Failed to resolve school context');
+        }
+        if (user.schoolId == null || user.schoolId!.trim().isEmpty) {
+          throw Exception('Failed to resolve school context');
+        }
       }
       if (user.role.toUpperCase() != 'STAFF_ADMIN') {
         await _storage.clearTokens();
@@ -152,7 +189,8 @@ class AuthController extends StateNotifier<AsyncValue<AdminUser?>> {
         return;
       }
       state = AsyncData(user);
-    } catch (_) {
+    } catch (e, stack) {
+      CrashReporter.log(e, stack);
       await _storage.clearTokens();
       state = const AsyncData(null);
     }
@@ -169,6 +207,7 @@ final authControllerProvider =
       (ref) => AuthController(
         ref.watch(authRepositoryProvider),
         ref.watch(secureStorageProvider),
+        ref.watch(authLogoutBusProvider),
       ),
     );
 

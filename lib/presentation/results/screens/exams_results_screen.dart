@@ -7,16 +7,16 @@ import 'dart:async';
 import 'dart:html' as html;
 import 'dart:typed_data';
 
-import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/constants/api_constants.dart';
-import '../../../core/network/dio_client.dart';
+import '../../../core/logging/crash_reporter.dart';
 import '../../../core/theme/admin_colors.dart';
+import '../../../data/repositories/results_repository.dart';
 import '../../../domains/providers/active_year_provider.dart';
 import '../../../domains/providers/auth_provider.dart';
+import '../../../domains/providers/results_repository_provider.dart';
 import '../../common/layout/admin_scaffold.dart';
 import '../../common/widgets/admin_layout/admin_empty_state.dart';
 import '../../common/widgets/admin_layout/admin_filter_card.dart';
@@ -196,317 +196,37 @@ class _SubjectLite {
       );
 }
 
-// ── Repository ────────────────────────────────────────────────────────────────
+// Maps [ResultsRepository] responses (maps) into screen-local models.
 
-class _ResultsRepository {
-  _ResultsRepository(this._dio);
-  final DioClient _dio;
-
-  Future<List<Map<String, dynamic>>> listYears(String schoolId) async {
-    final resp = await _dio.dio.get<Map<String, dynamic>>(
-      ApiConstants.academicYears,
-      queryParameters: {'school_id': schoolId},
-    );
-    return ((resp.data?['items'] as List?) ?? [])
-        .map((e) => Map<String, dynamic>.from(e as Map))
-        .toList();
+_TimetableStatus _timetableStatusFromMap(Map<String, dynamic> m) {
+  if (m['uploaded'] != true) {
+    return const _TimetableStatus(isUploaded: false);
   }
+  final uploadedBy = m['uploaded_by_name']?.toString().trim();
+  return _TimetableStatus(
+    isUploaded: true,
+    uploadedByName:
+        uploadedBy != null && uploadedBy.isNotEmpty ? uploadedBy : null,
+    fileUrl: m['file_url']?.toString(),
+  );
+}
 
-  Future<List<Map<String, dynamic>>> listStandards(
-      String schoolId, String academicYearId) async {
-    final resp = await _dio.dio.get<Map<String, dynamic>>(
-      ApiConstants.standards,
-      queryParameters: {
-        'school_id': schoolId,
-        'academic_year_id': academicYearId,
-      },
-    );
-    return ((resp.data?['items'] as List?) ?? [])
-        .map((e) => Map<String, dynamic>.from(e as Map))
-        .toList();
-  }
-
-  Future<List<String>> listSections({
-    required String standardId,
-    String? academicYearId,
-  }) async {
-    final resp = await _dio.dio.get<dynamic>(
-      '${ApiConstants.results}/sections',
-      queryParameters: {
-        'standard_id': standardId,
-        if (academicYearId != null && academicYearId.trim().isNotEmpty)
-          'academic_year_id': academicYearId,
-      },
-    );
-    final raw = resp.data;
-    if (raw is List) {
-      return raw.map((e) => e.toString()).where((e) => e.trim().isNotEmpty).toList();
-    }
-    return const [];
-  }
-
-  Future<List<_StudentLite>> listStudents({
-    required String standardId,
-    String? academicYearId,
-    String? section,
-  }) async {
-    // API caps page_size at 100; larger values fail validation and return no rows.
-    const pageSize = 100;
-    final all = <_StudentLite>[];
-    for (var page = 1; page <= 50; page++) {
-      final resp = await _dio.dio.get<Map<String, dynamic>>(
-        ApiConstants.students,
-        queryParameters: {
-          'page': page,
-          'page_size': pageSize,
-          'standard_id': standardId,
-          if (academicYearId != null && academicYearId.trim().isNotEmpty)
-            'academic_year_id': academicYearId.trim(),
-          if (section != null && section.trim().isNotEmpty) 'section': section.trim(),
-        },
-      );
-      final batch = ((resp.data?['items'] as List?) ?? [])
-          .map((e) => _StudentLite.fromJson(Map<String, dynamic>.from(e as Map)))
-          .toList();
-      all.addAll(batch);
-      if (batch.length < pageSize) break;
-    }
-    return all;
-  }
-
-  Future<List<_SubjectLite>> listSubjects({
-    required String standardId,
-  }) async {
-    final resp = await _dio.dio.get<Map<String, dynamic>>(
-      ApiConstants.subjects,
-      queryParameters: {'standard_id': standardId},
-    );
-    return ((resp.data?['items'] as List?) ?? [])
-        .map((e) => _SubjectLite.fromJson(Map<String, dynamic>.from(e as Map)))
-        .toList();
-  }
-
-  Future<Set<String>> listUploadedExamIds({
-    String? academicYearId,
-    String? standardId,
-    String? section,
-  }) async {
-    final resp = await _dio.dio.get<Map<String, dynamic>>(
-      ApiConstants.resultsEntries,
-      queryParameters: {
-        if (academicYearId != null && academicYearId.trim().isNotEmpty)
-          'academic_year_id': academicYearId,
-        if (standardId != null && standardId.trim().isNotEmpty)
-          'standard_id': standardId,
-        if (section != null && section.trim().isNotEmpty) 'section': section.trim(),
-      },
-    );
-    final raw = (resp.data?['items'] as List?) ?? const [];
-    final ids = <String>{};
-    for (final e in raw) {
-      if (e is! Map) continue;
-      final map = Map<String, dynamic>.from(e);
-      final examId = map['exam_id']?.toString() ?? '';
-      if (examId.trim().isNotEmpty) ids.add(examId);
-    }
-    return ids;
-  }
-
-  // GET /results/exams — list all exams (principal sees all)
-  Future<List<_Exam>> listExams({
-    String? academicYearId,
-    String? standardId,
-  }) async {
-    final resp = await _dio.dio.get<dynamic>(
-      ApiConstants.resultsExams,
-      queryParameters: {
-        if (academicYearId != null) 'academic_year_id': academicYearId,
-        if (standardId != null) 'standard_id': standardId,
-      },
-    );
-    final raw = resp.data is List
-        ? resp.data as List
-        : ((resp.data as Map?)?['items'] as List? ?? []);
-    return raw
-        .map((e) => _Exam.fromJson(Map<String, dynamic>.from(e as Map)))
-        .toList();
-  }
-
-  Future<Map<String, dynamic>> createExamForAllClasses({
-    required String name,
-    required String startDate,
-    required String endDate,
-    String? academicYearId,
-  }) async {
-    final resp = await _dio.dio.post<Map<String, dynamic>>(
-      ApiConstants.resultsExamsBulk,
-      data: {
-        'name': name,
-        'apply_to_all_standards': true,
-        if (academicYearId != null) 'academic_year_id': academicYearId,
-        'start_date': startDate,
-        'end_date': endDate,
-      },
-    );
-    return resp.data ?? <String, dynamic>{};
-  }
-
-  // GET /results/exams/{id}/distribution — class result distribution
-  Future<List<_ResultStudent>> getDistribution(
-    String examId, {
-    String? section,
-  }) async {
-    final resp = await _dio.dio.get<dynamic>(
-      ApiConstants.resultsExamDistribution(examId),
-      queryParameters: {
-        if (section != null && section.trim().isNotEmpty) 'section': section,
-      },
-    );
-    final data = resp.data;
-    if (data is! Map) {
-      throw FormatException('Unexpected distribution response shape');
-    }
-    final map = Map<String, dynamic>.from(data);
-    final rawItems = map['items'];
-    if (rawItems == null) return const [];
-    if (rawItems is! List) {
-      throw FormatException('distribution.items is not a list');
-    }
-    final out = <_ResultStudent>[];
-    for (final e in rawItems) {
-      if (e is! Map) continue;
-      try {
-        out.add(_ResultStudent.fromJson(Map<String, dynamic>.from(e)));
-      } catch (_) {
-        continue;
-      }
-    }
-    return out;
-  }
-
-  Future<void> deleteExam(String examId) async {
-    await _dio.dio.delete<dynamic>(ApiConstants.resultsExamDelete(examId));
-  }
-
-  Future<void> upsertResults({
-    required String examId,
-    required List<Map<String, dynamic>> entries,
-  }) async {
-    await _dio.dio.post<dynamic>(
-      '${ApiConstants.results}/entries',
-      data: {
-        'exam_id': examId,
-        'entries': entries,
-      },
-    );
-  }
-
-  Future<void> uploadSchedule({
-    required String standardId,
-    required String examId,
-    String? academicYearId,
-    String? section,
-    required String fileName,
-    required Uint8List fileBytes,
-    required String contentType,
-  }) async {
-    final normalizedSection = section?.trim();
-    final sectionParam = (normalizedSection == null || normalizedSection.isEmpty)
-        ? null
-        : normalizedSection.toUpperCase();
-    final formData = FormData.fromMap({
-      'standard_id': standardId,
-      'exam_id': examId,
-      if (academicYearId != null && academicYearId.trim().isNotEmpty)
-        'academic_year_id': academicYearId,
-      if (sectionParam != null) 'section': sectionParam,
-      'file': MultipartFile.fromBytes(
-        fileBytes,
-        filename: fileName,
-        contentType: DioMediaType.parse(contentType),
-      ),
-    });
-    await _dio.dio.post<dynamic>(
-      ApiConstants.timetable,
-      data: formData,
-      options: Options(contentType: 'multipart/form-data'),
-    );
-  }
-
-  Future<void> uploadReportCard({
-    required String studentId,
-    required String examId,
-    required String fileName,
-    required Uint8List fileBytes,
-    required String contentType,
-  }) async {
-    final formData = FormData.fromMap({
-      'student_id': studentId,
-      'exam_id': examId,
-      'file': MultipartFile.fromBytes(
-        fileBytes,
-        filename: fileName,
-        contentType: DioMediaType.parse(contentType),
-      ),
-    });
-    await _dio.dio.post<dynamic>(
-      ApiConstants.resultsReportCardUpload,
-      data: formData,
-      options: Options(contentType: 'multipart/form-data'),
-    );
-  }
-
-  Future<_TimetableStatus> getTimetableStatus({
-    required String standardId,
-    required String examId,
-    String? academicYearId,
-    String? section,
-  }) async {
+Future<List<_ResultStudent>> _distributionRowsFromRepo(
+  ResultsRepository repo,
+  String examId, {
+  String? section,
+}) async {
+  final raw = await repo.getDistributionItems(examId, section: section);
+  final out = <_ResultStudent>[];
+  for (final e in raw) {
     try {
-      final resp = await _dio.dio.get<Map<String, dynamic>>(
-        ApiConstants.timetableByStandard(standardId),
-        queryParameters: {
-          'exam_id': examId,
-          if (academicYearId != null && academicYearId.trim().isNotEmpty)
-            'academic_year_id': academicYearId,
-          if (section != null && section.trim().isNotEmpty)
-            'section': section.trim().toUpperCase(),
-        },
-      );
-      final data = resp.data ?? const <String, dynamic>{};
-      final uploadedBy = data['uploaded_by_name']?.toString();
-      return _TimetableStatus(
-        isUploaded: true,
-        uploadedByName: (uploadedBy != null && uploadedBy.trim().isNotEmpty)
-            ? uploadedBy.trim()
-            : null,
-        fileUrl: data['file_url']?.toString(),
-      );
-    } on DioException catch (e) {
-      if (e.response?.statusCode == 404) {
-        return const _TimetableStatus(isUploaded: false);
-      }
-      rethrow;
+      out.add(_ResultStudent.fromJson(e));
+    } catch (e, stack) {
+      CrashReporter.log(e, stack);
+      continue;
     }
   }
-
-  Future<void> deleteTimetable({
-    required String standardId,
-    required String examId,
-    String? academicYearId,
-    String? section,
-  }) async {
-    await _dio.dio.delete<void>(
-      ApiConstants.timetableByStandard(standardId),
-      queryParameters: {
-        'exam_id': examId,
-        if (academicYearId != null && academicYearId.trim().isNotEmpty)
-          'academic_year_id': academicYearId.trim(),
-        if (section != null && section.trim().isNotEmpty)
-          'section': section.trim().toUpperCase(),
-      },
-    );
-  }
+  return out;
 }
 
 // ── Screen ────────────────────────────────────────────────────────────────────
@@ -522,7 +242,8 @@ class ExamsResultsScreen extends ConsumerStatefulWidget {
 class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
-  late final _ResultsRepository _repo;
+
+  ResultsRepository get _repo => ref.read(resultsRepositoryProvider);
 
   List<Map<String, dynamic>> _years = [];
   List<Map<String, dynamic>> _standards = [];
@@ -548,6 +269,11 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
   String? _success;
   Timer? _successDismissTimer;
 
+  void _setStateIfMounted(VoidCallback fn) {
+    if (!mounted) return;
+    setState(fn);
+  }
+
   void _cancelSuccessDismiss() {
     _successDismissTimer?.cancel();
     _successDismissTimer = null;
@@ -567,7 +293,6 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
-    _repo = _ResultsRepository(ref.read(dioClientProvider));
     _loadYears();
   }
 
@@ -611,13 +336,13 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
 
   Future<void> _loadYears() async {
     if (_schoolId == null) return;
-    setState(() {
+    _setStateIfMounted(() {
       _loading = true;
       _error = null;
     });
     try {
-      final years = await _repo.listYears(_schoolId!);
-      setState(() => _years = years);
+      final years = await _repo.listAcademicYears(_schoolId!);
+      _setStateIfMounted(() => _years = years);
       final preferredYearId = ref.read(activeAcademicYearProvider);
       final preferred = years.firstWhere(
         (y) => y['id']?.toString() == preferredYearId,
@@ -635,9 +360,9 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
         await _loadExams();
       }
     } catch (e) {
-      setState(() => _error = e.toString());
+      _setStateIfMounted(() => _error = e.toString());
     } finally {
-      setState(() => _loading = false);
+      _setStateIfMounted(() => _loading = false);
     }
   }
 
@@ -645,44 +370,48 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
     if (_schoolId == null || _selectedYearId == null) return;
     try {
       final stds = await _repo.listStandards(_schoolId!, _selectedYearId!);
-      setState(() => _standards = stds);
-    } catch (_) {}
+      _setStateIfMounted(() => _standards = stds);
+    } catch (e, stack) {
+      CrashReporter.log(e, stack);
+    }
   }
 
   Future<void> _loadSections({String? academicYearId}) async {
     if (_selectedStandardId == null || _selectedStandardId!.trim().isEmpty) {
-      setState(() {
+      _setStateIfMounted(() {
         _sections = [];
         _selectedSection = null;
       });
       return;
     }
     try {
-      final sections = await _repo.listSections(
+      final sections = await _repo.listResultSections(
         standardId: _selectedStandardId!,
         academicYearId: academicYearId ?? _selectedYearId,
       );
-      if (!mounted) return;
-      setState(() {
+      _setStateIfMounted(() {
         _sections = sections;
         if (_selectedSection != null && !_sections.contains(_selectedSection)) {
           _selectedSection = null;
         }
       });
-    } catch (_) {}
+    } catch (e, stack) {
+      CrashReporter.log(e, stack);
+    }
   }
 
   Future<void> _loadExams() async {
-    setState(() {
+    _setStateIfMounted(() {
       _loading = true;
       _error = null;
     });
     try {
-      final exams = await _repo.listExams(
+      final examMaps = await _repo.listExamMaps(
         academicYearId: _selectedYearId,
         standardId: _selectedStandardId,
       );
-      setState(() {
+      final exams = examMaps.map(_Exam.fromJson).toList(growable: false);
+      _setStateIfMounted(() {
         _exams = exams;
         _selectedExam = null;
         _students = [];
@@ -693,15 +422,15 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
       });
       await _loadExamStatusSummaries();
     } catch (e) {
-      setState(() => _error = e.toString());
+      _setStateIfMounted(() => _error = e.toString());
     } finally {
-      setState(() => _loading = false);
+      _setStateIfMounted(() => _loading = false);
     }
   }
 
   Future<void> _loadDistribution(_Exam exam,
       {bool switchToResultsTab = true}) async {
-    setState(() {
+    _setStateIfMounted(() {
       _selectedExam = exam;
       _distributionLoading = true;
       _distributionError = null;
@@ -711,35 +440,33 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
       _tabController.animateTo(1);
     }
     try {
-      final dist = await _repo.getDistribution(
+      final dist = await _distributionRowsFromRepo(
+        _repo,
         exam.id,
         section: _selectedSection,
       );
-      if (!mounted) return;
-      setState(() {
+      _setStateIfMounted(() {
         _distribution = dist;
         _distributionError = null;
       });
     } catch (e) {
-      if (!mounted) return;
-      setState(() {
+      _setStateIfMounted(() {
         _distributionError = e.toString();
         _distribution = [];
       });
     } finally {
-      if (mounted) setState(() => _distributionLoading = false);
+      _setStateIfMounted(() => _distributionLoading = false);
     }
   }
 
   Future<void> _loadExamStatusSummaries() async {
     if (_exams.isEmpty) {
-      if (!mounted) return;
-      setState(() {
+      _setStateIfMounted(() {
         _examHasUploadedResults = {};
       });
       return;
     }
-    setState(() => _examStatusLoading = true);
+    _setStateIfMounted(() => _examStatusLoading = true);
     try {
       final uploadedExamIds = await _repo.listUploadedExamIds(
         academicYearId: _selectedYearId,
@@ -753,24 +480,24 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
       for (final exam in _exams) {
         final stdId = exam.standardId;
         if (stdId != null && stdId.trim().isNotEmpty) {
-          timetableMap[exam.id] = await _repo.getTimetableStatus(
-                standardId: stdId,
-                examId: exam.id,
-                academicYearId: exam.academicYearId ?? _selectedYearId,
-                section: _selectedSection,
+          timetableMap[exam.id] = _timetableStatusFromMap(
+                await _repo.getTimetableStatusMap(
+                  standardId: stdId,
+                  examId: exam.id,
+                  academicYearId: exam.academicYearId ?? _selectedYearId,
+                  section: _selectedSection,
+                ),
               );
         }
       }
-      if (!mounted) return;
-      setState(() {
+      _setStateIfMounted(() {
         _examHasUploadedResults = hasUploadedMap;
         _examTimetableStatus = timetableMap;
       });
     } catch (e) {
-      if (!mounted) return;
-      setState(() => _error = e.toString());
+      _setStateIfMounted(() => _error = e.toString());
     } finally {
-      if (mounted) setState(() => _examStatusLoading = false);
+      _setStateIfMounted(() => _examStatusLoading = false);
     }
   }
 
@@ -786,21 +513,21 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
     final exam = _selectedExam;
     final standardId = exam?.standardId ?? _selectedStandardId;
     if (standardId == null || standardId.trim().isEmpty) {
-      setState(() => _students = []);
+      _setStateIfMounted(() => _students = []);
       return;
     }
     final academicYearId = _academicYearIdForSelectedExamRoster();
     try {
-      final students = await _repo.listStudents(
+      final maps = await _repo.listStudentsMaps(
         standardId: standardId,
         academicYearId: academicYearId,
         section: _selectedSection,
       );
-      if (!mounted) return;
-      setState(() => _students = students);
+      final students =
+          maps.map((m) => _StudentLite.fromJson(m)).toList(growable: false);
+      _setStateIfMounted(() => _students = students);
     } catch (e) {
-      if (!mounted) return;
-      setState(() {
+      _setStateIfMounted(() {
         _students = [];
         _error =
             'Could not load students for this class: ${e.toString()}';
@@ -905,7 +632,7 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
     final matchingIds =
         _examsMatchingFilters().map((e) => e.id).toSet();
     if (_selectedExam != null && !matchingIds.contains(_selectedExam!.id)) {
-      setState(() {
+      _setStateIfMounted(() {
         _selectedExam = null;
         _students = [];
         _distribution = [];
@@ -946,7 +673,7 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
     );
     if (confirmed != true || !mounted) return;
 
-    setState(() {
+    _setStateIfMounted(() {
       _loading = true;
       _error = null;
       _success = null;
@@ -955,14 +682,12 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
     try {
       await _repo.deleteExam(exam.id);
       await _loadExams();
-      if (mounted) {
-        setState(() => _success = 'Exam "${exam.name}" deleted successfully.');
-        _scheduleSuccessDismiss();
-      }
+      _setStateIfMounted(() => _success = 'Exam "${exam.name}" deleted successfully.');
+      _scheduleSuccessDismiss();
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      _setStateIfMounted(() => _error = e.toString());
     } finally {
-      if (mounted) setState(() => _loading = false);
+      _setStateIfMounted(() => _loading = false);
     }
   }
 
@@ -1094,20 +819,21 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
                             (payload['created_count'] as num?)?.toInt() ?? 0;
                         final skippedCount =
                             (payload['skipped_count'] as num?)?.toInt() ?? 0;
-                        if (mounted) {
+                        if (ctx.mounted) {
                           dialogClosed = true;
                           Navigator.of(ctx).pop();
-                          setState(() {
+                        }
+                        if (!mounted) return;
+                        setState(() {
                             _success =
                                 'Exam "$name" created for $createdCount class(es). '
                                 'Skipped: $skippedCount.';
                             _error = null;
-                          });
-                          _scheduleSuccessDismiss();
-                        }
+                        });
+                        _scheduleSuccessDismiss();
                         await _loadExams();
                       } catch (e) {
-                        if (mounted) {
+                        if (ctx.mounted) {
                           ScaffoldMessenger.of(ctx).showSnackBar(
                             SnackBar(content: Text(e.toString())),
                           );
@@ -1146,6 +872,7 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
       maxCtrls.add(TextEditingController(text: (s['max_marks'] ?? '').toString()));
     }
     var saving = false;
+    if (!mounted) return;
     await showDialog<void>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -1235,7 +962,7 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
                         _scheduleSuccessDismiss();
                         await _loadDistribution(exam, switchToResultsTab: false);
                       } catch (e) {
-                        if (mounted) {
+                        if (ctx.mounted) {
                           ScaffoldMessenger.of(ctx).showSnackBar(
                             SnackBar(content: Text(e.toString())),
                           );
@@ -1268,7 +995,8 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
 
     List<_SubjectLite> subjects = const [];
     try {
-      subjects = await _repo.listSubjects(standardId: standardId);
+      final maps = await _repo.listSubjectMaps(standardId: standardId);
+      subjects = maps.map(_SubjectLite.fromJson).toList(growable: false);
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = e.toString());
@@ -1288,6 +1016,7 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
     }
 
     var saving = false;
+    if (!mounted) return;
     await showDialog<void>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -1383,7 +1112,7 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
                         _scheduleSuccessDismiss();
                         await _reloadWorkbench();
                       } catch (e) {
-                        if (mounted) {
+                        if (ctx.mounted) {
                           ScaffoldMessenger.of(ctx).showSnackBar(
                             SnackBar(content: Text(e.toString())),
                           );
@@ -1490,7 +1219,7 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
       return;
     }
 
-    setState(() {
+    _setStateIfMounted(() {
       _loading = true;
       _error = null;
       _success = null;
@@ -1504,17 +1233,15 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
         fileBytes: picked.bytes,
         contentType: picked.contentType,
       );
-      if (!mounted) return;
-      setState(() {
+      _setStateIfMounted(() {
         _success = 'Result file attached for ${student.studentName}.';
       });
       _scheduleSuccessDismiss();
       await _reloadWorkbench();
     } catch (e) {
-      if (!mounted) return;
-      setState(() => _error = e.toString());
+      _setStateIfMounted(() => _error = e.toString());
     } finally {
-      if (mounted) setState(() => _loading = false);
+      _setStateIfMounted(() => _loading = false);
     }
   }
 
@@ -1529,11 +1256,13 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
         prefStd != null &&
         prefStd.isNotEmpty) {
       try {
-        localSections = await _repo.listSections(
+        localSections = await _repo.listResultSections(
           standardId: prefStd,
           academicYearId: _selectedYearId,
         );
-      } catch (_) {}
+      } catch (e, stack) {
+        CrashReporter.log(e, stack);
+      }
     }
     List<_Exam> localExamOptions = _exams;
     String fileName = '';
@@ -1596,14 +1325,16 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
                           });
                           if (v != null && v.trim().isNotEmpty) {
                             try {
-                              final sections = await _repo.listSections(
+                              final sections = await _repo.listResultSections(
                                 standardId: v,
                                 academicYearId: _selectedYearId,
                               );
                               if (ctx.mounted) {
                                 setLocal(() => localSections = sections);
                               }
-                            } catch (_) {}
+                            } catch (e, stack) {
+                              CrashReporter.log(e, stack);
+                            }
                           }
                         },
                 ),
@@ -2261,15 +1992,14 @@ class _ExamsResultsScreenState extends ConsumerState<ExamsResultsScreen>
         academicYearId: exam.academicYearId ?? _selectedYearId,
         section: _selectedSection,
       );
-      if (!mounted) return;
-      setState(() {
+      _setStateIfMounted(() {
         _success = 'Exam schedule file removed.';
         _error = null;
       });
       _scheduleSuccessDismiss();
       await _loadExamStatusSummaries();
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      _setStateIfMounted(() => _error = e.toString());
     }
   }
 

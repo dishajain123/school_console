@@ -2,11 +2,13 @@ import '../../core/network/dio_client.dart';
 import '../../core/constants/api_constants.dart';
 import '../models/role_profiles/identifier_config_item.dart';
 import '../models/role_profiles/role_profile_item.dart';
+import 'masters_repository.dart';
 
 class RoleProfileRepository {
-  RoleProfileRepository(this._client);
+  RoleProfileRepository(this._client) : _masters = MastersRepository(_client);
 
   final DioClient _client;
+  final MastersRepository _masters;
   static const int _maxPageSize = 100;
   static const int _maxAggregatedPages = 200;
 
@@ -79,18 +81,8 @@ class RoleProfileRepository {
     );
   }
 
-  Future<List<Map<String, dynamic>>> listStandards({String? academicYearId}) async {
-    final resp = await _client.dio.get<Map<String, dynamic>>(
-      ApiConstants.standards,
-      queryParameters: {
-        if (academicYearId != null && academicYearId.isNotEmpty)
-          'academic_year_id': academicYearId,
-      },
-    );
-    return ((resp.data?['items'] as List?) ?? [])
-        .map((e) => Map<String, dynamic>.from(e as Map))
-        .toList();
-  }
+  Future<List<Map<String, dynamic>>> listStandards({String? academicYearId}) =>
+      _masters.listStandards(academicYearId: academicYearId);
 
   Future<List<String>> listSections({
     required String standardId,
@@ -113,17 +105,8 @@ class RoleProfileRepository {
       ..sort();
   }
 
-  Future<List<Map<String, dynamic>>> listAcademicYears({String? schoolId}) async {
-    final resp = await _client.dio.get<Map<String, dynamic>>(
-      ApiConstants.academicYears,
-      queryParameters: {
-        if (schoolId != null && schoolId.isNotEmpty) 'school_id': schoolId,
-      },
-    );
-    return ((resp.data?['items'] as List?) ?? [])
-        .map((e) => Map<String, dynamic>.from(e as Map))
-        .toList();
-  }
+  Future<List<Map<String, dynamic>>> listAcademicYears({String? schoolId}) =>
+      _masters.listAcademicYears(schoolId: schoolId);
 
   Future<List<IdentifierConfigItem>> getIdentifierConfigs() async {
     final resp = await _client.dio

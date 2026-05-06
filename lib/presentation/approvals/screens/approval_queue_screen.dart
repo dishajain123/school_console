@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/logging/crash_reporter.dart';
 import '../../../core/theme/admin_colors.dart';
 import '../../../data/models/registration/approval_action.dart';
 import '../../../data/models/registration/registration_request.dart';
@@ -144,7 +145,8 @@ class _ApprovalQueueScreenState extends ConsumerState<ApprovalQueueScreen> {
           overrideValidation: false,
         );
         success++;
-      } catch (_) {
+      } catch (e, stack) {
+        CrashReporter.log(e, stack);
         failed++;
       }
     }
